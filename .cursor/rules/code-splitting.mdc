@@ -1,0 +1,71 @@
+---
+description: prd-standalone 项目代码拆分规范，控制文件大小、职责分离和目录约定
+globs:
+  - src/**/*.{js,jsx,css}
+  - server/**/*.js
+  - vite-plugin-*.js
+alwaysApply: false
+---
+
+# prd-standalone 代码拆分规范
+
+## 文件行数上限
+
+| 文件类型 | 上限 | 超限处理 |
+|---------|------|---------|
+| `.jsx` 组件文件 | 500 行 | 按职责拆分为子组件或提取工具函数 |
+| `.js` 纯逻辑/工具文件 | 400 行 | 按功能域拆分 |
+| `.css` 样式文件 | 600 行 | 按组件分类拆分 |
+| Vite 插件 / Server 模块 | 300 行 | 按路由职责拆分到 `server/` 子目录 |
+
+## 目录结构约定
+
+```
+src/features/prd/editor/
+├── PrdPage.jsx                     # 主页面：状态 + 编排 + JSX，禁止塞入独立组件
+├── prd-constants.js                # API 路径、UI 常量、类型映射
+├── prd-utils.js                    # 通用纯工具函数
+├── prd-api.js                      # 所有 fetch API 封装
+├── prd-text-editing.js             # 文本编辑工具
+├── prd-block-operations.js         # Block 增删改、模板、列表链路
+├── prd-viewport-snapshot.js        # 视口快照保存/恢复
+├── prd-perf-keys.js                # 性能 key 计算
+├── components/
+│   ├── renderers/                  # 内容渲染器（Mermaid/Mindmap/图片/通用元素）
+│   ├── blocks/                     # Block 级组件（Heading/Paragraph/Mermaid/Mindmap/Divider）
+│   └── modals/                     # 弹窗组件
+└── styles/
+    ├── prd-page-layout.css         # 页面布局
+    ├── prd-blocks.css              # Block 通用样式
+    ├── prd-editable.css            # 可编辑字段
+    ├── prd-table-edit.css          # 表格编辑态
+    ├── prd-renderers.css           # 渲染器样式
+    └── prd-modals.css              # 弹窗 + Toast
+```
+
+## 职责分离规则
+
+- **常量**集中在 `prd-constants.js`，禁止在组件文件中硬编码 magic number 或 API 路径
+- **API 调用**集中在 `prd-api.js`，组件通过 import 使用，禁止在组件内直接写 fetch
+- **纯工具函数**放 `prd-utils.js`，不依赖 React 的工具函数禁止写在 `.jsx` 文件中
+- **Block 操作**放 `prd-block-operations.js`（makeDefaultBlock、cloneBlockWithNewId 等）
+- **性能 key 计算**放 `prd-perf-keys.js`
+
+## 新增组件/功能的规则
+
+- 新 UI 组件必须独立文件，放入 `components/` 对应子目录
+- 禁止往已有组件文件追加无关组件（一个文件最多包含 1 个主组件及其紧密耦合的子组件）
+- 新增 CSS 规则放入对应的样式文件，禁止全部堆砌到单一 CSS 文件
+- 新增 API 路由（Vite 插件端）放入 `server/` 对应的 handler 文件
+
+## CSS 规则
+
+- 每个组件文件 import 自己对应的 CSS（通过 `prd-page-edit.css` 的 `@import` 聚合）
+- 新增样式规则必须放到与组件职责匹配的 CSS 文件中
+- CSS 类名使用 BEM 命名约定（`prd-[component]__[element]--[modifier]`）
+
+## Import 路径约定
+
+- 统一使用相对路径 import
+- 组件引用工具模块：`import { xxx } from '../prd-constants.js'`
+- 同级组件互相引用：`import { xxx } from './YourComponent.jsx'`

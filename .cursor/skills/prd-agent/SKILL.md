@@ -55,8 +55,6 @@ description: PRD 一站式写作协议：数据源优先级、写回约束、列
 - `pages/<slug>/<文档名>.meta.json`：仅展示元数据（图片宽度、Mermaid 视图模式与宽度、Mindmap 视图模式与宽度），不参与需求语义。
 - `pages/<slug>/<文档名>.annotations.json`：可选增强输入，不是主流程硬依赖。
 - `public/prd/`：截图资产目录（所有文档共享）。
-- `docs/prd-documentation/PRD-rules.md`：PRD 页面与 Markdown 渲染规范。
-- `docs/*.md`：补充隐藏逻辑、方法论、业务解释。
 - `../`：业务项目源码（当 prd-standalone 是子目录时），AI 应主动探索此目录了解已实现的功能。
 
 ---
