@@ -63,7 +63,6 @@ bash start.sh
 
 - `.cursor/rules/prd-writing-guard.mdc` — PRD 格式守护（自动应用）
 - `.cursor/skills/prd-agent/SKILL.md` — PRD 写作协议
-- `.cursor/skills/frontend-demo-convention/SKILL.md` — 前端 Demo 开发规范
 
 **重要**：必须用 Cursor 打开 `prd-standalone/` 这个目录（而不是父目录），skills 和 rules 才会自动生效。
 
