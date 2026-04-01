@@ -5880,7 +5880,35 @@ export function PrdPage() {
   if (loadErr) {
     return (
       <div className="prd-page">
-        <div className="prd-page__error">加载文档失败：{loadErr}</div>
+        <ToastViewport toasts={toasts} />
+        <div className="prd-page__layout">
+          <div className="prd-page__content-pane">
+            <PrdToolbar
+              activeSlug={activeSlug}
+              blocks={null}
+              exporting={false}
+              onExport={() => {}}
+              onSwitch={(slug) => {
+                activeSlugRef.current = slug;
+                setActiveSlug(slug);
+                setBlocks(null);
+                setLoadErr('');
+                lastSavedMdRef.current = '';
+                hasPendingLocalChangesRef.current = false;
+                hasExternalMdConflictRef.current = false;
+                fetchActiveDoc().then(({ mdPath }) => {
+                  activeMdPathRef.current = mdPath;
+                  fetchPrdMd(mdPath)
+                    .then((md) => applyLoadedPrdMd(md, { restoreSnapshot: readPersistedViewportSnapshot(slug) }))
+                    .catch((e) => setLoadErr(e.message));
+                });
+              }}
+            />
+            <div className="prd-page__error">
+              暂无文档，请在左上角文档选择器中点击「新建文档」创建你的第一个 PRD。
+            </div>
+          </div>
+        </div>
       </div>
     );
   }

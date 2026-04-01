@@ -98,6 +98,7 @@ function mdFileToAnnotationsPath(mdFilePath) {
 /** 列出所有 PRD 文档（pages/ 下每个含 .md 文件的子目录），title = 文件名（去后缀） */
 function listDocs() {
   const activeSlug = readActiveDocSlug();
+  if (!fs.existsSync(PRD_PAGES_DIR)) return [];
   const dirs = fs.readdirSync(PRD_PAGES_DIR, { withFileTypes: true })
     .filter(d => d.isDirectory())
     .map(d => d.name);

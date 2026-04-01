@@ -16,6 +16,7 @@ dist-ssr/
 
 # PRD 业务内容（每个人的文档和截图不同，不提交）
 pages/doc-*/
+pages/.active-doc.json
 public/prd/*.png
 public/prd/annotations/
 
