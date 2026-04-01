@@ -38,11 +38,17 @@ echo "[check] Node.js $(node --version) ✓"
 # ── 1. 依赖安装 ──────────────────────────────────────────────────────────────
 if [ ! -d "node_modules" ]; then
   echo "[setup] node_modules 不存在，正在安装依赖..."
-  npm install
+  npm install --prefix "$PROJECT_DIR"
   echo "[setup] 依赖安装完成"
-else
-  echo "[check] node_modules 已存在，跳过安装"
 fi
+
+if [ ! -d "node_modules/vite" ]; then
+  echo "[error] node_modules 安装异常（缺少 vite），尝试重新安装..."
+  rm -rf node_modules package-lock.json
+  npm install --prefix "$PROJECT_DIR"
+fi
+
+echo "[check] node_modules 已就绪"
 
 # ── 2. 环境变量检查 ───────────────────────────────────────────────────────────
 if [ ! -f ".env.local" ]; then

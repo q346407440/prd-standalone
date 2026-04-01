@@ -55,10 +55,16 @@ npm --version    # 应输出 10.x.x
 
 ### 步骤 3：安装依赖
 
+**必须先 `cd` 进入 `prd-standalone/` 目录再执行 `npm install`**，否则依赖会装到父目录导致项目无法运行：
+
 ```bash
 cd <prd-standalone 所在的绝对路径>
 npm install
 ```
+
+安装完成后，确认 `prd-standalone/node_modules/` 目录已存在。如果 `node_modules` 出现在父目录而不是 `prd-standalone/` 里，说明 `cd` 没生效，需要删掉父目录的 `node_modules` 然后重新在正确目录执行。
+
+> **给 AI Agent 的提醒**：执行 `npm install` 时必须使用 `working_directory` 参数指向 `prd-standalone/` 的绝对路径，或先用 `cd` 切换到该目录。绝不可在父目录执行。
 
 ### 步骤 4：配置环境变量
 
