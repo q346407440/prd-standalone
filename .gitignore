@@ -14,6 +14,11 @@ dist-ssr/
 # Local runtime data (auth tokens, sync snapshots, image cache)
 .local/
 
+# PRD 业务内容（每个人的文档和截图不同，不提交）
+pages/doc-*/
+public/prd/*.png
+public/prd/annotations/
+
 # Logs
 logs/
 *.log
