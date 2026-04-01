@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "settings": {
+    "defaultGenerateColumns": [
+      "interaction",
+      "logic"
+    ],
+    "defaultChangeType": "iterate",
+    "defaultGranularity": "list"
+  },
+  "assets": [],
+  "usages": [],
+  "regions": [],
+  "derivedAssets": [],
+  "cellStates": []
+}

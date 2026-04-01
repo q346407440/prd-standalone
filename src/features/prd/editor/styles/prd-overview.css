@@ -1,0 +1,81 @@
+/* 概览区文案与链接；表格基样式见 components/PrdTable/prd-table.css */
+
+.prd-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.prd-overview__block {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+}
+
+.prd-overview__h2 {
+  all: unset;
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: #000;
+  line-height: 1.4;
+}
+
+.prd-overview__subhead {
+  font-size: 14px;
+  font-weight: 600;
+  color: #262626;
+  line-height: 1.5;
+}
+
+.prd-overview__ol {
+  padding-left: 1.5em;
+  list-style-type: decimal;
+  font-size: 14px;
+  line-height: 1.65;
+  color: #262626;
+}
+
+.prd-overview__ol li + li {
+  padding-top: 10px;
+}
+
+/* 需求功能清单：列宽可按需求调整，表头/单元格样式与 PrdSection 表格一致（prd-table） */
+.prd-overview__col-name {
+  width: 22%;
+}
+
+.prd-overview__col-sys {
+  width: 12%;
+}
+
+.prd-overview__col-mod {
+  width: 14%;
+}
+
+.prd-overview__col-point {
+  width: 18%;
+}
+
+.prd-overview__col-desc {
+  width: 34%;
+}
+
+.prd-overview__link-line {
+  all: unset;
+  display: block;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.prd-overview__link {
+  color: #1677ff;
+  text-decoration: none;
+  word-break: break-all;
+}
+
+.prd-overview__link:hover {
+  text-decoration: underline;
+}

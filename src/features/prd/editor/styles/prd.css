@@ -1,0 +1,756 @@
+.prd-page {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background: #f6f8fb;
+  position: relative;
+}
+
+.prd-page__layout {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  position: relative;
+}
+
+.prd-page__toc-pane {
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  border-right: 1px solid transparent;
+  background: #f8fafc;
+  contain: layout paint;
+  transition: opacity 0.16s ease, border-color 0.16s ease;
+}
+
+.prd-page__toc-pane--open {
+  flex-basis: clamp(220px, 24vw, 320px);
+  width: clamp(220px, 24vw, 320px);
+  opacity: 1;
+  pointer-events: auto;
+  border-right-color: #dbe4ef;
+}
+
+.prd-page__toc-shell {
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #f8fafc;
+  opacity: 0;
+  transform: translateX(-10px);
+  will-change: transform, opacity;
+  transition: transform 0.16s ease, opacity 0.16s ease;
+}
+
+.prd-page__toc-pane--open .prd-page__toc-shell {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.prd-page__toc-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 14px 12px;
+  border-bottom: 1px solid #e7edf5;
+  background: #f8fafc;
+}
+
+.prd-page__toc-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f2937;
+  letter-spacing: 0.01em;
+}
+
+.prd-page__toc-toggle {
+  all: unset;
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 30;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  border: 1px solid #dde5f0;
+  background: rgba(255, 255, 255, 0.96);
+  color: #5b677a;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.prd-page__toc-toggle:hover {
+  color: #1677ff;
+  border-color: #b8d4ff;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(22, 119, 255, 0.12);
+}
+
+.prd-page__toc-toggle svg {
+  width: 19px;
+  height: 19px;
+}
+
+.prd-page__toc-toggle--inline {
+  position: static;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  box-shadow: none;
+}
+
+.prd-page__toc-scroll,
+.prd-page__content-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.prd-page__toc-scroll::-webkit-scrollbar,
+.prd-page__content-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.prd-page__toc-scroll {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 12px 10px 24px;
+  background: #f8fafc;
+}
+
+.prd-page__toc-tree {
+  min-width: max-content;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.prd-page__toc-item {
+  all: unset;
+  box-sizing: border-box;
+  min-width: 100%;
+  width: max-content;
+  display: flex;
+  align-items: center;
+  position: relative;
+  padding: 8px 10px;
+  border-radius: 9px;
+  color: #4b5563;
+  cursor: pointer;
+  line-height: 1.45;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.prd-page__toc-item:hover {
+  background: #eef4fd;
+  color: #1677ff;
+}
+
+.prd-page__toc-item--active {
+  background: #e8f1ff;
+  color: #1677ff;
+  box-shadow: inset 0 0 0 1px #bfd5ff;
+}
+
+.prd-page__toc-item--active::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #69a7ff 0%, #1677ff 100%);
+}
+
+.prd-page__toc-item--active.prd-page__toc-item--level-1 {
+  color: #0958d9;
+}
+
+.prd-page__toc-item--level-1 { padding-left: 10px; font-size: 15px; font-weight: 700; color: #1f2937; }
+.prd-page__toc-item--level-2 { padding-left: 26px; font-size: 14px; font-weight: 600; }
+.prd-page__toc-item--level-3 { padding-left: 42px; font-size: 13px; }
+.prd-page__toc-item--level-4 { padding-left: 58px; font-size: 13px; color: #6b7280; }
+.prd-page__toc-item--level-5 { padding-left: 74px; font-size: 12px; color: #6b7280; }
+.prd-page__toc-item--level-6 { padding-left: 90px; font-size: 12px; color: #7b8794; }
+.prd-page__toc-item--level-7 { padding-left: 106px; font-size: 11px; color: #94a3b8; }
+
+.prd-page__toc-item-text {
+  white-space: nowrap;
+}
+
+.prd-page__toc-empty {
+  padding: 10px 12px;
+  color: #9aa4b2;
+  font-size: 13px;
+}
+
+.prd-page__content-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+.prd-page__content-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+}
+
+/* ─── PRD 顶部工具栏 ──────────────────────────────────────────────────────── */
+
+.prd-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  height: 40px;
+  background: #fff;
+  border-bottom: 1px solid #e8edf3;
+  position: relative;
+  /* 建立独立堆叠上下文，让面板的 z-index 不受 prd-page__content-scroll 内容影响 */
+  isolation: isolate;
+  /* 必须整体高于正文 hover actionbar（50）和表格操作浮层（80） */
+  z-index: 120;
+}
+
+.prd-toolbar__left {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+}
+
+.prd-toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  margin-left: auto;
+}
+
+.prd-toolbar__btn {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: #4c5a72;
+  cursor: pointer;
+  transition: background 0.13s, color 0.13s;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.prd-toolbar__btn:hover {
+  background: #f0f4fa;
+  color: #1677ff;
+}
+
+.prd-toolbar__btn--active {
+  background: #e8f1ff;
+  color: #1677ff;
+}
+
+.prd-toolbar__btn-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
+.prd-toolbar__btn--feishu:hover {
+  color: #0062ff;
+  background: #f0f5ff;
+}
+
+.prd-toolbar__divider {
+  width: 1px;
+  height: 16px;
+  background: #e2e8f0;
+  flex-shrink: 0;
+  margin: 0 4px;
+}
+
+/* ── 文档选择器触发器 ── */
+
+.prd-toolbar__doc-selector {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px 0 10px;
+  border-radius: 6px;
+  border: 1px solid #dde5f0;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: border-color 0.13s, background 0.13s, box-shadow 0.13s;
+  max-width: 280px;
+  user-select: none;
+}
+
+.prd-toolbar__doc-selector:hover {
+  border-color: #b8d0f5;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(22, 119, 255, 0.08);
+}
+
+.prd-toolbar__doc-selector--open {
+  border-color: #1677ff;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+}
+
+.prd-toolbar__doc-selector-icon {
+  width: 13px;
+  height: 13px;
+  color: #1677ff;
+  flex-shrink: 0;
+}
+
+.prd-toolbar__doc-selector-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 200px;
+}
+
+.prd-toolbar__doc-selector-caret {
+  width: 14px;
+  height: 14px;
+  color: #94a3b8;
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.prd-toolbar__doc-selector-caret--open {
+  transform: rotate(180deg);
+}
+
+/* ── 切换 PRD 下拉面板 ── */
+
+.prd-toolbar__switch-wrap {
+  position: relative;
+}
+
+.prd-toolbar__switch-panel {
+  position: fixed;
+  z-index: 9000;
+  width: 280px;
+  background: #fff;
+  border: 1px solid #dde5f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.13);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* 入场动画：从触发按钮附近向下展开，避免生硬闪出 */
+  animation: prd-panel-in 0.14s cubic-bezier(0.2, 0, 0.13, 1) both;
+  transform-origin: top right;
+}
+
+@keyframes prd-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* 无 header 时列表顶部补间距 */
+.prd-toolbar__switch-panel-list--top-pad {
+  padding-top: 6px;
+}
+
+/* 面板位置由 JS 动态计算（position: fixed），此处不需要 left/right 静态定位 */
+
+.prd-toolbar__switch-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #edf1f7;
+}
+
+.prd-toolbar__switch-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.prd-toolbar__switch-panel-close {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.prd-toolbar__switch-panel-close:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.prd-toolbar__switch-panel-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  gap: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.prd-toolbar__switch-item-check {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  color: #1677ff;
+}
+
+.prd-toolbar__switch-item-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.prd-toolbar__switch-item-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #1677ff;
+  background: #dbeafe;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.prd-toolbar__switch-panel-footer {
+  padding: 8px;
+  border-top: 1px solid #edf1f7;
+}
+
+.prd-toolbar__switch-new-btn {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  color: #1677ff;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.prd-toolbar__switch-new-btn:hover {
+  background: #f0f7ff;
+}
+
+.prd-toolbar__switch-new-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* 占位宽度，使无勾选图标时文字对齐 */
+.prd-toolbar__switch-item-check-placeholder {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+/* 切换中旋转指示器 */
+.prd-toolbar__switch-item-loading {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid #cbd5e1;
+  border-top-color: #1677ff;
+  border-radius: 50%;
+  animation: prd-toolbar-spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes prd-toolbar-spin {
+  to { transform: rotate(360deg); }
+}
+
+.prd-toolbar__switch-loading,
+.prd-toolbar__switch-empty {
+  padding: 12px 14px;
+  font-size: 13px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+/* switch-item 改为“主操作按钮 + 重命名按钮”的组合行 */
+.prd-toolbar__switch-item {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 2px;
+  border-radius: 7px;
+  transition: background 0.12s;
+}
+
+.prd-toolbar__switch-item:hover {
+  background: #f5f8ff;
+}
+
+.prd-toolbar__switch-item-main {
+  all: unset;
+  box-sizing: border-box;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.prd-toolbar__switch-item-main:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── 新建 PRD 输入区 ── */
+
+.prd-toolbar__switch-create {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 0;
+}
+
+.prd-toolbar__switch-create-input {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 1.5px solid #c7d5e8;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1f2937;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.prd-toolbar__switch-create-input:focus {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+}
+
+.prd-toolbar__switch-create-input::placeholder {
+  color: #b0bac8;
+}
+
+.prd-toolbar__switch-create-hint,
+.prd-toolbar__rename-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+  padding: 0 2px;
+}
+
+.prd-toolbar__switch-create-error {
+  font-size: 12px;
+  color: #dc2626;
+  padding: 0 2px;
+}
+
+.prd-toolbar__switch-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.prd-toolbar__switch-create-cancel,
+.prd-toolbar__switch-create-confirm {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 5px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.prd-toolbar__switch-create-cancel {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.prd-toolbar__switch-create-cancel:hover {
+  background: #e2e8f0;
+}
+
+.prd-toolbar__switch-create-confirm {
+  color: #fff;
+  background: #1677ff;
+}
+
+.prd-toolbar__switch-create-confirm:hover:not(:disabled) {
+  background: #0958d9;
+}
+
+.prd-toolbar__switch-create-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.prd-page__title {
+  all: unset;
+  display: block;
+  font-size: 22px;
+  font-weight: 700;
+  color: #000;
+  letter-spacing: -0.02em;
+}
+
+.prd-page__main {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  min-width: 0;
+  min-height: max-content;
+  padding: 20px 16px 32px;
+}
+
+/* ── switch-row：包裹正常行 或 重命名内联编辑 ── */
+
+.prd-toolbar__switch-row {
+  position: relative;
+}
+
+/* 重命名按钮默认隐藏，行 hover 时显示 */
+.prd-toolbar__switch-item-rename {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+  color: #94a3b8;
+  cursor: pointer;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s, background 0.12s, color 0.12s;
+  pointer-events: none;
+}
+
+.prd-toolbar__switch-item:hover .prd-toolbar__switch-item-rename,
+.prd-toolbar__switch-item-main:hover + .prd-toolbar__switch-item-rename,
+.prd-toolbar__switch-row:hover .prd-toolbar__switch-item-rename {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.prd-toolbar__switch-item-rename:hover {
+  background: #e8f1ff;
+  color: #1677ff;
+}
+
+.prd-toolbar__switch-item-rename svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ── 重命名内联编辑区 ── */
+
+.prd-toolbar__rename-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px 8px;
+  background: #f8faff;
+  border-radius: 7px;
+}
+
+.prd-toolbar__rename-input {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1.5px solid #c7d5e8;
+  border-radius: 5px;
+  font-size: 13px;
+  color: #1f2937;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.prd-toolbar__rename-input:focus {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+}
+
+.prd-toolbar__rename-error {
+  font-size: 12px;
+  color: #dc2626;
+  padding: 0 2px;
+}
+
+.prd-toolbar__rename-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}

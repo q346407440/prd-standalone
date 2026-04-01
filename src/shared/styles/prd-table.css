@@ -1,0 +1,78 @@
+/**
+ * PRD 页内所有表格的统一基样式（与「产品详细功能说明」三列表一致）。
+ * 使用：外层 div.prd-table-wrap + table.prd-table；列宽用 colgroup/col 自定；小屏 td 需带 data-prd-label。
+ */
+
+.prd-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.prd-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: fixed;
+  border: 1px solid #e8e8e8;
+}
+
+.prd-table th,
+.prd-table td {
+  box-sizing: border-box;
+  border: 1px solid #e8e8e8;
+  vertical-align: top;
+  text-align: left;
+}
+
+.prd-table th {
+  padding: 12px 16px;
+  font-weight: 600;
+  font-size: 13px;
+  color: #333;
+  background: #f5f5f5;
+}
+
+.prd-table td {
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: #262626;
+  background: #fff;
+  word-break: break-word;
+}
+
+@media (max-width: 960px) {
+  .prd-table,
+  .prd-table thead,
+  .prd-table tbody,
+  .prd-table th,
+  .prd-table td,
+  .prd-table tr {
+    display: block;
+    width: 100%;
+  }
+
+  .prd-table thead {
+    display: none;
+  }
+
+  .prd-table tr {
+    border: 1px solid #e8e8e8;
+    border-bottom: none;
+  }
+
+  .prd-table td {
+    border: none;
+    border-bottom: 1px solid #e8e8e8;
+  }
+
+  .prd-table td[data-prd-label]::before {
+    display: block;
+    font-weight: 600;
+    font-size: 12px;
+    color: #595959;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f0f0f0;
+    content: attr(data-prd-label);
+  }
+}

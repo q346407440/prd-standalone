@@ -1,0 +1,758 @@
+.prd-annotation-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: rgba(15, 23, 42, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overscroll-behavior: contain;
+}
+
+.prd-annotation-modal__dialog {
+  width: min(1380px, calc(100vw - 48px));
+  height: min(860px, calc(100vh - 48px));
+  background: #fff;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  box-shadow: 0 20px 60px rgba(15, 23, 42, 0.2);
+}
+
+.prd-annotation-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.prd-annotation-modal__sub {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.prd-annotation-modal__header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.prd-annotation-modal__body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+}
+
+.prd-annotation-modal__stage-wrap {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.prd-annotation-modal__hint {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.prd-annotation-modal__stage {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  background:
+    linear-gradient(45deg, #f1f5f9 25%, transparent 25%),
+    linear-gradient(-45deg, #f1f5f9 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #f1f5f9 75%),
+    linear-gradient(-45deg, transparent 75%, #f1f5f9 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+  border: 1px solid #dbe2ea;
+  border-radius: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px;
+}
+
+.prd-annotation-modal__stage.is-pan-ready {
+  cursor: grab;
+}
+
+.prd-annotation-modal__stage.is-panning {
+  cursor: grabbing;
+}
+
+.prd-annotation-modal__stage::-webkit-scrollbar {
+  display: none;
+}
+
+.prd-annotation-modal__image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.prd-annotation-modal__region {
+  position: absolute;
+  border: 2px solid #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.8);
+}
+
+.prd-annotation-modal__region.is-selected {
+  border-color: #2563eb;
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.prd-annotation-modal__region-label {
+  position: absolute;
+  top: -26px;
+  left: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: #ef4444;
+}
+
+.prd-annotation-modal__region.is-selected .prd-annotation-modal__region-label {
+  background: #2563eb;
+}
+
+.prd-annotation-modal__handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #fff;
+  border: 2px solid currentColor;
+  color: inherit;
+}
+
+.prd-annotation-modal__region .prd-annotation-modal__handle { color: #ef4444; }
+.prd-annotation-modal__region.is-selected .prd-annotation-modal__handle { color: #2563eb; }
+.prd-annotation-modal__handle--nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.prd-annotation-modal__handle--ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.prd-annotation-modal__handle--sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.prd-annotation-modal__handle--se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+
+.prd-annotation-modal__sidebar {
+  border-left: 1px solid #e5e7eb;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.prd-annotation-modal__usage-card {
+  padding: 14px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: linear-gradient(180deg, #f8fbff 0%, #fff 100%);
+}
+
+.prd-annotation-modal__usage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prd-annotation-modal__usage-head-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.prd-annotation-modal__usage-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.prd-annotation-modal__usage-info {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: help;
+  outline: none;
+}
+
+.prd-annotation-modal__usage-tooltip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 2;
+  width: 260px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.96);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 400;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.22);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s ease;
+  pointer-events: none;
+}
+
+.prd-annotation-modal__usage-info:hover .prd-annotation-modal__usage-tooltip,
+.prd-annotation-modal__usage-info:focus-visible .prd-annotation-modal__usage-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.prd-annotation-modal__usage-tip {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.prd-annotation-modal__region-strip {
+  padding: 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.prd-annotation-modal__region-strip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prd-annotation-modal__region-strip-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.prd-annotation-modal__region-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1.3;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.prd-annotation-modal__region-tabs {
+  display: flex;
+  gap: 10px;
+  margin-top: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.prd-annotation-modal__region-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.prd-annotation-modal__region-tabs--has-items {
+  margin-top: 10px;
+}
+
+.prd-annotation-modal__region-tab {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #dbe2ea;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.prd-annotation-modal__region-tab.is-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+.prd-annotation-modal__region-tab-main {
+  all: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.prd-annotation-modal__region-tab.is-active .prd-annotation-modal__region-tab-main {
+  color: #1d4ed8;
+}
+
+.prd-annotation-modal__region-tab-delete {
+  all: unset;
+  width: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #94a3b8;
+  border-left: 1px solid #e2e8f0;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.prd-annotation-modal__region-tab-delete:hover {
+  color: #cf1322;
+  background: #fff1f2;
+}
+
+.prd-annotation-modal__form {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.prd-annotation-modal__form--empty {
+  padding-top: 8px;
+  gap: 0;
+}
+
+.prd-annotation-modal__form-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ── 区域标题行 ── */
+.prd-annotation-modal__region-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.prd-annotation-modal__region-index {
+  flex-shrink: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.5px;
+  line-height: 1;
+  min-width: 32px;
+  flex: 1;
+}
+
+.prd-annotation-modal__delete-btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: #94a3b8;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.12s, background 0.12s;
+}
+
+.prd-annotation-modal__delete-btn:hover {
+  color: #cf1322;
+  background: #fff1f2;
+}
+
+/* ── 行内控件行 ── */
+.prd-annotation-modal__inline-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.prd-annotation-modal__setting-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+}
+
+.prd-annotation-modal__setting-label {
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.prd-annotation-modal__switch {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  cursor: pointer;
+}
+
+.prd-annotation-modal__switch-track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: #cbd5e1;
+  transition: background 0.12s ease;
+}
+
+.prd-annotation-modal__switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
+  transition: transform 0.12s ease;
+}
+
+.prd-annotation-modal__switch.is-on .prd-annotation-modal__switch-track {
+  background: #2563eb;
+}
+
+.prd-annotation-modal__switch.is-on .prd-annotation-modal__switch-thumb {
+  transform: translateX(14px);
+}
+
+.prd-annotation-modal__switch-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.prd-annotation-modal__seg-group {
+  display: grid;
+  gap: 6px;
+}
+
+.prd-annotation-modal__seg-group--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.prd-annotation-modal__seg-group--three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.prd-annotation-modal__seg-group--four {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* ── 多选 checkbox 按钮（生成列） ── */
+.prd-annotation-modal__check-btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 8px;
+  border: 1.5px solid #dbe2ea;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+  text-align: center;
+}
+
+.prd-annotation-modal__check-btn:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.prd-annotation-modal__check-btn.is-checked {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+.prd-annotation-modal__check-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1.5px solid #cbd5e1;
+  background: #fff;
+  font-size: 11px;
+  line-height: 1;
+  color: transparent;
+  flex-shrink: 0;
+  transition: border-color 0.12s, background 0.12s, color 0.12s;
+}
+
+.prd-annotation-modal__check-btn.is-checked .prd-annotation-modal__check-icon {
+  border-color: #2563eb;
+  background: #2563eb;
+  color: #fff;
+}
+
+/* ── 单选 segment 按钮（变更类型） ── */
+.prd-annotation-modal__seg-btn {
+  all: unset;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid #dbe2ea;
+  background: #fff;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.prd-annotation-modal__seg-btn:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.prd-annotation-modal__seg-btn.is-active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  font-weight: 600;
+}
+
+.prd-annotation-modal__seg-btn::before,
+.prd-annotation-modal__seg-btn::after {
+  position: absolute;
+  left: 50%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+  z-index: 20;
+}
+
+.prd-annotation-modal__seg-btn::before {
+  content: attr(data-tooltip);
+  bottom: calc(100% + 10px);
+  transform: translate(-50%, 6px);
+  width: max-content;
+  max-width: 240px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.22);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+}
+
+.prd-annotation-modal__seg-btn::after {
+  content: '';
+  bottom: calc(100% + 4px);
+  transform: translate(-50%, 6px);
+  border-width: 6px 6px 0;
+  border-style: solid;
+  border-color: #0f172a transparent transparent;
+}
+
+.prd-annotation-modal__seg-btn:hover::before,
+.prd-annotation-modal__seg-btn:hover::after,
+.prd-annotation-modal__seg-btn:focus-visible::before,
+.prd-annotation-modal__seg-btn:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* legacy: removed form-card-head, eyebrow, summary-badges, badge, field-grid--quick, checkline--boxed */
+
+.prd-annotation-modal__field-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.prd-annotation-modal__field-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.prd-annotation-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prd-annotation-modal__field label,
+.prd-annotation-modal__advanced summary {
+  font-size: 12px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.prd-annotation-modal__field input,
+.prd-annotation-modal__field select,
+.prd-annotation-modal__field textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.prd-annotation-modal__field textarea {
+  resize: vertical;
+}
+
+.prd-annotation-modal__readonly-value {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.prd-annotation-modal__field-tip {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.prd-annotation-modal__choice-row,
+.prd-annotation-modal__tag-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 12px;
+}
+
+.prd-annotation-modal__choice-row label,
+.prd-annotation-modal__tag-grid label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid #dbe2ea;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+}
+
+.prd-annotation-modal__checkline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.prd-annotation-modal__bbox-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prd-annotation-modal__advanced {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.prd-annotation-modal__advanced--secondary {
+  background: #f8fafc;
+}
+
+.prd-annotation-modal__advanced--secondary > summary {
+  color: #0f172a;
+}
+
+.prd-annotation-modal__advanced--secondary > *:not(summary) {
+  margin-top: 12px;
+}
+
+.prd-annotation-modal__advanced[open] {
+  background: #f8fafc;
+}
+
+.prd-annotation-modal__empty {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+@media (max-width: 1180px) {
+  .prd-annotation-modal__body {
+    grid-template-columns: minmax(0, 1fr) 360px;
+  }
+
+  .prd-annotation-modal__setting-row,
+  .prd-annotation-modal__field-grid--two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prd-annotation-modal__seg-group--three,
+  .prd-annotation-modal__seg-group--four {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

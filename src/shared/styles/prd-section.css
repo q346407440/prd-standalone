@@ -1,0 +1,100 @@
+/* 章节与三列表特有：表格基样式见 ../PrdTable/prd-table.css */
+
+.prd-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 32px;
+}
+
+.prd-section__title {
+  all: unset;
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1677ff;
+  line-height: 1.4;
+}
+
+/* 与 tbody 共用列宽（勿在 td 上直接 display:flex） */
+.prd-section__col--design {
+  width: 34%;
+}
+
+.prd-section__col--md {
+  width: 33%;
+}
+
+.prd-section__cell--design {
+  width: 34%;
+}
+
+.prd-section__cell--md {
+  width: 33%;
+}
+
+/* Markdown 列：flex 仅作用于内层，保持 td 为 table-cell 以对齐表头网格线 */
+.prd-section__md-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65em;
+  min-width: 0;
+}
+
+.prd-section__cell--design img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+}
+
+.prd-section__md-inner p,
+.prd-section__md-inner ul,
+.prd-section__md-inner ol {
+  all: unset;
+  display: block;
+}
+
+.prd-section__md-inner ul,
+.prd-section__md-inner ol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  padding-left: 1.35em;
+}
+
+.prd-section__md-inner li {
+  all: unset;
+  display: list-item;
+}
+
+.prd-section__md-inner strong {
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.prd-section__md-inner a {
+  color: #1677ff;
+  text-decoration: none;
+}
+
+.prd-section__md-inner a:hover {
+  text-decoration: underline;
+}
+
+.prd-section__placeholder {
+  padding: 24px 12px;
+  text-align: center;
+  font-size: 12px;
+  color: #8c8c8c;
+  background: #fafafa;
+  border-radius: 4px;
+  border: 1px dashed #d9d9d9;
+}
+
+@media (max-width: 960px) {
+  .prd-section__cell--design,
+  .prd-section__cell--md {
+    width: 100%;
+  }
+}
