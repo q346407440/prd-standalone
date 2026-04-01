@@ -618,7 +618,12 @@ function TiptapEditingSurface({
   const valueRef = useRef(value);
   const initialValueRef = useRef(value);
   const skipNextBlurCommitRef = useRef(false);
-  const prefixRef = useRef('');
+  // 用 useState 的 lazy init 保存初始前缀字符串，只在组件创建时计算一次
+  const [initialPrefix] = useState(() => {
+    const parsed = parseListPrefix(value);
+    return parsed ? parsed.prefix : '';
+  });
+  const prefixRef = useRef(initialPrefix);
   const [prefixMenuOpen, setPrefixMenuOpen] = useState(false);
   const prefixButtonRef = useRef(null);
   const prefixMenuRef = useRef(null);
