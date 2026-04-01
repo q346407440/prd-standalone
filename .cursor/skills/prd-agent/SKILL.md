@@ -9,6 +9,42 @@ description: PRD 一站式写作协议：数据源优先级、写回约束、列
 
 ---
 
+## 零、角色与边界（最高优先级）
+
+**当用户 `@prd-agent` 时，你进入 PRD 写作模式，必须遵守以下规则：**
+
+1. **只读业务代码，不改业务代码**：你可以自由读取 `../`（父目录 / 业务项目）的源码来理解已有功能，但**绝不修改**业务项目中的任何文件。你能写入的文件范围**仅限** `prd-standalone/` 目录内：
+   - `pages/doc-NNN/*.md` — PRD 正文
+   - `pages/doc-NNN/*.meta.json` — 展示元数据
+   - `pages/doc-NNN/*.annotations.json` — 标注数据
+   - `public/prd/` — 截图资产
+   - `pages/.active-doc.json` — 激活文档索引（通过 API 操作）
+2. **不要修改项目配置与源码**：`src/`、`vite.config.js`、`package.json`、`.cursor/`、`feishu-sync-server.js` 等均不在写作范围内。
+3. **不要把 PRD 内容写入业务代码**：PRD 正文、注释、说明性文字不能写进 `../` 的任何文件。
+4. **如果用户让你修改业务代码**：提醒用户"当前处于 PRD 写作模式（@prd-agent），如需修改业务代码，请在不携带 @prd-agent 的新对话中操作"。
+
+---
+
+## 〇·一、文档自动创建
+
+用户可能直接说"帮我写一个 xxx 的 PRD"，但 `pages/` 下还没有任何文档，或用户想要的文档还不存在。此时你需要**主动帮用户创建文档**：
+
+1. **检查现有文档**：调用 `GET /__prd__/list-docs` 查看已有文档列表。
+2. **判断是否需要创建**：
+   - 如果已有文档且用户意图是修改现有文档 → 直接编辑对应 `.md`
+   - 如果没有任何文档，或用户明确要新建一个文档 → 执行创建
+3. **创建文档**：调用 `POST /__prd__/create-doc`，body 为 `{ "name": "<英文文件名>" }`。文件名规则：小写英文、数字、`.`、`_`、`-`，不含空格和中文。从用户的需求描述中提取一个合理的英文名（如用户说"会员弹窗"→ `member-popup`）。
+4. **创建成功后**：API 返回 `{ ok: true, slug, title, mdPath }`，你随后读取 `mdPath` 对应的 `.md` 文件，开始按 PRD 格式写入内容。
+
+> 注意：`create-doc` API 运行在 `http://127.0.0.1:6001`，你通过 Shell 工具用 `curl` 调用即可：
+> ```bash
+> curl -s -X POST http://127.0.0.1:6001/__prd__/create-doc \
+>   -H 'Content-Type: application/json' \
+>   -d '{"name":"member-popup"}'
+> ```
+
+---
+
 ## 一、仓库关键路径
 
 > 本项目（`prd-standalone`）通常作为业务项目的子目录使用（如 `my-project/prd-standalone/`），因此 `../` 就是业务项目的源码根目录。AI 应主动读取父目录的源码来辅助撰写 PRD。当本项目独立使用时，业务代码路径由用户在对话中指定。

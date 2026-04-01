@@ -6081,9 +6081,11 @@ function PrdToolbar({
   const [newDocName, setNewDocName] = useState('');
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState('');
+  const newDocComposingRef = useRef(false);
 
   // 重命名状态：{ slug, value, error, loading }
   const [renaming, setRenaming] = useState(null);
+  const renameComposingRef = useRef(false);
 
   // 导出离线包命名
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
@@ -6320,7 +6322,17 @@ function PrdToolbar({
                           ref={renameInputRef}
                           className="prd-toolbar__rename-input"
                           value={renaming.value}
-                          onChange={e => setRenaming(r => ({ ...r, value: normalizeProjectLikeName(e.target.value), error: '' }))}
+                          onChange={e => {
+                            const v = renameComposingRef.current
+                              ? e.target.value
+                              : normalizeProjectLikeName(e.target.value);
+                            setRenaming(r => ({ ...r, value: v, error: '' }));
+                          }}
+                          onCompositionStart={() => { renameComposingRef.current = true; }}
+                          onCompositionEnd={e => {
+                            renameComposingRef.current = false;
+                            setRenaming(r => ({ ...r, value: normalizeProjectLikeName(e.target.value), error: '' }));
+                          }}
                           onKeyDown={e => {
                             if (e.key === 'Enter') { e.preventDefault(); handleRenameDoc(); }
                             if (e.key === 'Escape') setRenaming(null);
@@ -6386,7 +6398,19 @@ function PrdToolbar({
                       className="prd-toolbar__switch-create-input"
                       placeholder="输入英文文件名…"
                       value={newDocName}
-                      onChange={e => { setNewDocName(normalizeProjectLikeName(e.target.value)); setCreateError(''); }}
+                      onChange={e => {
+                        const v = newDocComposingRef.current
+                          ? e.target.value
+                          : normalizeProjectLikeName(e.target.value);
+                        setNewDocName(v);
+                        setCreateError('');
+                      }}
+                      onCompositionStart={() => { newDocComposingRef.current = true; }}
+                      onCompositionEnd={e => {
+                        newDocComposingRef.current = false;
+                        setNewDocName(normalizeProjectLikeName(e.target.value));
+                        setCreateError('');
+                      }}
                       onKeyDown={e => {
                         if (e.key === 'Enter') handleCreateDoc();
                         if (e.key === 'Escape') { setCreating(false); setNewDocName(''); setCreateError(''); }

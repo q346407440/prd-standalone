@@ -481,17 +481,25 @@ function createPrdLiveSync() {
     watchedFiles.set(filePath, listener);
   }
 
+  function rewatchActiveDoc() {
+    for (const [fp, listener] of watchedFiles) {
+      fs.unwatchFile(fp, listener);
+    }
+    watchedFiles.clear();
+    const slug = readActiveDocSlug();
+    const mdFile = findDocMdFile(slug);
+    if (mdFile) watchFile(mdFile, { type: 'md-changed' });
+  }
+
   return {
     start() {
       if (started) return;
       started = true;
-      const slug = readActiveDocSlug();
-      const mdFile = findDocMdFile(slug);
-      if (mdFile) watchFile(mdFile, { type: 'md-changed' });
+      rewatchActiveDoc();
     },
     stop() {
-      for (const [filePath, listener] of watchedFiles) {
-        fs.unwatchFile(filePath, listener);
+      for (const [fp, listener] of watchedFiles) {
+        fs.unwatchFile(fp, listener);
       }
       watchedFiles.clear();
       for (const client of clients) {
@@ -500,6 +508,7 @@ function createPrdLiveSync() {
       clients.clear();
       started = false;
     },
+    rewatchActiveDoc,
     handleEvents(req, res) {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
@@ -530,14 +539,20 @@ function attachMiddleware(server, liveSync) {
       return;
     }
     if (pathOnly === API_CREATE_DOC && req.method === 'POST') {
+      const origEnd = res.end.bind(res);
+      res.end = (...args) => { origEnd(...args); liveSync.rewatchActiveDoc(); };
       createDocHandler(req, res);
       return;
     }
     if (pathOnly === API_SWITCH_DOC && req.method === 'POST') {
+      const origEnd = res.end.bind(res);
+      res.end = (...args) => { origEnd(...args); liveSync.rewatchActiveDoc(); };
       switchDocHandler(req, res);
       return;
     }
     if (pathOnly === API_RENAME_DOC && req.method === 'POST') {
+      const origEnd = res.end.bind(res);
+      res.end = (...args) => { origEnd(...args); liveSync.rewatchActiveDoc(); };
       renameDocHandler(req, res);
       return;
     }
