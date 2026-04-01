@@ -5292,19 +5292,17 @@ export function PrdPage() {
           continue;
         }
         try {
-          // 文档始终是唯一真相源；若磁盘版本已被外部更新，则拒绝用旧内存覆盖。
           const latestMd = await fetchPrdMd(activeMdPathRef.current);
           if (latestMd !== oldMd) {
-            hasExternalMdConflictRef.current = true;
+            lastSavedMdRef.current = latestMd;
             showToast({
               id: 'persist-status',
-              message: '检测到文档已被外部更新，请刷新后再继续编辑',
-              tone: 'error',
-              duration: 3200,
+              message: '检测到文档已被外部更新，正在合并保存…',
+              tone: 'warning',
+              duration: 1800,
             });
-            break;
           }
-          const removed = diffRemovedPrdPaths(oldMd, newMd);
+          const removed = diffRemovedPrdPaths(lastSavedMdRef.current, newMd);
           for (const p of removed) {
             await deletePrdImage(p).catch(() => {});
           }
@@ -5319,6 +5317,7 @@ export function PrdPage() {
             duration: 1800,
           });
         } catch {
+          hasPendingLocalChangesRef.current = false;
           showToast({
             id: 'persist-status',
             message: '保存失败（请确认 dev server 正在运行）',
@@ -5336,7 +5335,6 @@ export function PrdPage() {
 
   const schedulePersist = useCallback(() => {
     hasPendingLocalChangesRef.current = true;
-    if (hasExternalMdConflictRef.current) return;
     if (persistDebounceRef.current) clearTimeout(persistDebounceRef.current);
     persistDebounceRef.current = setTimeout(() => {
       persistDebounceRef.current = null;
@@ -5390,12 +5388,11 @@ export function PrdPage() {
     const source = new window.EventSource(PRD_EVENTS_API);
     const handleMdChanged = () => {
       if (hasPendingLocalChangesRef.current || persistRunningRef.current) {
-        hasExternalMdConflictRef.current = true;
         showToast({
           id: 'prd-live-sync',
-          message: '检测到文档已被外部更新，当前有未保存改动，请刷新后再继续编辑',
+          message: '检测到文档已被外部更新，当前编辑内容将在保存时覆盖',
           tone: 'warning',
-          duration: 3200,
+          duration: 2400,
         });
         return;
       }
