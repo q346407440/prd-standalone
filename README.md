@@ -90,12 +90,15 @@ bash start.sh
 
 ### 步骤 6：确认 Cursor 配置已生效
 
-`.cursor/` 目录包含 AI 写作配置，Cursor 打开 `prd-standalone/` 目录后自动加载：
+`.cursor/` 目录包含 AI 写作配置和 MCP 工具，Cursor 打开 `prd-standalone/` 目录后自动加载：
 
 - `.cursor/rules/prd-writing-guard.mdc` — PRD 格式守护（自动应用）
 - `.cursor/skills/prd-agent/SKILL.md` — PRD 写作协议
+- `.cursor/mcp.json` — Chrome DevTools MCP（用于截图和页面校验）
 
-**重要**：必须用 Cursor 打开 `prd-standalone/` 这个目录（而不是父目录），skills 和 rules 才会自动生效。
+**重要**：
+- 必须用 Cursor 打开 `prd-standalone/` 这个目录（而不是父目录），skills、rules 和 MCP 才会自动生效。
+- 首次加载 MCP 后，需要**完全退出并重启 Cursor** 才能识别到 Chrome DevTools MCP。重启后可在 Cursor Settings → MCP 中确认 `chrome-devtools` 状态为绿色。
 
 ### 步骤 7：验证
 
