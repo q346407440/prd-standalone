@@ -6,6 +6,35 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 cd "$PROJECT_DIR"
 
+# ── 0. Node.js 环境检查 ──────────────────────────────────────────────────────
+if ! command -v node &>/dev/null; then
+  echo ""
+  echo "============================================================"
+  echo "  [!] 未检测到 Node.js，请先安装"
+  echo ""
+  echo "  推荐使用 nvm 安装："
+  echo "    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash"
+  echo "    然后重开终端，运行: nvm install 22"
+  echo ""
+  echo "  安装完成后重新运行本脚本即可"
+  echo "============================================================"
+  echo ""
+  exit 1
+fi
+
+NODE_MAJOR="$(node -e 'console.log(process.versions.node.split(".")[0])')"
+if [ "$NODE_MAJOR" -lt 18 ] 2>/dev/null; then
+  echo ""
+  echo "============================================================"
+  echo "  [!] Node.js 版本过低 (当前: $(node --version)，要求 >= 18)"
+  echo "  推荐运行: nvm install 22 && nvm use 22"
+  echo "============================================================"
+  echo ""
+  exit 1
+fi
+
+echo "[check] Node.js $(node --version) ✓"
+
 # ── 1. 依赖安装 ──────────────────────────────────────────────────────────────
 if [ ! -d "node_modules" ]; then
   echo "[setup] node_modules 不存在，正在安装依赖..."

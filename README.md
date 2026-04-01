@@ -14,7 +14,38 @@ AI 辅助 PRD 写作工具，支持一键同步到飞书文档。
 
 > 当用户让你帮忙把这个项目跑起来时，严格按以下步骤操作。每一步都必须执行，不可跳过。
 
-### 步骤 1：定位项目目录
+### 步骤 1：确认 Node.js 环境
+
+运行以下命令检查是否已安装 Node.js：
+
+```bash
+node --version
+```
+
+- **如果命令不存在**（`command not found`）：需要先安装 Node.js。推荐使用 nvm（Node Version Manager）安装，按以下步骤操作：
+
+```bash
+# 1. 安装 nvm（如果没装过）
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+
+# 2. 让 nvm 立即可用（或重开终端）
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+# 3. 安装 Node.js v22（本项目开发使用的版本）
+nvm install 22
+
+# 4. 验证
+node --version   # 应输出 v22.x.x
+npm --version    # 应输出 10.x.x
+```
+
+- **如果版本低于 v18**：运行 `nvm install 22 && nvm use 22` 升级
+- **如果版本 >= v18**：满足要求，继续下一步（推荐 v22）
+
+> Vite 不需要单独安装，`npm install` 会自动安装到项目本地的 `node_modules/` 中。
+
+### 步骤 2：定位项目目录
 
 本项目（`prd-standalone`）可能是：
 - 某个业务项目的子目录（如 `~/some-project/prd-standalone/`）
@@ -22,14 +53,14 @@ AI 辅助 PRD 写作工具，支持一键同步到飞书文档。
 
 无论哪种情况，以下所有命令都在 `prd-standalone/` 目录下执行。
 
-### 步骤 2：安装依赖
+### 步骤 3：安装依赖
 
 ```bash
 cd <prd-standalone 所在的绝对路径>
 npm install
 ```
 
-### 步骤 3：配置环境变量
+### 步骤 4：配置环境变量
 
 检查 `prd-standalone/` 根目录是否存在 `.env.local` 文件：
 
@@ -47,7 +78,7 @@ FEISHU_REDIRECT_URI=http://127.0.0.1:6001/__prd__/feishu/auth/callback
 
 `FEISHU_BASE_URL` 和 `FEISHU_REDIRECT_URI` 保持默认值即可。
 
-### 步骤 4：启动项目
+### 步骤 5：启动项目
 
 ```bash
 bash start.sh
@@ -57,7 +88,7 @@ bash start.sh
 
 启动成功后终端会打印访问地址：`http://127.0.0.1:6001`
 
-### 步骤 5：确认 Cursor 配置已生效
+### 步骤 6：确认 Cursor 配置已生效
 
 `.cursor/` 目录包含 AI 写作配置，Cursor 打开 `prd-standalone/` 目录后自动加载：
 
@@ -66,7 +97,7 @@ bash start.sh
 
 **重要**：必须用 Cursor 打开 `prd-standalone/` 这个目录（而不是父目录），skills 和 rules 才会自动生效。
 
-### 步骤 6：验证
+### 步骤 7：验证
 
 浏览器打开 `http://127.0.0.1:6001`，应该能看到 PRD 编辑页面。
 
