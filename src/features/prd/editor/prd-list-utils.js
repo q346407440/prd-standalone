@@ -86,6 +86,27 @@ export function adjustOrderedMarkerAfterIndent(md) {
   return `${parsed.indent}${nextMarker} ${parsed.body}`;
 }
 
+/**
+ * 键盘快捷（Shift+7/8）在无序 / 有序列表间切换时保留行首缩进，与 Tab 缩进子列表一致。
+ * @param {'bullet' | 'ordered' | 'off'} target
+ */
+export function switchMarkdownListKind(fullMd, target) {
+  const parsed = parseListPrefix(fullMd ?? '');
+  const body = parsed ? (parsed.body ?? '') : (fullMd ?? '');
+  const indent = parsed?.indent ?? '';
+
+  if (target === 'off') {
+    return body;
+  }
+  if (target === 'bullet') {
+    return `${indent}- ${body}`;
+  }
+  if (target === 'ordered') {
+    return adjustOrderedMarkerAfterIndent(`${indent}1. ${body}`);
+  }
+  return fullMd ?? '';
+}
+
 export function inferListPrefix(md) {
   if (!md) return null;
   const parsed = parseListPrefix(md);

@@ -1,0 +1,705 @@
+/* ─── ImageRenderer ──────────────────────────────────────────────────────── */
+
+.prd-image-renderer {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  border-radius: 6px;
+  outline: none;
+}
+
+.prd-image-renderer--selected .prd-image-renderer__img-wrap {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+  border-radius: 5px;
+}
+
+/* img-wrap 包裹图片 + handles，宽度跟随图片 */
+.prd-image-renderer__img-wrap {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+  border-radius: 5px;
+}
+
+.prd-image-renderer__img {
+  display: block;
+  max-width: 100%;
+  border-radius: 5px;
+}
+
+.prd-image-renderer__uploading {
+  padding: 12px 16px;
+  font-size: 12px;
+  color: #aaa;
+  font-style: italic;
+}
+
+.prd-image-renderer__loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  font-size: 12px;
+  color: #999;
+  background: #f8f9fb;
+  border-radius: 5px;
+  border: 1px dashed #ddd;
+  min-height: 60px;
+}
+
+.prd-image-renderer__loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e0e0e0;
+  border-top-color: #1677ff;
+  border-radius: 50%;
+  animation: prd-img-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes prd-img-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── 四角 resize handle ── */
+.prd-image-renderer__handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 2px solid #1677ff;
+  border-radius: 2px;
+  z-index: 10;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+}
+
+.prd-image-renderer__handle--nw { top: -5px;    left: -5px;    cursor: nw-resize; }
+.prd-image-renderer__handle--ne { top: -5px;    right: -5px;   cursor: ne-resize; }
+.prd-image-renderer__handle--sw { bottom: -5px; left: -5px;    cursor: sw-resize; }
+.prd-image-renderer__handle--se { bottom: -5px; right: -5px;   cursor: se-resize; }
+
+/* ── 選中時右上角刪除按鈕 ── */
+.prd-image-renderer__overlay-toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  left: 8px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  row-gap: 6px;
+}
+
+/* 带文字的「标注(n)」：勿与图标按钮共用 30px 固定宽，否则会文字溢出选区 */
+.prd-image-renderer__overlay-label {
+  min-height: 30px;
+  padding: 0 10px;
+  width: auto;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.prd-image-renderer__overlay-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.prd-image-renderer__overlay-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.prd-image-renderer__overlay-toolbar .prd-action-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.prd-image-renderer__overlay-toolbar .prd-action-btn:disabled:hover {
+  color: #4c5a72;
+  background: #fff;
+  border-color: #d7deea;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+/* ─── Lightbox（通用：图片 / Mermaid 共用） ──────────────────────────────── */
+
+.prd-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: default;
+  animation: prd-lightbox-in 0.15s ease;
+}
+
+.prd-lightbox--enhanced {
+  overflow: hidden;
+  cursor: default;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes prd-lightbox-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.prd-lightbox-content {
+  transform-origin: center center;
+  user-select: none;
+  pointer-events: auto;
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+}
+
+.prd-lightbox-content__img {
+  display: block;
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+}
+
+.prd-lightbox-content__html {
+  width: 80vw;
+}
+
+.prd-lightbox-content__html svg {
+  display: block;
+}
+
+.prd-lightbox-controls {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  background: rgba(30, 30, 30, 0.88);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.prd-lightbox-controls__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 14px;
+  color: #ddd;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.prd-lightbox-controls__btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.prd-lightbox-controls__close {
+  margin-left: 6px;
+  color: #ff8a8a;
+}
+
+.prd-lightbox-controls__close:hover {
+  background: rgba(255, 100, 100, 0.2);
+  color: #ff5555;
+}
+
+.prd-lightbox-controls__preset {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 7px;
+  font-size: 12px;
+  color: #999;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.prd-lightbox-controls__preset:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ccc;
+}
+
+.prd-lightbox-controls__preset--active {
+  color: #6cb8ff;
+  font-weight: 600;
+}
+
+.prd-lightbox-controls__input {
+  width: 38px;
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  outline: none;
+  font-family: inherit;
+}
+
+.prd-lightbox-controls__input:focus {
+  border-color: rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.prd-lightbox-controls__input-suffix {
+  font-size: 12px;
+  color: #ccc;
+  margin-left: -2px;
+  user-select: none;
+}
+
+.prd-lightbox-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.prd-lightbox-loading__spinner {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.2);
+  border-top-color: rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  animation: prd-lightbox-spin 0.7s linear infinite;
+}
+
+@keyframes prd-lightbox-spin {
+  to { transform: rotate(360deg); }
+}
+
+
+/* ─── MermaidRenderer ────────────────────────────────────────────────────── */
+
+.prd-mermaid-renderer {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  min-width: 200px;
+  border: 1px solid #e0e4ea;
+  border-radius: 6px;
+  background: #fafbfc;
+  outline: none;
+}
+
+.prd-block-mermaid {
+  padding: 0;
+}
+
+/* 表格 cell 内的 mermaid：铺满 cell 宽度 */
+.prd-cell-mermaid-wrap {
+  width: 100%;
+}
+
+.prd-cell-mermaid-wrap .prd-mermaid-renderer {
+  display: block;
+  width: 100%;
+}
+
+.prd-mermaid-renderer__toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+}
+
+.prd-mermaid-renderer__view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #4c5a72;
+  background: #fff;
+  border: 1px solid #d7deea;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.prd-mermaid-renderer__view-btn:hover {
+  background: #f5f6f8;
+  border-color: #b8c1d0;
+}
+
+.prd-mermaid-renderer__view-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 130px;
+  background: #fff;
+  border: 1px solid #d7deea;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+  z-index: 10;
+  padding: 4px 0;
+}
+
+.prd-mermaid-renderer__view-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #333;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.prd-mermaid-renderer__view-menu-item:hover {
+  background: #f0f4ff;
+}
+
+.prd-mermaid-renderer__view-menu-item--active {
+  color: #1677ff;
+  font-weight: 500;
+}
+
+/* 代码视图 */
+.prd-mermaid-renderer__code-area {
+  display: flex;
+  min-height: 60px;
+}
+
+.prd-mermaid-renderer__line-numbers {
+  flex: 0 0 auto;
+  padding: 12px 0 12px 12px;
+  text-align: right;
+  user-select: none;
+  color: #b0b8c8;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+}
+
+.prd-mermaid-renderer__line-number {
+  padding-right: 10px;
+  min-width: 20px;
+}
+
+.prd-mermaid-renderer__textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 12px 12px 4px;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  color: #333;
+  tab-size: 2;
+  overflow: hidden;
+}
+
+/* 图表视图 */
+.prd-mermaid-renderer__chart-area {
+  padding: 16px;
+  min-height: 60px;
+  overflow: auto;
+}
+
+.prd-mermaid-renderer__svg-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-height: 60px;
+}
+
+.prd-mermaid-renderer__svg-wrap svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.prd-mermaid-renderer__svg-canvas {
+  width: 100%;
+}
+
+.prd-mermaid-renderer__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #e53e3e;
+  background: #fff5f5;
+  border-radius: 4px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.prd-mermaid-renderer__empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: #aaa;
+  font-style: italic;
+}
+
+/* 四角缩放 handle */
+.prd-mermaid-renderer__handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 2px solid #1677ff;
+  border-radius: 50%;
+  z-index: 5;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+}
+
+.prd-mermaid-renderer__handle--nw { top: -5px;    left: -5px;    cursor: nw-resize; }
+.prd-mermaid-renderer__handle--ne { top: -5px;    right: -5px;   cursor: ne-resize; }
+.prd-mermaid-renderer__handle--sw { bottom: -5px; left: -5px;    cursor: sw-resize; }
+.prd-mermaid-renderer__handle--se { bottom: -5px; right: -5px;   cursor: se-resize; }
+
+/* ─── Mindmap Renderer ───────────────────────────────────────────────────── */
+
+.prd-mindmap-renderer {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  min-width: 200px;
+  border: 1px solid #e0e4ea;
+  border-radius: 6px;
+  background: #fafbfc;
+  outline: none;
+}
+
+.prd-block-mindmap {
+  padding: 0;
+}
+
+.prd-cell-mindmap-wrap {
+  width: 100%;
+}
+
+.prd-cell-mindmap-wrap .prd-mindmap-renderer {
+  display: block;
+  width: 100%;
+}
+
+.prd-mindmap-renderer__toolbar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+}
+
+.prd-mindmap-renderer__view-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #4c5a72;
+  background: #fff;
+  border: 1px solid #d7deea;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+
+.prd-mindmap-renderer__view-btn:hover {
+  background: #f5f6f8;
+  border-color: #b8c1d0;
+}
+
+.prd-mindmap-renderer__view-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 130px;
+  background: #fff;
+  border: 1px solid #d7deea;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+  z-index: 10;
+  padding: 4px 0;
+}
+
+.prd-mindmap-renderer__view-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #333;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.prd-mindmap-renderer__view-menu-item:hover {
+  background: #f0f4ff;
+}
+
+.prd-mindmap-renderer__view-menu-item--active {
+  color: #1677ff;
+  font-weight: 500;
+}
+
+.prd-mindmap-renderer__code-area {
+  display: flex;
+  min-height: 60px;
+}
+
+.prd-mindmap-renderer__line-numbers {
+  flex: 0 0 auto;
+  padding: 12px 0 12px 12px;
+  text-align: right;
+  user-select: none;
+  color: #b0b8c8;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+}
+
+.prd-mindmap-renderer__line-number {
+  padding-right: 10px;
+  min-width: 20px;
+}
+
+.prd-mindmap-renderer__textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 12px 12px 4px;
+  border: none;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-size: 13px;
+  line-height: 1.6;
+  font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  color: #333;
+  tab-size: 2;
+  overflow: hidden;
+}
+
+.prd-mindmap-renderer__chart-area {
+  padding: 16px;
+  min-height: 60px;
+  overflow: auto;
+}
+
+.prd-mindmap-renderer__svg-wrap {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-height: 60px;
+}
+
+.prd-mindmap-renderer__svg-wrap svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.prd-diagram-surface__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  pointer-events: none;
+}
+
+.prd-diagram-surface__empty {
+  text-align: center;
+  font-size: 13px;
+  color: #aaa;
+  font-style: italic;
+}
+
+.prd-diagram-surface__badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  padding: 4px 8px;
+  font-size: 12px;
+  line-height: 1;
+  color: #667085;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #e4e7ec;
+  border-radius: 999px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  pointer-events: none;
+}
+
+.prd-mindmap-renderer__error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: #e53e3e;
+  background: #fff5f5;
+  border-radius: 4px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.prd-mindmap-renderer__empty {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: #aaa;
+  font-style: italic;
+}
+
+.prd-mindmap-renderer__handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #fff;
+  border: 2px solid #1677ff;
+  border-radius: 50%;
+  z-index: 5;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+}
+
+.prd-mindmap-renderer__handle--nw { top: -5px;    left: -5px;    cursor: nw-resize; }
+.prd-mindmap-renderer__handle--ne { top: -5px;    right: -5px;   cursor: ne-resize; }
+.prd-mindmap-renderer__handle--sw { bottom: -5px; left: -5px;    cursor: sw-resize; }
+.prd-mindmap-renderer__handle--se { bottom: -5px; right: -5px;   cursor: se-resize; }

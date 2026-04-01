@@ -21,6 +21,7 @@ import {
   inferListPrefix,
   numToAlphaMarker,
   parseListPrefix,
+  switchMarkdownListKind,
 } from './prd-list-utils.js';
 
 const md = markdownit({ html: false, linkify: false, breaks: false });
@@ -43,6 +44,12 @@ function getShortcutBlockLevel(e) {
   if (e.key === '0') return 'paragraph';
   if (/^[1-7]$/.test(e.key)) return `h${e.key}`;
   return null;
+}
+
+function matchesShiftDigitShortcut(e, digit) {
+  return e.shiftKey
+    && (e.metaKey || e.ctrlKey)
+    && (e.code === `Digit${digit}` || e.key === String(digit));
 }
 
 // ─── 通用工具 ──────────────────────────────────────────────────────────────
@@ -617,6 +624,9 @@ function TiptapEditingSurface({
 }) {
   const valueRef = useRef(value);
   const initialValueRef = useRef(value);
+  useEffect(() => {
+    initialValueRef.current = value;
+  }, [value]);
   const skipNextBlurCommitRef = useRef(false);
   // 用 useState 的 lazy init 保存初始前缀字符串，只在组件创建时计算一次
   const [initialPrefix] = useState(() => {
@@ -725,9 +735,9 @@ function TiptapEditingSurface({
             if (prefixRef.current) {
               event.preventDefault();
               prefixRef.current = '';
-              onSaveRef.current?.('');
               valueRefInternal.current = '';
               forceUpdateRef.current?.();
+              onSaveRef.current?.('');
               return true;
             }
             if (callbacksRef.current.onBackspaceEmpty) {
@@ -793,27 +803,33 @@ function TiptapEditingSurface({
 
   useEffect(() => { commitAndExitRef.current = commitAndExit; }, [commitAndExit]);
 
+  const onInitialCaretConsumedRef = useRef(onInitialCaretOffsetConsumed);
+  useEffect(() => {
+    onInitialCaretConsumedRef.current = onInitialCaretOffsetConsumed;
+  }, [onInitialCaretOffsetConsumed]);
+
   useEffect(() => {
     if (!editor) return;
-    const parsed = parseListPrefix(initialValueRef.current);
+    const md = initialValueRef.current;
+    const parsed = parseListPrefix(md);
     if (parsed) {
       prefixRef.current = parsed.prefix;
       editor.commands.setContent(parsed.body || '');
     } else {
       prefixRef.current = '';
-      editor.commands.setContent(initialValueRef.current || '');
+      editor.commands.setContent(md || '');
     }
     requestAnimationFrame(() => {
       editor.commands.focus();
       if (initialCaretOffset != null) {
         const pos = getProseMirrorPosFromTextOffset(editor.state.doc, initialCaretOffset);
         editor.commands.setTextSelection(pos);
-        onInitialCaretOffsetConsumed?.();
+        onInitialCaretConsumedRef.current?.();
       } else {
         editor.commands.focus('end');
       }
     });
-  }, [editor, initialCaretOffset, onInitialCaretOffsetConsumed]);
+  }, [editor, initialCaretOffset]);
 
   const [, forceUpdate] = useState(0);
   useEffect(() => { forceUpdateRef.current = () => forceUpdate((n) => n + 1); });
@@ -882,7 +898,6 @@ function TiptapEditingSurface({
   ), [editor]);
 
   const handleWrapperKeyDown = useCallback((e) => {
-    const isMeta = e.metaKey || e.ctrlKey;
     const shortcutLevel = getShortcutBlockLevel(e);
 
     if (shortcutLevel && onBlockLevelChange) {
@@ -892,25 +907,27 @@ function TiptapEditingSurface({
       return;
     }
 
-    if (isMeta && e.shiftKey && e.key === '8') {
+    if (matchesShiftDigitShortcut(e, 8)) {
       e.preventDefault();
       e.stopPropagation();
-      if (prefixRef.current && /[-*+]\s$/.test(prefixRef.current)) {
-        updatePrefix('');
-      } else {
-        updatePrefix('- ');
-      }
+      const fullMd = getCurrentMarkdown();
+      const parsed = parseListPrefix(fullMd);
+      const next = parsed && /^[-*+]$/.test(parsed.marker)
+        ? switchMarkdownListKind(fullMd, 'off')
+        : switchMarkdownListKind(fullMd, 'bullet');
+      applyMarkdownValue(next);
       return;
     }
 
-    if (isMeta && e.shiftKey && e.key === '7') {
+    if (matchesShiftDigitShortcut(e, 7)) {
       e.preventDefault();
       e.stopPropagation();
-      if (prefixRef.current && /(\d+|[a-z]+)\.\s$/.test(prefixRef.current)) {
-        updatePrefix('');
-      } else {
-        updatePrefix('1. ');
-      }
+      const fullMd = getCurrentMarkdown();
+      const parsed = parseListPrefix(fullMd);
+      const next = parsed && /^(\d+\.|[a-z]+\.)$/.test(parsed.marker)
+        ? switchMarkdownListKind(fullMd, 'off')
+        : switchMarkdownListKind(fullMd, 'ordered');
+      applyMarkdownValue(next);
       return;
     }
 
@@ -931,7 +948,7 @@ function TiptapEditingSurface({
       const newMd = adjustOrderedMarkerAfterIndent(indentMarkdown(fullMd));
       applyMarkdownValue(newMd);
     }
-  }, [editor, updatePrefix, onBlockLevelChange, getCurrentMarkdown, applyMarkdownValue]);
+  }, [editor, onBlockLevelChange, getCurrentMarkdown, applyMarkdownValue]);
 
   return (
     <div
@@ -1019,6 +1036,10 @@ export function TiptapMarkdownEditor({
     setEditing(false);
   }, []);
 
+  const handleInitialCaretOffsetConsumed = useCallback(() => {
+    pendingPreviewCaretOffsetRef.current = null;
+  }, []);
+
   const paragraphPreviewSelected =
     blockId
     && globalSelection?.type === 'text-block'
@@ -1053,6 +1074,13 @@ export function TiptapMarkdownEditor({
     })();
   }, [onPasteImageAsBlock, onReplaceWithImage]);
 
+  const handlePreviewKeyDown = useCallback((e) => {
+    if (e.key === 'Backspace' && !valueRef.current && onBackspaceEmpty) {
+      e.preventDefault();
+      onBackspaceEmpty();
+    }
+  }, [onBackspaceEmpty]);
+
   if (!editing) {
     return (
       <div
@@ -1073,6 +1101,7 @@ export function TiptapMarkdownEditor({
           );
         }}
         onClick={() => setEditing(true)}
+        onKeyDown={handlePreviewKeyDown}
         onPaste={handlePreviewPaste}
       >
         {value ? (
@@ -1105,7 +1134,7 @@ export function TiptapMarkdownEditor({
       onPrefixManualChange={onPrefixManualChange}
       onResetOrderedStart={onResetOrderedStart}
       initialCaretOffset={pendingPreviewCaretOffsetRef.current}
-      onInitialCaretOffsetConsumed={() => { pendingPreviewCaretOffsetRef.current = null; }}
+      onInitialCaretOffsetConsumed={handleInitialCaretOffsetConsumed}
       onClose={handleFinishEditing}
     />
   );

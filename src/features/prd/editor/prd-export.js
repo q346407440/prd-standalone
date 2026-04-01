@@ -3,7 +3,12 @@ import markdownit from 'markdown-it';
 import { parseListPrefix } from './prd-list-utils.js';
 import { serializePrd } from './prd-writer.js';
 import prdCssRaw from './styles/prd.css?raw';
-import prdPageEditCssRaw from './styles/prd-page-edit.css?raw';
+import prdEditableCssRaw from './styles/prd-editable.css?raw';
+import prdTableEditCssRaw from './styles/prd-table-edit.css?raw';
+import prdBlocksCssRaw from './styles/prd-blocks.css?raw';
+import prdRenderersCssRaw from './styles/prd-renderers.css?raw';
+import prdModalsCssRaw from './styles/prd-modals.css?raw';
+import prdPageLayoutCssRaw from './styles/prd-page-layout.css?raw';
 import prdTableCssRaw from '../../../shared/styles/prd-table.css?raw';
 import prdSectionCssRaw from '../../../shared/styles/prd-section.css?raw';
 
@@ -20,7 +25,12 @@ const PROJECT_EXPORT_CSS = [
   prdTableCssRaw,
   prdSectionCssRaw,
   prdCssRaw,
-  prdPageEditCssRaw,
+  prdEditableCssRaw,
+  prdTableEditCssRaw,
+  prdBlocksCssRaw,
+  prdRenderersCssRaw,
+  prdModalsCssRaw,
+  prdPageLayoutCssRaw,
 ].join('\n');
 
 function escapeHtml(value) {

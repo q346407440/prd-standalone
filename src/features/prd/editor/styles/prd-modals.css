@@ -1,0 +1,234 @@
+/* ─── 刪除確認彈窗 ───────────────────────────────────────────────────────── */
+
+.prd-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prd-modal {
+  background: #fff;
+  border-radius: 10px;
+  padding: 28px 32px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 300px;
+  max-width: 420px;
+}
+
+.prd-modal--form {
+  min-width: 420px;
+}
+
+.prd-modal__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.prd-modal__title {
+  font-size: 16px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.prd-modal__desc {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.prd-modal__field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.prd-modal__label {
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: #334155;
+}
+
+.prd-modal__input {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  border: 1.5px solid #c7d5e8;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1f2937;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.prd-modal__input:focus {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+}
+
+.prd-modal__input::placeholder {
+  color: #b0bac8;
+}
+
+.prd-modal__hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.prd-modal__error {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #dc2626;
+}
+
+.prd-modal__text {
+  all: unset;
+  display: block;
+  font-size: 15px;
+  line-height: 1.6;
+  color: #333;
+}
+
+.prd-modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.prd-modal__btn {
+  all: unset;
+  cursor: pointer;
+  padding: 7px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+
+.prd-modal__btn--cancel {
+  background: #f5f5f5;
+  color: #555;
+}
+
+.prd-modal__btn--cancel:hover { background: #e8e8e8; }
+
+.prd-modal__btn--confirm {
+  background: #ff4d4f;
+  color: #fff;
+}
+
+.prd-modal__btn--confirm:hover { background: #d9363e; }
+
+.prd-modal__btn--primary {
+  background: #1677ff;
+  color: #fff;
+}
+
+.prd-modal__btn--primary:hover {
+  background: #0958d9;
+}
+
+.prd-modal__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ─── Toast ──────────────────────────────────────────────────────────────── */
+
+.prd-toast-viewport {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.prd-toast {
+  width: fit-content;
+  max-width: min(560px, calc(100vw - 32px));
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: #ffffff;
+  color: #1f2937;
+  box-shadow:
+    0 10px 24px rgba(15, 23, 42, 0.14),
+    0 2px 8px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  transform: translateY(-14px) scale(0.98);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.prd-toast--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.prd-toast--hidden {
+  opacity: 0;
+  transform: translateY(-16px) scale(0.98);
+}
+
+.prd-toast__icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.prd-toast__text {
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.prd-toast--success {
+  border-color: #b7ebc6;
+  background: linear-gradient(180deg, #f6ffed 0%, #edf9e8 100%);
+  color: #135200;
+}
+
+.prd-toast--success .prd-toast__icon {
+  color: #389e0d;
+}
+
+.prd-toast--warning {
+  border-color: #ffe58f;
+  background: linear-gradient(180deg, #fffbe6 0%, #fff4d6 100%);
+  color: #874d00;
+}
+
+.prd-toast--warning .prd-toast__icon {
+  color: #d48806;
+}
+
+.prd-toast--error {
+  border-color: #ffccc7;
+  background: linear-gradient(180deg, #fff2f0 0%, #ffe7e3 100%);
+  color: #a8071a;
+}
+
+.prd-toast--error .prd-toast__icon {
+  color: #cf1322;
+}

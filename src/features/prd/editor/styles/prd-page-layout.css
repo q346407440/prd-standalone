@@ -1,0 +1,13 @@
+/* ─── 載入 / 錯誤狀態 ────────────────────────────────────────────────────── */
+
+.prd-page__loading,
+.prd-page__error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  font-size: 15px;
+  color: #888;
+}
+
+.prd-page__error { color: #d4380d; }

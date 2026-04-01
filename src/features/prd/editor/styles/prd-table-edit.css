@@ -1,0 +1,510 @@
+/* ─── Table cell controls & states ────────────────────────────────────────── */
+
+.prd-table td {
+  position: relative;
+}
+
+.prd-table-cell-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+
+.prd-table-cell-change-intent {
+  min-width: 58px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.16s, color 0.16s, background 0.16s;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.prd-table td:hover .prd-table-cell-controls,
+.prd-table-cell--unchanged .prd-table-cell-controls,
+.prd-table-cell--pending-confirm .prd-table-cell-controls {
+  opacity: 1;
+}
+
+.prd-table-cell-change-intent--active {
+  color: #7c2d12;
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.prd-table-cell--unchanged {
+  padding-top: 40px;
+  background: linear-gradient(0deg, rgba(255, 247, 237, 0.72), rgba(255, 247, 237, 0.72));
+}
+
+.prd-table-cell--pending-confirm {
+  padding-top: 40px;
+  box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.16);
+}
+
+.prd-table-cell-pending-confirm {
+  position: relative;
+}
+
+.prd-table-cell-pending-confirm__tag {
+  min-width: 58px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.16s, color 0.16s, background 0.16s;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.prd-table-cell-pending-confirm__tag--active {
+  color: #b42318;
+  border-color: #fda29b;
+  background: #fff1f3;
+}
+
+.prd-table-cell-note-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 12;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #f3b7bd;
+  border-radius: 10px;
+  background: #fff7f8;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+}
+
+.prd-table-cell-note-popover--above {
+  top: auto;
+  bottom: calc(100% + 8px);
+}
+
+.prd-table-cell-note-popover--align-left {
+  right: auto;
+  left: 0;
+}
+
+.prd-table-cell-note-popover__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #b42318;
+}
+
+.prd-table-cell-note-popover__textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 96px;
+  padding: 8px 10px;
+  border: 1px solid #f3c4c9;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.6;
+  outline: none;
+}
+
+.prd-table-cell-note-popover__textarea:focus {
+  border-color: #f97066;
+  box-shadow: 0 0 0 3px rgba(249, 112, 102, 0.16);
+}
+
+.prd-table-cell-note-popover__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ─── TableBlock 新 hover handle 交互 ───────────────────────────────────── */
+
+.prd-block-table { display: flex; flex-direction: column; gap: 8px; }
+
+/* 外层容器需要 relative 以便绝对定位 handle，overflow 必须 visible 否则绝对定位元素会被裁剪 */
+.prd-block-table__wrap {
+  position: relative;
+  overflow: visible !important;
+}
+
+/* th 保持静态；td 需要相对定位，供单元格右上角操作按钮定位 */
+.prd-block-table__wrap .prd-table th {
+  position: static;
+  z-index: auto;
+}
+
+.prd-block-table__wrap .prd-table td {
+  position: relative;
+  z-index: auto;
+}
+
+/* ── 行/列 选中高亮（只有点击 bar 后才变色） ── */
+.prd-table-row--selected td,
+.prd-table-row--selected th {
+  background: #eef3ff !important;
+}
+
+.prd-table-col--selected {
+  background: #eef3ff !important;
+}
+
+/* ── 列顶部 selector bar：默认隐藏，wrap hover 时显示 ── */
+.prd-table-col-bar {
+  position: absolute;
+  top: -8px;
+  height: 7px;
+  border-radius: 3px 3px 0 0;
+  background: #d0d9f0;
+  cursor: pointer;
+  z-index: 40;
+  opacity: 0;
+  pointer-events: none;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+/* 无全局表格选中时：显示 hover bars（由 JS 延迟控制显示/隐藏） */
+.prd-block-table__wrap--show-bars:not(.prd-block-table__wrap--has-selection):not(.prd-block-table__wrap--foreign-selection) .prd-table-col-bar,
+.prd-block-table__wrap--show-bars:not(.prd-block-table__wrap--has-selection):not(.prd-block-table__wrap--foreign-selection) .prd-table-row-bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.prd-table-col-bar:hover {
+  background: #4a90e2;
+}
+
+.prd-table-col-bar--selected {
+  background: #1677ff !important;
+  opacity: 1 !important;
+}
+
+/* ── 行左侧 selector bar：默认隐藏，wrap hover 时显示 ── */
+.prd-table-row-bar {
+  position: absolute;
+  left: -8px;
+  width: 7px;
+  border-radius: 2px 0 0 2px;
+  background: #d0d9f0;
+  cursor: pointer;
+  z-index: 40;
+  opacity: 0;
+  pointer-events: none;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.prd-table-row-bar:hover {
+  background: #4a90e2;
+}
+
+.prd-table-row-bar--selected {
+  background: #1677ff !important;
+  opacity: 1 !important;
+}
+
+/* 本表处于列/行选中态时：仅选中 bar 可见可点，其余 bar 不出现 hover */
+.prd-block-table__wrap--has-selection:hover .prd-table-col-bar:not(.prd-table-col-bar--selected),
+.prd-block-table__wrap--has-selection:hover .prd-table-row-bar:not(.prd-table-row-bar--selected) {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.prd-block-table__wrap--has-selection .prd-table-col-bar--selected,
+.prd-block-table__wrap--has-selection .prd-table-row-bar--selected {
+  opacity: 1 !important;
+  pointer-events: auto;
+}
+
+/* 其他表已选中时：本表全部 bar 隐藏且不响应指针 */
+.prd-block-table__wrap--foreign-selection .prd-table-col-bar,
+.prd-block-table__wrap--foreign-selection .prd-table-row-bar {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+/* ── 选中列/行后的操作（与 Block actionbar 一致：无白底卡片，仅 prd-action-btn 分段） ── */
+.prd-table-selector-actions {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  z-index: 80;
+  white-space: nowrap;
+}
+
+.prd-table-selector-actions--col {
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.prd-table-selector-actions--col--flip-v {
+  top: auto;
+  bottom: calc(100% + 6px);
+}
+
+.prd-table-selector-actions--row {
+  left: calc(100% + 6px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.prd-table-selector-actions--row--flip-h {
+  left: auto;
+  right: calc(100% + 6px);
+}
+
+.prd-table-selector-actions .prd-action-btn {
+  user-select: none;
+}
+
+
+/* 列插入 handle（蓝色竖线 + 圆形＋按钮） */
+.prd-table-col-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+
+.prd-table-col-handle__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: #1677ff;
+  transform: translateX(-50%);
+}
+
+/* 行插入 handle（蓝色横线 + 圆形＋按钮） */
+.prd-table-row-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+
+.prd-table-row-handle__line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  background: #1677ff;
+  transform: translateY(-50%);
+}
+
+/* 通用圆形＋按钮 */
+.prd-table-handle__btn {
+  all: unset;
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #1677ff;
+  color: #fff;
+  font-size: 16px;
+  line-height: 22px;
+  text-align: center;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.4);
+  transition: background 0.15s, transform 0.15s;
+  z-index: 61;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prd-table-handle__btn:hover {
+  background: #0958d9;
+  transform: scale(1.15);
+}
+
+/* 列 handle 按钮定位：顶部居中 */
+.prd-table-col-handle .prd-table-handle__btn {
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.prd-table-col-handle .prd-table-handle__btn:hover {
+  transform: translateX(-50%) scale(1.15);
+}
+
+/* 行 handle 按钮定位：左侧居中 */
+.prd-table-row-handle .prd-table-handle__btn {
+  left: -11px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.prd-table-row-handle .prd-table-handle__btn:hover {
+  transform: translateY(-50%) scale(1.15);
+}
+
+/* tooltip 通过 title 属性原生实现，这里补充一个自定义 tooltip 样式 */
+.prd-table-handle__btn::after {
+  content: attr(title);
+  position: absolute;
+  top: -28px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.prd-table-handle__btn:hover::after {
+  opacity: 1;
+}
+
+/* ─── CellRenderer ───────────────────────────────────────────────────────── */
+
+.prd-cell-renderer {
+  min-height: 32px;
+}
+
+.prd-cell-element {
+  position: relative;
+  overflow: visible;
+}
+
+/* 透明热区桥：与主文档 .prd-block-item::after 一致。action 条用 translateY(100%+6px) 露在格下方，
+   鼠标经间隙时否则会触发 onMouseLeave，比主文档更早关掉 hover 条。 */
+.prd-cell-element::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  transform: translateY(100%);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.prd-cell-element:hover::after,
+.prd-cell-element--action-active::after {
+  pointer-events: auto;
+}
+
+.prd-cell-element--action-active {
+  z-index: 7;
+}
+
+.prd-cell-element__actions {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: 6;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(100% + 6px));
+}
+
+.prd-cell-element__actions.prd-action-panel--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.prd-cell-element__action-btn {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+/* ─── 上传提示（通用）───────────────────────────────────────────────────── */
+
+.prd-pastable-cell__hint {
+  font-size: 12px;
+  color: #aaa;
+  font-style: italic;
+  padding: 8px 4px;
+}
+
+/* ─── CellElement 插入菜单 ───────────────────────────────────────────────── */
+
+.prd-cell-element__insert-wrap {
+  position: relative;
+  display: inline-block;
+}
+
+.prd-cell-element__insert-menu {
+  position: absolute;
+  left: 0;
+  min-width: 120px;
+  background: #fff;
+  border: 1px solid #d7deea;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.10);
+  z-index: 20;
+  padding: 4px 0;
+}
+
+.prd-cell-element__insert-menu--above {
+  bottom: calc(100% + 4px);
+}
+
+.prd-cell-element__insert-menu--below {
+  top: calc(100% + 4px);
+}
+
+.prd-cell-element__insert-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #333;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.prd-cell-element__insert-menu-item:hover {
+  background: #f0f4ff;
+}

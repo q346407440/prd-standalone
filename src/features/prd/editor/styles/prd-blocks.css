@@ -1,0 +1,384 @@
+/* ─── Block Item 容器 ────────────────────────────────────────────────────── */
+
+.prd-block-item {
+  position: relative;
+  border-radius: 6px;
+  transition: background 0.1s;
+  overflow: visible;
+}
+
+.prd-block-item--action-active {
+  z-index: 80;
+}
+
+.prd-block-item:focus-within {
+}
+
+.prd-block-content {
+  padding: 2px 0;
+}
+
+/* ─── Block 下方浮层 actionbar ───────────────────────────────────────────── */
+
+.prd-action-panel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, transform 0.15s;
+  white-space: nowrap;
+}
+
+.prd-action-panel--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.prd-action-btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  color: #4c5a72;
+  padding: 5px 10px;
+  background: #fff;
+  border: 1px solid #d7deea;
+  border-radius: 6px;
+  line-height: 1.4;
+  transition: color 0.12s, background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  white-space: nowrap;
+}
+
+.prd-action-btn svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+  flex-shrink: 0;
+}
+
+.prd-action-btn:hover {
+  color: #1677ff;
+  background: #f5f9ff;
+  border-color: #aac9ff;
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.12);
+}
+
+.prd-action-btn--active {
+  color: #fff;
+  background: #1677ff;
+  border-color: #1677ff;
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.2);
+}
+
+.prd-action-btn--active:hover {
+  color: #fff;
+  background: #4096ff;
+  border-color: #4096ff;
+}
+
+.prd-action-btn--bold {
+  font-weight: 700;
+}
+
+.prd-action-btn--icon {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+}
+
+.prd-action-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 0;
+}
+
+.prd-action-select__label {
+  font-size: 11px;
+  color: #6b7280;
+  user-select: none;
+}
+
+.prd-action-select {
+  appearance: none;
+  min-width: 88px;
+  height: 34px;
+  padding: 0 28px 0 10px;
+  border: 1px solid #d7deea;
+  border-radius: 6px;
+  background:
+    linear-gradient(45deg, transparent 50%, #64748b 50%) calc(100% - 14px) calc(50% - 1px) / 6px 6px no-repeat,
+    linear-gradient(135deg, #64748b 50%, transparent 50%) calc(100% - 10px) calc(50% - 1px) / 6px 6px no-repeat,
+    #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.4;
+  outline: none;
+  cursor: pointer;
+}
+
+.prd-action-select:hover {
+  border-color: #aac9ff;
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.12);
+}
+
+.prd-action-select:focus {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.14);
+}
+
+.prd-block-actionbar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+  /* 必須高於表格列/行選中橫條（z-index:40），否則操作條與下方表格重疊時點不到 */
+  z-index: 50;
+  transform: translateY(calc(100% + 6px));
+}
+
+/* 透明热区桥：把 actionbar 与 block 之间的 gap + actionbar 高度纳入当前 block 的 hover 范围，
+   防止鼠标从 block 内容移向 actionbar 时因经过 gap 而触发下一个 block 的 onMouseEnter。
+   高度 = gap(6px) + actionbar 按钮高度(34px) + 安全余量(4px) = 44px */
+.prd-block-item::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  transform: translateY(100%);
+  pointer-events: none;
+  z-index: 49;
+}
+
+/* 当 actionbar 可见时（父容器 hover 激活），热区开启鼠标响应 */
+.prd-block-item:hover::after {
+  pointer-events: auto;
+}
+
+.prd-block-actionbar__btn {
+  user-select: none;
+}
+
+.prd-block-actionbar__btn:hover {
+  color: #1677ff;
+}
+
+/* 删除按钮 */
+.prd-action-btn--danger {
+  color: #cf1322;
+  background: #fff5f5;
+  border-color: #ffc1c7;
+}
+
+.prd-action-btn--danger:hover {
+  color: #ffffff;
+  background: #cf1322;
+  border-color: #cf1322;
+  box-shadow: 0 2px 8px rgba(207, 19, 34, 0.24);
+}
+
+.prd-block-actionbar .prd-action-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.prd-block-actionbar .prd-action-btn:disabled:hover {
+  color: #4c5a72;
+  background: #fff;
+  border-color: #d7deea;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+/* ─── 插入 Block 選單 ────────────────────────────────────────────────────── */
+
+.prd-add-menu {
+  position: absolute;
+  left: 0;
+  z-index: 100;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 160px;
+  overflow: visible;
+}
+
+/* 向下弹出（默认） */
+.prd-add-menu--below {
+  top: calc(100% + 4px);
+}
+
+/* 向上弹出 */
+.prd-add-menu--above {
+  bottom: calc(100% + 4px);
+}
+
+.prd-add-menu--align-right {
+  left: auto;
+  right: 0;
+}
+
+.prd-add-menu__item {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: 5px;
+  font-size: 13px;
+  color: #333;
+  transition: background 0.12s, color 0.12s;
+}
+
+.prd-add-menu__item:hover { background: #f0f7ff; color: #1677ff; }
+
+.prd-add-menu__group {
+  position: relative;
+}
+
+.prd-add-menu__item--branch-active {
+  background: #f0f7ff;
+  color: #1677ff;
+}
+
+.prd-add-menu__item-caret {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.prd-add-menu__submenu {
+  position: absolute;
+  top: -6px;
+  left: calc(100% + 6px);
+  z-index: 101;
+  min-width: 160px;
+  padding: 6px;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.prd-add-menu__submenu--above {
+  top: auto;
+  bottom: -6px;
+}
+
+.prd-add-menu__submenu--left {
+  left: auto;
+  right: calc(100% + 6px);
+}
+
+.prd-add-menu__submenu--open {
+  display: flex;
+}
+
+/* ─── 各 Block 類型樣式 ──────────────────────────────────────────────────── */
+
+/* 標題 */
+.prd-block-heading { font-weight: 600; color: #111; line-height: 1.4; }
+.prd-block-heading--h1 { font-size: 24px; }
+.prd-block-heading--h2 { font-size: 18px; color: #1a1a1a; }
+.prd-block-heading--h3 { font-size: 15px; color: #333; }
+.prd-block-heading--h4 { font-size: 13px; color: #444; }
+.prd-block-heading--h5 { font-size: 12px; color: #475569; }
+.prd-block-heading--h6 { font-size: 11px; color: #64748b; }
+.prd-block-heading--h7 { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: 0.02em; }
+.prd-block-heading .prd-editable-md--preview,
+.prd-block-heading .prd-tiptap-editor,
+.prd-block-heading .prd-tiptap-prosemirror,
+.prd-block-heading .prd-tiptap-prosemirror--readonly,
+.prd-block-heading .prd-list-marker {
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+/* 段落 */
+.prd-block-paragraph { font-size: 14px; line-height: 1.8; color: #333; }
+
+/* 分隔線 */
+.prd-block-divider {
+  all: unset;
+  display: block;
+  border-top: 1px solid #e8e8e8;
+}
+
+/* 連結列表 */
+.prd-block-linklist { display: flex; flex-direction: column; gap: 8px; }
+
+.prd-block-linklist__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.prd-block-linklist__items { display: flex; flex-direction: column; gap: 6px; }
+
+.prd-block-linklist__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prd-block-linklist__remove {
+  all: unset;
+  cursor: pointer;
+  font-size: 14px;
+  color: #ccc;
+  padding: 2px 5px;
+  border-radius: 3px;
+  line-height: 1;
+  transition: color 0.15s, background 0.15s;
+}
+
+.prd-block-linklist__remove:hover { color: #d4380d; background: #fff1f0; }
+
+/* ─── 新增按鈕 ───────────────────────────────────────────────────────────── */
+
+.prd-add-section-btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1677ff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px dashed #91caff;
+  background: #f0f7ff;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.prd-add-section-btn:hover {
+  background: #e0efff;
+  border-color: #4a90e2;
+}
+
+.prd-add-end {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
