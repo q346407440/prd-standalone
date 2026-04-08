@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import markdownit from 'markdown-it';
+import { toSafeDocBaseName } from '../../../../shared/prd-filename-sanitize.js';
 import { parseListPrefix } from './prd-list-utils.js';
 import { serializePrd } from './prd-writer.js';
 import prdCssRaw from './styles/prd.css?raw';
@@ -59,12 +60,21 @@ function toSafeAsciiBaseName(name, fallback = 'prd-export') {
   return ascii || fallback;
 }
 
+/** 导出包外层文件名：优先保留安全 Unicode（含中文），否则回退 ASCII */
+function toExportPackageBaseName(name, asciiFallback) {
+  const u = toSafeDocBaseName(name);
+  if (u) return u;
+  return toSafeAsciiBaseName(name, asciiFallback);
+}
+
 function toPreviewHtmlFileName(name, fallback) {
-  return `${toSafeAsciiBaseName(name, fallback)}-preview.html`;
+  const base = toExportPackageBaseName(name, fallback);
+  return `${base}-preview.html`;
 }
 
 function toZipFileName(name, fallback) {
-  return `${toSafeAsciiBaseName(name, fallback)}.zip`;
+  const base = toExportPackageBaseName(name, fallback);
+  return `${base}.zip`;
 }
 
 function normalizeAssetUrl(url) {
@@ -82,11 +92,21 @@ function escapeJsonForInlineScript(value) {
 
 function getMdFileNameFromPath(mdPath, fallbackTitle) {
   const parts = String(mdPath || '').split('/');
-  const fileName = parts[parts.length - 1] || '';
-  if (fileName.endsWith('.md')) {
-    return `${toSafeAsciiBaseName(getBaseName(fileName), fallbackTitle || 'prd-doc')}.md`;
+  let fileName = parts[parts.length - 1] || '';
+  try {
+    fileName = decodeURIComponent(fileName);
+  } catch {
+    /* keep raw */
   }
-  return `${toSafeAsciiBaseName(fallbackTitle || 'prd-doc', 'prd-doc')}.md`;
+  if (fileName.endsWith('.md')) {
+    const fromPath = toSafeDocBaseName(getBaseName(fileName));
+    if (fromPath) return `${fromPath}.md`;
+    const fromFallback = toSafeDocBaseName(fallbackTitle);
+    if (fromFallback) return `${fromFallback}.md`;
+    return `${toSafeAsciiBaseName(fallbackTitle || 'prd-doc', 'prd-doc')}.md`;
+  }
+  const fb = toSafeDocBaseName(fallbackTitle) || toSafeAsciiBaseName(fallbackTitle || 'prd-doc', 'prd-doc');
+  return `${fb}.md`;
 }
 
 function getBaseName(fileName) {
@@ -959,7 +979,8 @@ export async function buildStandalonePrdExport({
 }) {
   const docTitle = extractDocTitle(blocks, title);
   const exportSlug = activeSlug || 'doc-001';
-  const exportBaseName = toSafeAsciiBaseName(docTitle, `prd-${exportSlug}`);
+  const exportBaseName =
+    toSafeDocBaseName(docTitle) || toSafeAsciiBaseName(docTitle, `prd-${exportSlug}`);
   const mdFileName = getMdFileNameFromPath(mdPath, exportBaseName);
   const docBaseName = getBaseName(mdFileName);
   const metaPayload = buildMetaPayload({ imageMeta, mermaidMeta, mindmapMeta });

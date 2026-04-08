@@ -90,21 +90,27 @@ FEISHU_REDIRECT_URI=http://127.0.0.1:6001/__prd__/feishu/auth/callback
 bash start.sh
 ```
 
-脚本会自动完成：检查依赖 → 校验凭据 → 杀掉占用端口的旧进程 → 启动开发服务。
+脚本会自动完成：
+
+- **Cursor MCP（Chrome DevTools）**：读取 `~/.cursor/mcp.json`，在 **`mcpServers` 下所有条目的 `args` 中**查找是否存在字符串 **`chrome-devtools-mcp@latest`**（与 MCP 在 JSON 里的**显示名称/key 无关**）。若任意一条已配置该包，则跳过；否则自动写入 `mcpServers.chrome-devtools`（`command`: `npx`，`args`: `-y` + `chrome-devtools-mcp@latest`）。若 `mcp.json` 无法解析，会提示警告并跳过，不阻断启动。
+- 检查依赖 → 校验凭据 → 杀掉占用端口的旧进程 → 启动开发服务。
 
 启动成功后终端会打印访问地址：`http://127.0.0.1:6001`
 
+首次被自动写入 MCP 后，请到 **Cursor → Settings → Tools & MCP** 确认 **Chrome DevTools** 相关项已启用，必要时**重启 Cursor**。
+
 ### 步骤 6：确认 Cursor 配置已生效
 
-`.cursor/` 目录包含 AI 写作配置和 MCP 工具，Cursor 打开 `prd-standalone/` 目录后自动加载：
+`.cursor/` 目录包含 AI 写作配置，Cursor 打开 `prd-standalone/` 目录后自动加载：
 
 - `.cursor/rules/prd-writing-guard.mdc` — PRD 格式守护（自动应用）
-- `.cursor/skills/prd-agent/SKILL.md` — PRD 写作协议
-- `.cursor/mcp.json` — Chrome DevTools MCP（用于截图和页面校验）
+- `.cursor/skills/prd-agent/SKILL.md` — PRD 写作协议（设计列截图优先使用 **Chrome DevTools MCP**（`chrome-devtools-mcp@latest`）；截图前页面缩放 **67%**；详见 `SKILL.md` 第七节）
 
 **重要**：
-- 必须用 Cursor 打开 `prd-standalone/` 这个目录（而不是父目录），skills、rules 和 MCP 才会自动生效。
-- 首次加载 MCP 后，需要**完全退出并重启 Cursor** 才能识别到 Chrome DevTools MCP。重启后可在 Cursor Settings → MCP 中确认 `chrome-devtools` 状态为绿色。
+
+- 必须用 Cursor 打开 `prd-standalone/` 这个目录（而不是父目录），skills 和 rules 才会自动生效。
+- **设计列 / 真实页面截图**：依赖已配置 **`chrome-devtools-mcp@latest`** 的 MCP（可由 `start.sh` 自动写入 `~/.cursor/mcp.json`），并在 **Settings → Tools & MCP** 中启用。
+- 在 **Cursor Settings → Tools & MCP → Browser Automation** 中开启 **Browser Automation**，Agent 才能使用内置浏览器导航与截图（与 Chrome DevTools MCP 为不同能力，按场景选用）。
 
 ### 步骤 7：验证
 
@@ -121,6 +127,8 @@ bash start.sh
 ```bash
 bash <prd-standalone 路径>/start.sh
 ```
+
+每次启动同样会按 **`args` 是否含 `chrome-devtools-mcp@latest`** 检查用户级 MCP；缺失则自动写入 `~/.cursor/mcp.json`（见步骤 5）。
 
 ### 写 PRD
 
@@ -163,6 +171,7 @@ some-project/                 # 业务项目（可选的父目录）
 
 ## 注意事项
 
+- **PRD 文档主文件名**（`pages/doc-NNN/xxx.md` 的 `xxx`）支持简体中文等 Unicode，规则见 [`shared/prd-filename-sanitize.js`](shared/prd-filename-sanitize.js)；目录名仍为 `doc-NNN`。
 - `.env.local` 含飞书密钥，**绝不提交 git**
 - `.local/` 是运行时缓存（auth token、同步快照），不提交 git
 - 端口 `6001` 必须与飞书应用后台配置的回调地址一致

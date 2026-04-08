@@ -3,7 +3,7 @@ import { ElementRenderer } from '../renderers/ElementRenderer.jsx';
 export function ParagraphBlock({
   block, onUpdate, globalSelection, setGlobalSelection,
   onEnter, onBackspaceEmpty, onPasteImageAsBlock,
-  imageMeta, onImageWidthChange, setFocusBlockId,
+  imageMeta, onImageWidthChange, prdAssetCacheBust = 0, setFocusBlockId,
   onMoveUp, onMoveDown, canMoveUp, canMoveDown,
   onEditingFinished,
   onResetOrderedStart,
@@ -27,6 +27,7 @@ export function ParagraphBlock({
         onPasteImageAsBlock={onPasteImageAsBlock}
         imageMeta={imageMeta}
         onImageWidthChange={onImageWidthChange}
+        prdAssetCacheBust={prdAssetCacheBust}
         onEditingFinished={onEditingFinished}
         placeholder="点击此处填写段落文字（支持 Markdown）"
         blockType={block.type}

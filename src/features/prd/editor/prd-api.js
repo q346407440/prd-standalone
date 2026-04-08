@@ -13,12 +13,14 @@ import {
   SWITCH_DOC_API,
   DEFAULT_PRD_SLUG,
 } from './prd-constants.js';
-import { slugToApiSuffix } from './prd-utils.js';
+import { slugToApiSuffix, encodePrdResourcePath } from './prd-utils.js';
 import { createEmptyAnnotationsDoc, normalizeAnnotationsDoc } from './prd-annotations.js';
 import { emitPrdToast } from './prd-toast.js';
 
 export async function fetchPrdMd(mdPath) {
-  const res = await fetch(`${mdPath}?t=${Date.now()}`);
+  const pathEncoded = encodePrdResourcePath(mdPath);
+  const sep = pathEncoded.includes('?') ? '&' : '?';
+  const res = await fetch(`${pathEncoded}${sep}t=${Date.now()}`);
   if (!res.ok) throw new Error(`fetch md failed: ${res.status}`);
   return res.text();
 }

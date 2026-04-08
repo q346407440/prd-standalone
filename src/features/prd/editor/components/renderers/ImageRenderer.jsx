@@ -26,12 +26,19 @@ export function ImageRenderer({
   canMoveDown = false,
   onAnnotate,
   annotationCount = 0,
+  prdAssetCacheBust = 0,
 }) {
   const [uploading, setUploading] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [widthPx, setWidthPx] = useState(initialWidthPx ?? null);
-  const [imgSrc, setImgSrc] = useState(element.src);
+  const bustedSrc = (src, bust) => {
+    if (!src || !bust) return src;
+    if (!src.startsWith('/prd/')) return src;
+    const sep = src.includes('?') ? '&' : '?';
+    return `${src}${sep}v=${bust}`;
+  };
+  const [imgSrc, setImgSrc] = useState(() => bustedSrc(element.src, prdAssetCacheBust));
   const imgRef = useRef(null);
   const rootRef = useRef(null);
   const dragRef = useRef(null);
@@ -40,10 +47,10 @@ export function ImageRenderer({
   const showSelectedTools = isSelected && !uploading;
 
   useEffect(() => {
-    setImgSrc(element.src);
+    setImgSrc(bustedSrc(element.src, prdAssetCacheBust));
     setImgLoaded(false);
     retryCountRef.current = 0;
-  }, [element.src]);
+  }, [element.src, prdAssetCacheBust]);
 
   useEffect(() => {
     if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
@@ -173,7 +180,8 @@ export function ImageRenderer({
                 }
                 retryCountRef.current += 1;
                 window.setTimeout(() => {
-                  setImgSrc(`${element.src}${element.src.includes('?') ? '&' : '?'}t=${Date.now()}`);
+                  const base = bustedSrc(element.src, prdAssetCacheBust);
+                  setImgSrc(`${base}${base.includes('?') ? '&' : '?'}t=${Date.now()}`);
                 }, 300);
               }}
             />

@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer';
 import fs from 'fs';
 import path from 'path';
+import { toSafeDocBaseName } from '../shared/prd-filename-sanitize.js';
 
 // ─── 多文档辅助 ──────────────────────────────────────────────────────────────
 
@@ -66,21 +67,6 @@ export function mdFileToAnnotationsPath(mdFilePath) {
   return path.join(dir, `${base}.annotations.json`);
 }
 
-/** 将用户输入规范化为英文项目名风格文件名（不含后缀） */
-function toProjectLikeFileName(name) {
-  return String(name || '')
-    .trim()
-    .normalize('NFKD')
-    .replace(/[^\x20-\x7E]+/g, '-')
-    .replace(/\s+/g, '-')
-    .replace(/[^a-zA-Z0-9._-]+/g, '-')
-    .replace(/[-._]{2,}/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .replace(/^[._]+|[._]+$/g, '')
-    .toLowerCase()
-    .slice(0, 80);
-}
-
 /** 列出所有 PRD 文档 */
 function listDocs(pagesDir, activeFile) {
   const activeSlug = readActiveDocSlug(pagesDir, activeFile);
@@ -130,14 +116,15 @@ export function createDocHandlers({ pagesDir, activeFile }) {
           const slug = nextSlug(pagesDir);
           const docDir = path.join(pagesDir, slug);
           fs.mkdirSync(docDir, { recursive: true });
-          const safeName = toProjectLikeFileName(name);
+          const safeName = toSafeDocBaseName(name);
           if (!safeName) {
             res.statusCode = 400;
-            return res.end(JSON.stringify({ ok: false, error: 'name must contain english letters, numbers, dots, underscores or hyphens' }));
+            return res.end(JSON.stringify({ ok: false, error: 'document name is invalid' }));
           }
           const mdFileName = `${safeName}.md`;
           const mdFilePath = path.join(docDir, mdFileName);
-          const initMd = `<!-- block:h1 -->\n\n# ${safeName}\n`;
+          const h1Line = safeName.replace(/\r?\n/g, ' ').replace(/^#+\s*/, '');
+          const initMd = `<!-- block:h1 -->\n\n# ${h1Line}\n`;
           fs.writeFileSync(mdFilePath, initMd, 'utf8');
           fs.writeFileSync(mdFileToMetaPath(mdFilePath), '{}', 'utf8');
           fs.writeFileSync(mdFileToAnnotationsPath(mdFilePath), '{}', 'utf8');
@@ -194,10 +181,10 @@ export function createDocHandlers({ pagesDir, activeFile }) {
             res.statusCode = 404;
             return res.end(JSON.stringify({ ok: false, error: 'doc not found' }));
           }
-          const safeNewName = toProjectLikeFileName(newName);
+          const safeNewName = toSafeDocBaseName(newName);
           if (!safeNewName) {
             res.statusCode = 400;
-            return res.end(JSON.stringify({ ok: false, error: 'newName must contain english letters, numbers, dots, underscores or hyphens' }));
+            return res.end(JSON.stringify({ ok: false, error: 'document name is invalid' }));
           }
           const docDir = path.join(pagesDir, slug);
           const newMdFile = path.join(docDir, `${safeNewName}.md`);

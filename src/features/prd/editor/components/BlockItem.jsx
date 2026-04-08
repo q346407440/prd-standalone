@@ -17,7 +17,7 @@ export const BlockItem = memo(function BlockItem({
   globalSelection, setGlobalSelection,
   shouldFocus, onFocusConsumed,
   onEnterBlock, onBackspaceEmptyBlock, onPasteImageAsBlockBlock,
-  imageMeta, onImageWidthChange,
+  imageMeta, onImageWidthChange, prdAssetCacheBust = 0,
   setFocusBlockId, registerBlockRef, onEditingFinishedBlock,
   rowBindings,
   annotationsDoc,
@@ -144,6 +144,7 @@ export const BlockItem = memo(function BlockItem({
             onPasteImageAsBlock={handlePasteImageAsBlock}
             imageMeta={imageMeta}
             onImageWidthChange={onImageWidthChange}
+            prdAssetCacheBust={prdAssetCacheBust}
             setFocusBlockId={setFocusBlockId}
             onEditingFinished={handleEditingFinished}
             onMoveUp={() => onMoveUp(block.id)}
@@ -193,6 +194,7 @@ export const BlockItem = memo(function BlockItem({
             onMermaidMetaChange={onMermaidMetaChange}
             mindmapMeta={mindmapMeta}
             onMindmapMetaChange={onMindmapMetaChange}
+            prdAssetCacheBust={prdAssetCacheBust}
           />
         );
       default:

@@ -96,7 +96,7 @@ function attachMiddleware(server, liveSync, docHandlers, fileHandlers) {
       return;
     }
     if (pathOnly === API_SAVE_ANNOTATIONS && req.method === 'POST') {
-      fileHandlers.saveAnnotations(req, res);
+      fileHandlers.saveAnnotations(req, res, { liveSync });
       return;
     }
     if (pathOnly === API_SAVE_ANNOTATION_ASSET && req.method === 'POST') {
@@ -137,6 +137,7 @@ export function prdSaveImagePlugin() {
     activeFile: PRD_ACTIVE_FILE,
     annotationAssetDir: PRD_ANNOTATION_ASSET_DIR,
     rootDir: __dirname,
+    publicPrdDir: path.join(__dirname, 'public', 'prd'),
   };
 
   const liveSync = createPrdLiveSync(ctx);

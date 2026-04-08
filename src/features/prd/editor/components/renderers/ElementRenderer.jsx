@@ -49,6 +49,7 @@ export function ElementRenderer({
   onBlockLevelChange,
   onAnnotate,
   annotationCount = 0,
+  prdAssetCacheBust = 0,
   onResetOrderedStart,
   mermaidViewMode,
   onMermaidViewModeChange,
@@ -106,6 +107,7 @@ export function ElementRenderer({
         canMoveDown={canMoveDown}
         onAnnotate={onAnnotate}
         annotationCount={annotationCount}
+        prdAssetCacheBust={prdAssetCacheBust}
       />
     );
   }

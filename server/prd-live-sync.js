@@ -1,11 +1,13 @@
 import fs from 'fs';
-import { readActiveDocSlug, findDocMdFile } from './prd-doc-handlers.js';
+import { readActiveDocSlug, findDocMdFile, mdFileToAnnotationsPath } from './prd-doc-handlers.js';
 
-export function createPrdLiveSync({ pagesDir, activeFile }) {
+export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
   const clients = new Set();
   const watchedFiles = new Map();
   const suppressedFileEvents = new Map();
   let started = false;
+  let publicPrdWatcher = null;
+  let publicPrdDebounce = null;
 
   function broadcast(event) {
     const payload = `event: ${event.type}\ndata: ${JSON.stringify({
@@ -41,6 +43,29 @@ export function createPrdLiveSync({ pagesDir, activeFile }) {
     suppressedFileEvents.set(filePath, Date.now() + durationMs);
   }
 
+  function broadcastPrdSidecarChanged() {
+    broadcast({ type: 'prd-sidecar-changed' });
+  }
+
+  function setupPublicPrdDirWatch() {
+    if (!publicPrdDir || !fs.existsSync(publicPrdDir)) return;
+    if (publicPrdWatcher) return;
+    try {
+      publicPrdWatcher = fs.watch(publicPrdDir, (eventType, filename) => {
+        if (!filename) return;
+        const lower = filename.toLowerCase();
+        if (!/\.(png|jpe?g|webp|gif|svg)$/.test(lower)) return;
+        if (publicPrdDebounce) clearTimeout(publicPrdDebounce);
+        publicPrdDebounce = setTimeout(() => {
+          publicPrdDebounce = null;
+          broadcastPrdSidecarChanged();
+        }, 120);
+      });
+    } catch {
+      publicPrdWatcher = null;
+    }
+  }
+
   function rewatchActiveDoc() {
     for (const [fp, listener] of watchedFiles) {
       fs.unwatchFile(fp, listener);
@@ -48,13 +73,20 @@ export function createPrdLiveSync({ pagesDir, activeFile }) {
     watchedFiles.clear();
     const slug = readActiveDocSlug(pagesDir, activeFile);
     const mdFile = findDocMdFile(pagesDir, slug);
-    if (mdFile) watchFile(mdFile, { type: 'md-changed' });
+    if (mdFile) {
+      watchFile(mdFile, { type: 'md-changed' });
+      const annotFile = mdFileToAnnotationsPath(mdFile);
+      if (fs.existsSync(annotFile)) {
+        watchFile(annotFile, { type: 'prd-sidecar-changed' });
+      }
+    }
   }
 
   return {
     start() {
       if (started) return;
       started = true;
+      setupPublicPrdDirWatch();
       rewatchActiveDoc();
     },
     stop() {
@@ -62,6 +94,14 @@ export function createPrdLiveSync({ pagesDir, activeFile }) {
         fs.unwatchFile(fp, listener);
       }
       watchedFiles.clear();
+      if (publicPrdDebounce) {
+        clearTimeout(publicPrdDebounce);
+        publicPrdDebounce = null;
+      }
+      if (publicPrdWatcher) {
+        try { publicPrdWatcher.close(); } catch {}
+        publicPrdWatcher = null;
+      }
       for (const client of clients) {
         try { client.end(); } catch {}
       }

@@ -35,6 +35,9 @@ fi
 
 echo "[check] Node.js $(node --version) ✓"
 
+# ── 0b. Cursor MCP：按 args 检测 chrome-devtools-mcp@latest，缺失则写入 ~/.cursor/mcp.json ──
+node "$PROJECT_DIR/scripts/ensure-chrome-devtools-mcp.js" || true
+
 # ── 1. 依赖安装 ──────────────────────────────────────────────────────────────
 if [ ! -d "node_modules" ]; then
   echo "[setup] node_modules 不存在，正在安装依赖..."

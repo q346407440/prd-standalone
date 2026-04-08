@@ -47,6 +47,7 @@ import {
   ACTIONBAR_SWITCH_DELAY_MS,
   ACTIONBAR_CLOSE_DELAY_MS,
   PRD_EVENTS_API,
+  ENABLE_IMAGE_ANNOTATION_UI,
 } from './prd-constants.js';
 import {
   slugToMdPath,
@@ -145,6 +146,8 @@ export function PrdPage() {
   });
   const [activeTocId, setActiveTocId] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
+  /** 外部更新 annotations 或 public/prd 图片时递增，用于 /<prd>/ 图 URL 缓存穿透 */
+  const [prdAssetCacheBust, setPrdAssetCacheBust] = useState(0);
   /** 图片宽度 sidecar：{ [imgSrc]: widthPx }，存 prd.meta.json */
   const [imageMeta, setImageMeta] = useState({});
   const imageMetaRef = useRef({});
@@ -378,14 +381,14 @@ export function PrdPage() {
       grouped.set(block.id, {
         selectionKey: getBlockSelectionPerfKey(block, globalSelection),
         rowBindingsKey: block.type === 'table' ? getRowBindingsPerfKey(rowBindings) : '',
-        imageMetaKey: getBlockImageMetaPerfKey(block, imageMeta),
+        imageMetaKey: `${getBlockImageMetaPerfKey(block, imageMeta)}|bust:${prdAssetCacheBust}`,
         annotationsKey: block.type === 'table' ? getTableAnnotationsPerfKey(rowBindings, annotationsDoc) : '',
         mermaidMetaKey: getBlockMermaidMetaPerfKey(block, mermaidMeta),
         mindmapMetaKey: getBlockMindmapMetaPerfKey(block, mindmapMeta),
       });
     }
     return grouped;
-  }, { blockCount: blocks?.length || 0 }), [blocks, rowBindingsByBlock, globalSelection, imageMeta, annotationsDoc, mermaidMeta, mindmapMeta]);
+  }, { blockCount: blocks?.length || 0 }), [blocks, rowBindingsByBlock, globalSelection, imageMeta, prdAssetCacheBust, annotationsDoc, mermaidMeta, mindmapMeta]);
 
   const commitAnnotationsDoc = useCallback(async (nextDoc, cleanupPaths = []) => {
     annotationsRef.current = nextDoc;
@@ -756,9 +759,45 @@ export function PrdPage() {
         });
       });
     };
+    const handleSidecarChanged = () => {
+      if (hasPendingLocalChangesRef.current || persistRunningRef.current) {
+        showToast({
+          id: 'prd-sidecar-sync',
+          message: '检测到标注或图片已被外部更新，保存后将覆盖本地；可刷新页面后再编辑',
+          tone: 'warning',
+          duration: 2600,
+        });
+        return;
+      }
+      const slug = activeSlugRef.current;
+      if (!slug) return;
+      void fetchPrdAnnotations(slug)
+        .then((doc) => {
+          const normalized = normalizeAnnotationsDoc(doc);
+          annotationsRef.current = normalized;
+          setAnnotationsDoc(normalized);
+          setPrdAssetCacheBust((n) => n + 1);
+          showToast({
+            id: 'prd-sidecar-sync',
+            message: '已同步外部更新的标注或 /prd 图片',
+            tone: 'success',
+            duration: 2000,
+          });
+        })
+        .catch((e) => {
+          showToast({
+            id: 'prd-sidecar-sync',
+            message: `同步标注失败：${e?.message || e}`,
+            tone: 'error',
+            duration: 2600,
+          });
+        });
+    };
     source.addEventListener('md-changed', handleMdChanged);
+    source.addEventListener('prd-sidecar-changed', handleSidecarChanged);
     return () => {
       source.removeEventListener('md-changed', handleMdChanged);
+      source.removeEventListener('prd-sidecar-changed', handleSidecarChanged);
       source.close();
     };
   }, [refreshPrdMdFromDisk, showToast]);
@@ -1170,6 +1209,7 @@ export function PrdPage() {
     onMermaidMetaChange: handleMermaidMetaChange,
     mindmapMeta,
     onMindmapMetaChange: handleMindmapMetaChange,
+    prdAssetCacheBust,
   }), [
     imageMeta,
     handleImageWidthChange,
@@ -1177,11 +1217,12 @@ export function PrdPage() {
     handleMermaidMetaChange,
     mindmapMeta,
     handleMindmapMetaChange,
+    prdAssetCacheBust,
   ]);
 
   const annotationState = useMemo(() => ({
     annotationsDoc,
-    onAnnotateUsage: handleOpenAnnotationModal,
+    onAnnotateUsage: ENABLE_IMAGE_ANNOTATION_UI ? handleOpenAnnotationModal : undefined,
     onSetCellChangeIntent: handleSetCellChangeIntent,
     onSetCellPendingConfirm: handleSetCellPendingConfirm,
     onSetCellPendingConfirmNote: handleSetCellPendingConfirmNote,
@@ -1353,7 +1394,7 @@ export function PrdPage() {
             </div>
           </div>
         </div>
-        {annotationModalState?.usage && (
+        {ENABLE_IMAGE_ANNOTATION_UI && annotationModalState?.usage && (
           <Suspense fallback={null}>
             <PrdAnnotationModalLazy
               open

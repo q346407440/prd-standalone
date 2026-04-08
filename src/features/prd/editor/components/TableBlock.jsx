@@ -4,7 +4,7 @@ import { TiptapMarkdownEditor } from '../TiptapMarkdownEditor.jsx';
 import { CellRenderer } from './CellRenderer.jsx';
 import { ActionPanel } from './FloatingActionBubble.jsx';
 import { useViewportFit } from '../useViewportFit.js';
-import { getCellColumnKey, getCellState, getUsageRegions } from '../prd-annotations.js';
+import { getCellColumnKey, getCellState } from '../prd-annotations.js';
 import { measurePrdTask } from '../prd-performance.js';
 import { TABLE_EDGE_HOTZONE_PX, TABLE_HOVER_CLOSE_DELAY_MS } from '../prd-constants.js';
 import { isTableKindSelection, isNodeHovered, nodeContainsTarget } from '../prd-utils.js';
@@ -244,6 +244,7 @@ export function TableBlock({
   onMermaidMetaChange,
   mindmapMeta,
   onMindmapMetaChange,
+  prdAssetCacheBust = 0,
 }) {
   const { headers, rows } = block.content;
   const selectedCol = globalSelection?.blockId === block.id && globalSelection.type === 'table-col'
@@ -639,6 +640,7 @@ export function TableBlock({
                       onMermaidMetaChange={onMermaidMetaChange}
                       mindmapMeta={mindmapMeta}
                       onMindmapMetaChange={onMindmapMetaChange}
+                      prdAssetCacheBust={prdAssetCacheBust}
                     />
                   </td>
                   );

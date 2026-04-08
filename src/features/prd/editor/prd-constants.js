@@ -7,6 +7,13 @@ export const SAVE_ANNOTATIONS_API = '/__prd__/save-annotations';
 export const SAVE_ANNOTATION_ASSET_API = '/__prd__/save-annotation-asset';
 export const DELETE_ANNOTATION_ASSET_API = '/__prd__/delete-annotation-asset';
 export const PRD_EVENTS_API = '/__prd__/events';
+
+/**
+ * 僅控制「圖片上框選區域」標註：入口按鈕、標註彈窗，以及為其服務的效能（如各圖 region 數量掃描）。
+ * 仍保留：`.annotations.json` 的圖片 usage／元資料、列與儲存格的變更意圖／待確認、reconcile、載入與儲存。
+ * 需要框選標註時改回 true。
+ */
+export const ENABLE_IMAGE_ANNOTATION_UI = false;
 export const ACTIVE_DOC_API = '/__prd__/active-doc';
 export const LIST_DOCS_API = '/__prd__/list-docs';
 export const CREATE_DOC_API = '/__prd__/create-doc';
@@ -14,7 +21,7 @@ export const SWITCH_DOC_API = '/__prd__/switch-doc';
 export const TOC_OPEN_STORAGE_KEY = 'prd-editor:toc-open';
 
 export const DEFAULT_PRD_SLUG = 'doc-001';
-export const PRD_FILE_NAME_RULE_HINT = '仅支持小写英文、数字、.、_、-；空格和其它字符会自动转为 -';
+export const PRD_FILE_NAME_RULE_HINT = '支持中文、英文、数字及 ._-；禁止 \\ / : * ? " < > | 等路径字符；最长 80 字';
 
 export const PERSIST_DEBOUNCE_MS = 480;
 export const TOAST_EXIT_MS = 220;

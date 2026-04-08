@@ -204,7 +204,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
     },
 
     /** POST /__prd__/save-annotations?slug=xxx */
-    saveAnnotations(req, res) {
+    saveAnnotations(req, res, { liveSync } = {}) {
       const urlObj = new URL(req.url, 'http://localhost');
       const slug = urlObj.searchParams.get('slug') || readActiveDocSlug(pagesDir, activeFile);
       const mdFile = findDocMdFile(pagesDir, slug);
@@ -218,6 +218,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
             res.statusCode = 400;
             return res.end(JSON.stringify({ ok: false, error: 'annotations must be a JSON object' }));
           }
+          liveSync?.suppressFileChange?.(annotFile);
           writeJsonObject(annotFile, parsed);
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json');

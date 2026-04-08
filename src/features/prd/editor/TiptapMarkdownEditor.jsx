@@ -9,6 +9,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from 'tiptap-markdown';
 import markdownit from 'markdown-it';
 import { editorToMarkdown } from './tiptap-md-utils.js';
+import { getTextOffsetFromPoint } from './prd-text-editing.js';
 import { emitPrdToast } from './prd-toast.js';
 import {
   adjustOrderedMarkerAfterIndent,
@@ -62,32 +63,6 @@ function isRootSingleEmptyParagraph(doc) {
 
 function trimTrailingEmptyLines(md) {
   return md.replace(/\n+$/, '');
-}
-
-function getTextOffsetFromPoint(container, clientX, clientY) {
-  if (!container || typeof document === 'undefined') return null;
-  const totalLength = container.textContent?.length ?? 0;
-  let range = null;
-  if (document.caretPositionFromPoint) {
-    const pos = document.caretPositionFromPoint(clientX, clientY);
-    if (pos) {
-      range = document.createRange();
-      range.setStart(pos.offsetNode, pos.offset);
-      range.collapse(true);
-    }
-  } else if (document.caretRangeFromPoint) {
-    range = document.caretRangeFromPoint(clientX, clientY);
-  }
-  if (range && container.contains(range.startContainer)) {
-    const prefixRange = document.createRange();
-    prefixRange.selectNodeContents(container);
-    prefixRange.setEnd(range.startContainer, range.startOffset);
-    return Math.max(0, Math.min(prefixRange.toString().length, totalLength));
-  }
-  const rect = container.getBoundingClientRect();
-  if (clientX <= rect.left) return 0;
-  if (clientX >= rect.right) return totalLength;
-  return totalLength;
 }
 
 function getProseMirrorPosFromTextOffset(doc, textOffset) {
@@ -822,7 +797,9 @@ function TiptapEditingSurface({
     requestAnimationFrame(() => {
       editor.commands.focus();
       if (initialCaretOffset != null) {
-        const pos = getProseMirrorPosFromTextOffset(editor.state.doc, initialCaretOffset);
+        const docPlainLen = editor.state.doc.textContent.length;
+        const clamped = Math.max(0, Math.min(initialCaretOffset, docPlainLen));
+        const pos = getProseMirrorPosFromTextOffset(editor.state.doc, clamped);
         editor.commands.setTextSelection(pos);
         onInitialCaretConsumedRef.current?.();
       } else {
@@ -1019,6 +996,8 @@ export function TiptapMarkdownEditor({
   onResetOrderedStart,
 }) {
   const [editing, setEditing] = useState(false);
+  /** 進入編輯態時的游標字元 offset；用 state 快照，避免 ref 被 consume 後父層重繪把 initialCaretOffset 變成 null 再次觸發子層 effect 而 focus('end')（表格內 globalSelection / hover 重繪較頻繁）。 */
+  const [editingInitialCaretOffset, setEditingInitialCaretOffset] = useState(null);
   const valueRef = useRef(value);
   const previewContentRef = useRef(null);
   const pendingPreviewCaretOffsetRef = useRef(null);
@@ -1033,11 +1012,8 @@ export function TiptapMarkdownEditor({
 
   const handleFinishEditing = useCallback(() => {
     pendingPreviewCaretOffsetRef.current = null;
+    setEditingInitialCaretOffset(null);
     setEditing(false);
-  }, []);
-
-  const handleInitialCaretOffsetConsumed = useCallback(() => {
-    pendingPreviewCaretOffsetRef.current = null;
   }, []);
 
   const paragraphPreviewSelected =
@@ -1094,13 +1070,23 @@ export function TiptapMarkdownEditor({
         tabIndex={0}
         onMouseDown={(e) => {
           selectCurrentTextTarget(e);
+          // 列表預覽：前綴 `•` / `1.` 在 .prd-list-marker 內，不在 contentRef 正文的 span 內；
+          // 點在符號區時 caret API 與距離回退常錯，固定對應正文開頭（與編輯器內不含前綴的 body 一致）。
+          const hitEl = e.target instanceof Element ? e.target : e.target.parentElement;
+          if (hitEl?.closest('.prd-list-marker')) {
+            pendingPreviewCaretOffsetRef.current = 0;
+            return;
+          }
           pendingPreviewCaretOffsetRef.current = getTextOffsetFromPoint(
             previewContentRef.current,
             e.clientX,
             e.clientY,
           );
         }}
-        onClick={() => setEditing(true)}
+        onClick={() => {
+          setEditingInitialCaretOffset(pendingPreviewCaretOffsetRef.current);
+          setEditing(true);
+        }}
         onKeyDown={handlePreviewKeyDown}
         onPaste={handlePreviewPaste}
       >
@@ -1133,8 +1119,8 @@ export function TiptapMarkdownEditor({
       setGlobalSelection={setGlobalSelection}
       onPrefixManualChange={onPrefixManualChange}
       onResetOrderedStart={onResetOrderedStart}
-      initialCaretOffset={pendingPreviewCaretOffsetRef.current}
-      onInitialCaretOffsetConsumed={handleInitialCaretOffsetConsumed}
+      initialCaretOffset={editingInitialCaretOffset}
+      onInitialCaretOffsetConsumed={undefined}
       onClose={handleFinishEditing}
     />
   );

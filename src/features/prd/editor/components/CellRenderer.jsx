@@ -81,6 +81,7 @@ export function CellRenderer({
   onMermaidMetaChange,
   mindmapMeta,
   onMindmapMetaChange,
+  prdAssetCacheBust = 0,
 }) {
   const elements = useMemo(
     () => cellElement?.elements
@@ -439,10 +440,16 @@ export function CellRenderer({
             onPasteImageAsBlock={(src) => insertElementAfter(idx, { type: 'image', src })}
             onReplaceWithImage={(src) => updateElement(idx, { type: 'image', src })}
             placeholder={idx === 0 ? '—' : ''}
-            onAnnotate={imageUsageByElementIdx[idx] ? () => onAnnotateUsage?.(imageUsageByElementIdx[idx]) : undefined}
-            annotationCount={imageUsageByElementIdx[idx]
-              ? getUsageRegions(annotationsDoc, imageUsageByElementIdx[idx].usageId).length
-              : 0}
+            onAnnotate={
+              imageUsageByElementIdx[idx] && onAnnotateUsage
+                ? () => onAnnotateUsage(imageUsageByElementIdx[idx])
+                : undefined
+            }
+            annotationCount={
+              onAnnotateUsage && imageUsageByElementIdx[idx]
+                ? getUsageRegions(annotationsDoc, imageUsageByElementIdx[idx].usageId).length
+                : 0
+            }
             onResetOrderedStart={(newMd, startNum) => {
               let next = elements.map((el, i) => i === idx ? { ...el, markdown: newMd } : el);
               next = renumberCellElementsFrom(next, idx, startNum);
@@ -458,6 +465,7 @@ export function CellRenderer({
               const key = getMindmapMetaKey(idx);
               onMindmapMetaChange?.('mindmapViewModes', key, mode);
             } : undefined}
+            prdAssetCacheBust={prdAssetCacheBust}
           />
         </div>
       ))}

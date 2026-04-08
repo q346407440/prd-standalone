@@ -580,7 +580,8 @@
   align-items: baseline;
 }
 
-.prd-tiptap-preview-row .tiptap {
+.prd-tiptap-preview-row .tiptap,
+.prd-tiptap-preview-row .prd-tiptap-prosemirror {
   flex: 1;
   min-width: 0;
 }

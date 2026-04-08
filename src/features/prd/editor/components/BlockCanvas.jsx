@@ -70,6 +70,7 @@ export const BlockCanvas = memo(function BlockCanvas({
             onMermaidMetaChange={sidecarState.onMermaidMetaChange}
             mindmapMeta={sidecarState.mindmapMeta}
             onMindmapMetaChange={sidecarState.onMindmapMetaChange}
+            prdAssetCacheBust={sidecarState.prdAssetCacheBust}
           />
         );
       })}

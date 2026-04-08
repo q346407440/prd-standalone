@@ -1,4 +1,8 @@
-import { MERMAID_BLOCK_DEFAULT_WIDTH, MINDMAP_BLOCK_DEFAULT_WIDTH } from './prd-constants.js';
+import {
+  ENABLE_IMAGE_ANNOTATION_UI,
+  MERMAID_BLOCK_DEFAULT_WIDTH,
+  MINDMAP_BLOCK_DEFAULT_WIDTH,
+} from './prd-constants.js';
 import { extractPrdImagePaths, isTableKindSelection } from './prd-utils.js';
 import { getUsageRegions } from './prd-annotations.js';
 
@@ -107,16 +111,24 @@ export function getBlockMindmapMetaPerfKey(block, mindmapMeta) {
 
 export function getTableAnnotationsPerfKey(rowBindings, annotationsDoc) {
   if (!rowBindings?.length) return '';
-  const usageRegionCount = new Map(
-    (annotationsDoc?.usages || []).map((usage) => [usage.usageId, getUsageRegions(annotationsDoc, usage.usageId).length]),
-  );
+  /** 關閉圖片標註 UI 時不掃描各圖 region 數量，僅保留 row 的 cellStates + usageId（與變更意圖 / 待確認等仍一致）。 */
+  const usageRegionCount = ENABLE_IMAGE_ANNOTATION_UI
+    ? new Map(
+      (annotationsDoc?.usages || []).map((usage) => [
+        usage.usageId,
+        getUsageRegions(annotationsDoc, usage.usageId).length,
+      ]),
+    )
+    : null;
   return rowBindings.map((binding) => {
     const state = annotationsDoc?.cellStates?.[binding.rowKey] || {};
     const stateKey = Object.entries(state)
       .map(([column, value]) => `${column}:${value?.changeIntent || ''}:${value?.pendingConfirm ? 1 : 0}:${value?.pendingConfirmNote || ''}`)
       .join(',');
     const usageKey = (binding.usages || [])
-      .map((usage) => `${usage.usageId}:${usageRegionCount.get(usage.usageId) || 0}`)
+      .map((usage) => (usageRegionCount
+        ? `${usage.usageId}:${usageRegionCount.get(usage.usageId) || 0}`
+        : usage.usageId))
       .join(',');
     return `${binding.rowKey}[${stateKey}](${usageKey})`;
   }).join('|');

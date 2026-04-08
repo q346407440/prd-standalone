@@ -1,0 +1,62 @@
+---
+description: PRD 设计列截图：优先 Chrome DevTools MCP、启用检测、67% 成图法与禁止项
+globs: pages/**/*.md
+alwaysApply: false
+---
+
+# PRD 设计列截图（`设计/原型稿` 列）
+
+> 完整流程与工具名以 `.cursor/skills/prd-agent/SKILL.md` **「七、设计列截图与链接」** 为准；本规则为 Agent 必须遵守的**摘要约束**。
+
+## 工具优先级（强制）
+
+1. **先执行启用检测**：在打开本机 Demo、查看页面、产出**设计列入库 PNG** 之前，检查 Cursor 是否已配置并启用 **Chrome DevTools MCP**（MCP server 名常见为 **`user-chrome-devtools`**，或以 Settings → Tools & MCP 列表为准；亦可查看 `mcps/user-chrome-devtools/tools/` 等目录下是否存在 `navigate_page`、`take_screenshot`、`evaluate_script` 等工具描述）。
+2. **若已配置且可用**：**固定使用 Chrome DevTools MCP** 完成导航、快照、**视口截图**、`evaluate_script` 等；**不得**将 **`cursor-ide-browser`** 或其它浏览器 MCP 作为首选。
+3. **仅当**未配置、未启用、连接失败，或用户当轮**明确要求**仅用某一浏览器工具时，再使用备选路径（如 Cursor 内置 Browser），且仍须遵守下文 **67%** 与 **视口 PNG + 按比例裁切** 规则。
+
+## Chrome DevTools MCP「连不上」：profile 占用
+
+> 典型报错形如：`The browser is already running for .../chrome-devtools-mcp/chrome-profile`。**不是**网络故障，而是 **同一 user-data-dir 已被 Chrome 占用**，MCP 无法再启第二实例。
+
+**处理顺序（Agent 可照做）**
+
+1. **先关** MCP 自动打开的那类 Chrome 窗口（若仍可见）。
+2. **结束占用该 profile 的 Chrome 进程**（只杀带 MCP profile 的实例，**不要** `killall Google Chrome` 误杀日常浏览器）：
+   - macOS 示例：`pkill -f "user-data-dir=.*/chrome-devtools-mcp/chrome-profile"`
+   - 或：`ps aux | grep chrome-devtools-mcp/chrome-profile`，对**主进程** `kill <PID>`（子进程通常会随主进程退出）。
+3. **重试** MCP：`list_pages`、`navigate_page` 等应恢复正常。
+4. **仍失败**：再考虑备选 **cursor-ide-browser**（若当前环境已启用），或 PRD 设计列 **截图待补** + 修订说明；**仍禁止**为截图安装 Playwright（见下节）。
+
+## 禁止为截图安装额外自动化栈
+
+- **不要**为产出 PRD 设计列截图而 **`npm install` / 引入 Playwright、Puppeteer、Selenium** 等无头浏览器依赖；**不要**在业务仓或 `prd-standalone` 内新增上述依赖「只为截一张图」。
+- 成图路径**仅限**：**Chrome DevTools MCP**（及 SKILL 允许的备选 **cursor-ide-browser**）+ 本机 **`sips` / Pillow 等裁切**（无头浏览器栈以外的像素处理可接受）。
+- 若 MCP 暂时不可用：**宁可**在设计列写清场景 / 状态 +「打开真实页面」链接，并在修订记录注明 **截图待补**，也**不要**用 Playwright 等绕过。
+
+## 页缩放（强制 67%）
+
+- **设计列入库截图**必须在浏览器 **页缩放 67%** 下完成（与配置端常见观感对齐）。
+- **做法**：`Meta+0` / `Control+0` 复位后，连续 **4 次** `Meta+-` / `Control+-`，直至地址栏显示 **67%**。
+- **禁止**：为入库 PNG 使用 **100%** 或任意非 **67%** 页缩放；**禁止**使用 `document.documentElement.style.zoom`（或等价）与页缩放混用。
+
+## 标准成图方法（模块 / 局部）
+
+- **禁止**使用 DevTools **`take_screenshot(uid)`** 作为设计列入库成图（67% 下节点盒映射易错）。
+- **必须**采用：**整视口** `take_screenshot`（**不传 uid**）得到 PNG，再用目标元素的 **`getBoundingClientRect()`**（与视口同一时刻、同为 CSS 像素）按  
+  **`裁切像素 = rect × (PNG 像素宽高 ÷ window.innerWidth / innerHeight)`**  
+  在本机裁切后写入 `public/prd/xxx.png`。
+- **浮层 / 下拉**：若目标与主容器分离，对**相关多块** rect **求并集**后再裁切，可略加 padding 保留阴影。
+- **成图前**可对目标 `scrollIntoView`；需隐藏 Demo-only 控件时可用 `evaluate_script` 注入 `<style>`，**不得**改业务源码。
+
+## 设计列单元格允许内容
+
+- 仅：`![](/prd/xxx.png)`、`**场景预览：**`、`**状态说明：**`、`[打开真实页面](本机已校验 URL)`。
+- **不写**流程说明、注意事项、链接用法等（那些属于 SKILL/对话，不写进 PRD 格）。
+
+## 「打开真实页面」链接
+
+- 须为本机 **`npm run dev` 终端输出的 origin + 路由`** 拼出并**实际打开校验**过的 URL；禁止猜端口、猜 path。
+
+## 详细步骤编号
+
+- 见 **prd-agent** SKILL **「七 → 67% 标准成图法」** 步骤 1～10 与 **「启用检测（强制）」**。

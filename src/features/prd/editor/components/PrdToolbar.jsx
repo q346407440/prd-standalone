@@ -340,7 +340,7 @@ export function PrdToolbar({
                     <input
                       ref={newDocInputRef}
                       className="prd-toolbar__switch-create-input"
-                      placeholder="输入英文文件名…"
+                      placeholder="输入文档文件名…"
                       value={newDocName}
                       onChange={e => {
                         const v = newDocComposingRef.current
