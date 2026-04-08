@@ -22,6 +22,7 @@ const API_CREATE_DOC = '/__prd__/create-doc';
 const API_SWITCH_DOC = '/__prd__/switch-doc';
 const API_ACTIVE_DOC = '/__prd__/active-doc';
 const API_RENAME_DOC = '/__prd__/rename-doc';
+const API_BACKUP_DOC = '/__prd__/backup-doc';
 
 const PRD_PAGES_DIR = path.join(__dirname, 'pages');
 const PRD_ACTIVE_FILE = path.join(__dirname, 'pages', '.active-doc.json');
@@ -61,6 +62,14 @@ function attachMiddleware(server, liveSync, docHandlers, fileHandlers) {
     }
     if (pathOnly === API_ACTIVE_DOC && req.method === 'GET') {
       docHandlers.activeDoc(req, res);
+      return;
+    }
+    if (pathOnly === API_BACKUP_DOC && req.method === 'POST') {
+      fileHandlers.backupDoc(req, res);
+      return;
+    }
+    if (pathOnly === API_BACKUP_DOC && req.method === 'GET') {
+      fileHandlers.getBackupDocDir(req, res);
       return;
     }
 

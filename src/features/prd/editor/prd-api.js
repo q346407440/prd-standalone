@@ -11,6 +11,7 @@ import {
   LIST_DOCS_API,
   CREATE_DOC_API,
   SWITCH_DOC_API,
+  BACKUP_DOC_API,
   DEFAULT_PRD_SLUG,
 } from './prd-constants.js';
 import { slugToApiSuffix, encodePrdResourcePath } from './prd-utils.js';
@@ -23,6 +24,26 @@ export async function fetchPrdMd(mdPath) {
   const res = await fetch(`${pathEncoded}${sep}t=${Date.now()}`);
   if (!res.ok) throw new Error(`fetch md failed: ${res.status}`);
   return res.text();
+}
+
+/** 将 pages/<slug>/ 镜像到 pages-backup/<slug>/s0|s1（双槽轮替覆写较旧槽） */
+export async function backupPrdDoc(slug) {
+  const res = await fetch(`${BACKUP_DOC_API}${slugToApiSuffix(slug)}`, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) {
+    throw new Error(data.error || `backup failed: ${res.status}`);
+  }
+  return data;
+}
+
+/** GET：pages-backup/<slug>/ 根路径及 s0、s1 槽位（不触发拷贝） */
+export async function fetchBackupDocDir(slug) {
+  const res = await fetch(`${BACKUP_DOC_API}${slugToApiSuffix(slug)}`, { method: 'GET' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok || typeof data.backupDir !== 'string') {
+    throw new Error(data.error || `fetch backup path failed: ${res.status}`);
+  }
+  return data;
 }
 
 export async function savePrdMd(mdText, slug) {

@@ -26,6 +26,7 @@ export const ACTIVE_DOC_API = '/__prd__/active-doc';
 export const LIST_DOCS_API = '/__prd__/list-docs';
 export const CREATE_DOC_API = '/__prd__/create-doc';
 export const SWITCH_DOC_API = '/__prd__/switch-doc';
+export const BACKUP_DOC_API = '/__prd__/backup-doc';
 export const TOC_OPEN_STORAGE_KEY = 'prd-editor:toc-open';
 
 export const DEFAULT_PRD_SLUG = 'doc-001';

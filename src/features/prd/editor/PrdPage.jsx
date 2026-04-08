@@ -148,6 +148,8 @@ export function PrdPage() {
   });
   const [activeTocId, setActiveTocId] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
+  /** 按 slug 关闭自动备份（仅内存；刷新页面后清空，全部恢复为开启） */
+  const [autoBackupOffBySlug, setAutoBackupOffBySlug] = useState({});
   /** 外部更新 annotations 或 public/prd 图片时递增，用于 /<prd>/ 图 URL 缓存穿透 */
   const [prdAssetCacheBust, setPrdAssetCacheBust] = useState(0);
   /** 图片宽度 sidecar：{ [imgSrc]: widthPx }，存 prd.meta.json */
@@ -1293,6 +1295,15 @@ export function PrdPage() {
               activeSlug={activeSlug}
               blocks={null}
               exporting={false}
+              autoBackupOff={!!autoBackupOffBySlug[activeSlug]}
+              onAutoBackupOffChange={(off) => {
+                setAutoBackupOffBySlug((prev) => {
+                  const next = { ...prev };
+                  if (off) next[activeSlug] = true;
+                  else delete next[activeSlug];
+                  return next;
+                });
+              }}
               onExport={() => {}}
               onSwitch={(slug) => {
                 activeSlugRef.current = slug;
@@ -1356,6 +1367,15 @@ export function PrdPage() {
               activeSlug={activeSlug}
               blocks={blocks}
               exporting={isExporting}
+              autoBackupOff={!!autoBackupOffBySlug[activeSlug]}
+              onAutoBackupOffChange={(off) => {
+                setAutoBackupOffBySlug((prev) => {
+                  const next = { ...prev };
+                  if (off) next[activeSlug] = true;
+                  else delete next[activeSlug];
+                  return next;
+                });
+              }}
               onExport={handleExportStandalone}
               onSwitch={(slug) => {
                 activeSlugRef.current = slug;

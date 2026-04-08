@@ -362,6 +362,13 @@
 }
 .prd-tiptap-prosemirror a:hover { border-bottom-color: #1677ff; }
 
+.prd-tiptap-prosemirror img {
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+  border-radius: 4px;
+}
+
 /* 列表由 markdown 前綴管理，Tiptap 不生成 ul/ol/li 節點 */
 
 .prd-tiptap-prosemirror code {

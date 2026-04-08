@@ -5,6 +5,7 @@ import { MdFormatListNumbered } from 'react-icons/md';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
+import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from 'tiptap-markdown';
 import markdownit from 'markdown-it';
@@ -30,6 +31,14 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   const token = tokens[idx];
   const href = token.attrGet('href') || '';
   return `<a href="${href}" class="prd-md-link" target="_blank" rel="noreferrer noopener">`;
+};
+md.renderer.rules.image = (tokens, idx) => {
+  const token = tokens[idx];
+  const src = token.attrGet('src') || '';
+  const alt = token.content || '';
+  const title = token.attrGet('title');
+  const titleAttr = title ? ` title="${md.utils.escapeHtml(title)}"` : '';
+  return `<img class="prd-md-preview-img" src="${md.utils.escapeHtml(src)}" alt="${md.utils.escapeHtml(alt)}"${titleAttr} />`;
 };
 
 const BLOCK_LEVEL_TYPES = ['paragraph', ...Array.from({ length: 7 }, (_, index) => `h${index + 1}`)];
@@ -178,7 +187,7 @@ async function uploadPastedImage(file) {
 
 // ─── Tiptap extensions ────────────────────────────────────────────────────
 
-/** 禁用列表節點，列表由外層 markdown 前綴管理 */
+/** 禁用列表節點，列表由外層 markdown 前綴管理；行內圖與預覽態 ![](…) 對齊 */
 function makeEditableExtensions(placeholder) {
   return [
     StarterKit.configure({
@@ -195,6 +204,11 @@ function makeEditableExtensions(placeholder) {
     Link.configure({
       openOnClick: false,
       HTMLAttributes: { class: 'prd-md-link' },
+    }),
+    Image.configure({
+      inline: true,
+      allowBase64: false,
+      HTMLAttributes: { class: 'prd-md-preview-img' },
     }),
     Placeholder.configure({ placeholder }),
     Markdown.configure({
@@ -572,7 +586,7 @@ function ListPrefixMenu({ prefix, anchorRef, menuRef: externalMenuRef, onAction,
 /**
  * Tiptap 富文本編輯器，內部 model 為 Markdown。
  * 列表由外層 markdown 前綴管理（`- ` / `  - ` / `1. `），
- * Tiptap 只處理行內格式（粗體、斜體、連結）。
+ * 行內含粗體、斜體、連結與 **行內圖**（與預覽態 `![](…)` 一致）。
  */
 function TiptapEditingSurface({
   value,

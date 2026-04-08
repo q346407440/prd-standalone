@@ -19,12 +19,20 @@ import {
   createDoc,
   switchDoc,
   renameDoc,
+  backupPrdDoc,
 } from '../prd-api.js';
 import { FeishuSyncEntry } from '../../../feishu-sync/index.jsx';
 import { ExportPackageModal } from './modals/ExportPackageModal.jsx';
+import { BackupFolderPathModal } from './modals/BackupFolderPathModal.jsx';
 
 export function PrdToolbar({
-  activeSlug, blocks, onSwitch, onExport, exporting = false,
+  activeSlug,
+  blocks,
+  onSwitch,
+  onExport,
+  exporting = false,
+  autoBackupOff = false,
+  onAutoBackupOffChange,
 }) {
   const [switchPanelOpen, setSwitchPanelOpen] = useState(false);
   const [docs, setDocs] = useState([]);
@@ -45,6 +53,15 @@ export function PrdToolbar({
   const [exportPackageError, setExportPackageError] = useState('');
 
   const [switchingSlug, setSwitchingSlug] = useState(null);
+
+  /** 本会话内已对某 slug 做过「首次选中立即备份」，再次切回该 slug 仅走定时器 */
+  const backupImmediateDoneForSlugRef = useRef(new Set());
+  const activeSlugForBackupRef = useRef(activeSlug);
+  activeSlugForBackupRef.current = activeSlug;
+  const [autoBackupStatus, setAutoBackupStatus] = useState({ kind: 'idle', text: '' });
+  const [backupPathModalOpen, setBackupPathModalOpen] = useState(false);
+  const prevAutoBackupOffRef = useRef(autoBackupOff);
+  const prevSlugForBackupTransitionRef = useRef(activeSlug);
 
   const switchBtnRef = useRef(null);
   const panelRef = useRef(null);
@@ -119,6 +136,84 @@ export function PrdToolbar({
   useEffect(() => {
     if (renaming) setTimeout(() => { renameInputRef.current?.focus(); renameInputRef.current?.select(); }, 30);
   }, [renaming?.slug]);
+
+  /** 从「关闭自动备份」切回「开启」时，允许对该 slug 再跑一次立即备份（仅同 slug 内 off→on，换文档时不误删） */
+  useEffect(() => {
+    if (prevSlugForBackupTransitionRef.current !== activeSlug) {
+      prevSlugForBackupTransitionRef.current = activeSlug;
+      prevAutoBackupOffRef.current = autoBackupOff;
+      return;
+    }
+    if (prevAutoBackupOffRef.current && !autoBackupOff && activeSlug) {
+      backupImmediateDoneForSlugRef.current.delete(activeSlug);
+    }
+    prevAutoBackupOffRef.current = autoBackupOff;
+  }, [autoBackupOff, activeSlug]);
+
+  useEffect(() => {
+    if (!activeSlug) {
+      setAutoBackupStatus({ kind: 'idle', text: '' });
+      return undefined;
+    }
+    if (autoBackupOff) {
+      setAutoBackupStatus({
+        kind: 'paused',
+        text: '自动备份已关闭（刷新页面后将恢复开启）',
+      });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let intervalId = null;
+    const slugAtMount = activeSlug;
+
+    function formatLocalTime(iso) {
+      try {
+        const d = new Date(iso);
+        return d.toLocaleString('zh-CN', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        });
+      } catch {
+        return '';
+      }
+    }
+
+    const run = async (expectedSlug) => {
+      if (cancelled || activeSlugForBackupRef.current !== expectedSlug) return;
+      try {
+        const data = await backupPrdDoc(expectedSlug);
+        if (cancelled || activeSlugForBackupRef.current !== expectedSlug) return;
+        const t = data.at ? formatLocalTime(data.at) : '';
+        setAutoBackupStatus({
+          kind: 'ok',
+          text: t ? `自动备份成功 · ${t}` : '自动备份成功',
+        });
+      } catch (e) {
+        if (cancelled || activeSlugForBackupRef.current !== expectedSlug) return;
+        setAutoBackupStatus({
+          kind: 'err',
+          text: `自动备份失败 · ${e?.message || '未知错误'}`,
+        });
+      }
+    };
+
+    if (!backupImmediateDoneForSlugRef.current.has(slugAtMount)) {
+      backupImmediateDoneForSlugRef.current.add(slugAtMount);
+      run(slugAtMount);
+    }
+    intervalId = window.setInterval(() => run(slugAtMount), 5 * 60 * 1000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId != null) window.clearInterval(intervalId);
+    };
+  }, [activeSlug, autoBackupOff]);
 
   useEffect(() => {
     if (exportDialogOpen) {
@@ -225,8 +320,46 @@ export function PrdToolbar({
 
   return (
     <div className="prd-toolbar">
-      {/* ── 左侧：占位，保持工具栏撑满 ── */}
-      <div className="prd-toolbar__left" />
+      {/* ── 左侧：自动备份状态（仅当前选中文档） ── */}
+      <div className="prd-toolbar__left">
+        {activeSlug ? (
+          <label
+            className="prd-toolbar__backup-toggle"
+            title="关闭后本标签页内不再定时备份，避免异常清空后覆盖 pages-backup；刷新页面后恢复为开启"
+          >
+            <input
+              type="checkbox"
+              className="prd-toolbar__backup-toggle-input"
+              checked={!autoBackupOff}
+              onChange={(e) => onAutoBackupOffChange?.(!e.target.checked)}
+            />
+            <span className="prd-toolbar__backup-toggle-label">自动备份</span>
+          </label>
+        ) : null}
+        {autoBackupStatus.text ? (
+          <span
+            className={
+              autoBackupStatus.kind === 'err'
+                ? 'prd-toolbar__auto-backup prd-toolbar__auto-backup--err'
+                : autoBackupStatus.kind === 'paused'
+                  ? 'prd-toolbar__auto-backup prd-toolbar__auto-backup--paused'
+                  : 'prd-toolbar__auto-backup'
+            }
+            title="将 pages 下当前文档目录复制到 pages-backup 下该文档的 s0、s1 子文件夹；两槽均有内容时每 5 分钟覆盖较旧的一份"
+          >
+            {autoBackupStatus.text}
+          </span>
+        ) : null}
+        {activeSlug ? (
+          <button
+            type="button"
+            className="prd-toolbar__backup-view-path"
+            onClick={() => setBackupPathModalOpen(true)}
+          >
+            查看
+          </button>
+        ) : null}
+      </div>
 
       {/* ── 右侧：文档选择器 + 导出 + 飞书 ── */}
       <div className="prd-toolbar__right">
@@ -399,6 +532,13 @@ export function PrdToolbar({
           <span>{exporting ? '导出中…' : '导出离线包'}</span>
         </button>
       </div>
+      {backupPathModalOpen ? (
+        <BackupFolderPathModal
+          slug={activeSlug}
+          open={backupPathModalOpen}
+          onClose={() => setBackupPathModalOpen(false)}
+        />
+      ) : null}
       {exportDialogOpen ? (
         <ExportPackageModal
           value={exportPackageName}
