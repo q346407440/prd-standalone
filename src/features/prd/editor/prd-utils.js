@@ -75,6 +75,47 @@ export function isTableKindSelection(sel) {
   return sel && (sel.type === 'table-col' || sel.type === 'table-row');
 }
 
+/**
+ * 當前選區是否落在指定表格 block 內（列/欄、表頭文字、儲存格內文字或圖片）
+ */
+export function isGlobalSelectionInTableBlock(blockId, sel) {
+  if (!sel || sel.blockId !== blockId) return false;
+  if (sel.type === 'table-col' || sel.type === 'table-row') return true;
+  if (sel.type === 'text-block') return true;
+  if (sel.type === 'image' && sel.cellPath != null) return true;
+  return false;
+}
+
+/** 儲存格內某一元素（文字/圖片）是否為當前 globalSelection 所指 */
+export function isGlobalSelectionOnTableCellElement(sel, blockId, ri, ci, idx) {
+  if (!sel || sel.blockId !== blockId) return false;
+  if (sel.type === 'image') {
+    return sel.cellPath?.ri === ri && sel.cellPath?.ci === ci && sel.cellPath?.idx === idx;
+  }
+  if (sel.type === 'text-block' && sel.cellPath != null) {
+    return sel.cellPath.ri === ri && sel.cellPath.ci === ci && sel.cellPath.idx === idx;
+  }
+  return false;
+}
+
+/**
+ * globalSelection 是否相對於「本儲存格 (ri,ci)」為外部（其他 block、表頭、列欄選取、其他儲存格）
+ */
+export function isForeignSelectionForTableCell(sel, blockId, ri, ci) {
+  if (!sel) return false;
+  if (sel.blockId !== blockId) return true;
+  if (sel.type === 'table-col' || sel.type === 'table-row') return true;
+  if (sel.type === 'text-block') {
+    if (sel.cellPath == null) return true;
+    return sel.cellPath.ri !== ri || sel.cellPath.ci !== ci;
+  }
+  if (sel.type === 'image') {
+    if (sel.cellPath == null) return true;
+    return sel.cellPath.ri !== ri || sel.cellPath.ci !== ci;
+  }
+  return true;
+}
+
 export function isNodeHovered(node) {
   return !!node && typeof node.matches === 'function' && node.matches(':hover');
 }

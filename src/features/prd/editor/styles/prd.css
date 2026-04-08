@@ -79,12 +79,16 @@
   position: absolute;
   top: 16px;
   left: 16px;
-  z-index: 30;
-  width: 36px;
-  height: 36px;
+  /* 高於 .prd-toolbar(120)，避免左上角展開目錄鈕被頂欄蓋住 */
+  z-index: 130;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 12px 0 10px;
   display: inline-flex;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
+  gap: 6px;
   border-radius: 10px;
   border: 1px solid #dde5f0;
   background: rgba(255, 255, 255, 0.96);
@@ -101,9 +105,18 @@
   box-shadow: 0 8px 20px rgba(22, 119, 255, 0.12);
 }
 
-.prd-page__toc-toggle svg {
+.prd-page__toc-toggle__icon {
+  flex-shrink: 0;
   width: 19px;
   height: 19px;
+}
+
+.prd-page__toc-toggle__label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .prd-page__toc-toggle--inline {
@@ -111,7 +124,16 @@
   flex-shrink: 0;
   width: 32px;
   height: 32px;
+  min-height: 32px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
   box-shadow: none;
+}
+
+.prd-page__toc-toggle--inline .prd-page__toc-toggle__icon {
+  width: 17px;
+  height: 17px;
 }
 
 .prd-page__toc-scroll,

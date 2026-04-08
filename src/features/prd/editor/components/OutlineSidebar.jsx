@@ -44,7 +44,8 @@ export const OutlineSidebar = memo(function OutlineSidebar({
           title="展开目录"
           aria-label="展开目录"
         >
-          <FiMenu aria-hidden="true" />
+          <FiMenu aria-hidden="true" className="prd-page__toc-toggle__icon" />
+          <span className="prd-page__toc-toggle__label">目录</span>
         </button>
       )}
       <aside
@@ -65,7 +66,7 @@ export const OutlineSidebar = memo(function OutlineSidebar({
               title="收起目录"
               aria-label="收起目录"
             >
-              <FiChevronsLeft aria-hidden="true" />
+              <FiChevronsLeft aria-hidden="true" className="prd-page__toc-toggle__icon" />
             </button>
             <span className="prd-page__toc-title">目录</span>
           </div>

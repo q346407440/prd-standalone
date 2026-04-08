@@ -48,6 +48,7 @@ import {
   ACTIONBAR_CLOSE_DELAY_MS,
   PRD_EVENTS_API,
   ENABLE_IMAGE_ANNOTATION_UI,
+  ENABLE_TABLE_CELL_ANNOTATION_UI,
 } from './prd-constants.js';
 import {
   slugToMdPath,
@@ -138,6 +139,7 @@ export function PrdPage() {
   const pendingActionbarBlockIdRef = useRef(null);
   /** 全局唯一 UI 选中（文本 / 表格 / 链接等）；与 Block 操作条互斥 */
   const [globalSelection, setGlobalSelection] = useState(null);
+  const globalSelectionRef = useRef(null);
   /** Enter 新增 Block 後要聚焦的 blockId */
   const [focusBlockId, setFocusBlockId] = useState(null);
   const [isTocOpen, setIsTocOpen] = useState(() => {
@@ -236,7 +238,9 @@ export function PrdPage() {
     const activate = () => {
       if (pendingActionbarBlockIdRef.current !== blockId) return;
       const blockNode = blockRefs.current[blockId];
-      if (!isNodeHovered(blockNode) && activeInsertMenuOwnerIdRef.current !== blockId) {
+      const sel = globalSelectionRef.current;
+      const selectionInThisBlock = Boolean(sel && sel.blockId === blockId);
+      if (!isNodeHovered(blockNode) && activeInsertMenuOwnerIdRef.current !== blockId && !selectionInThisBlock) {
         pendingActionbarBlockIdRef.current = null;
         actionbarOpenTimerRef.current = null;
         return;
@@ -252,6 +256,16 @@ export function PrdPage() {
     }
     actionbarOpenTimerRef.current = setTimeout(activate, delay);
   }, [clearPendingActionbarClose, clearPendingActionbarOpen]);
+
+  /** 寫入選區後下一個 microtask 再開操作欄，避免與 ref / 子元件 effect 順序競態 */
+  const setGlobalSelectionWithActionbar = useCallback((sel) => {
+    setGlobalSelection(sel);
+    if (sel && sel.blockId) {
+      queueMicrotask(() => {
+        requestActionbarOpen(sel.blockId, { immediate: true });
+      });
+    }
+  }, [requestActionbarOpen]);
 
   const requestActionbarClose = useCallback((blockId, { immediate = false } = {}) => {
     if (!blockId) return;
@@ -291,6 +305,9 @@ export function PrdPage() {
   useEffect(() => {
     blocksRef.current = blocks;
   }, [blocks]);
+
+  /** 與 globalSelection 同步；須在 render 內更新，避免子元件 useEffect 早於父層 effect 而讀到舊值 */
+  globalSelectionRef.current = globalSelection;
 
   const saveViewportSnapshot = useCallback(() => {
     const snapshot = captureViewportSnapshot(
@@ -494,11 +511,11 @@ export function PrdPage() {
     void savePrdAnnotations(nextDoc, activeSlugRef.current);
   }, []);
 
+  /** 有全域選區時僅關閉「插入 Block」選單；勿清 activeActionBlockId（會與 setGlobalSelectionWithActionbar 的 microtask 競爭，造成底部操作欄閃爍） */
   useEffect(() => {
     if (globalSelection == null) return;
     closeInsertMenu();
-    clearActionbarState();
-  }, [clearActionbarState, closeInsertMenu, globalSelection]);
+  }, [closeInsertMenu, globalSelection]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1199,8 +1216,8 @@ export function PrdPage() {
 
   const selectionState = useMemo(() => ({
     globalSelection,
-    setGlobalSelection,
-  }), [globalSelection]);
+    setGlobalSelection: setGlobalSelectionWithActionbar,
+  }), [globalSelection, setGlobalSelectionWithActionbar]);
 
   const sidecarState = useMemo(() => ({
     imageMeta,
@@ -1223,9 +1240,9 @@ export function PrdPage() {
   const annotationState = useMemo(() => ({
     annotationsDoc,
     onAnnotateUsage: ENABLE_IMAGE_ANNOTATION_UI ? handleOpenAnnotationModal : undefined,
-    onSetCellChangeIntent: handleSetCellChangeIntent,
-    onSetCellPendingConfirm: handleSetCellPendingConfirm,
-    onSetCellPendingConfirmNote: handleSetCellPendingConfirmNote,
+    onSetCellChangeIntent: ENABLE_TABLE_CELL_ANNOTATION_UI ? handleSetCellChangeIntent : undefined,
+    onSetCellPendingConfirm: ENABLE_TABLE_CELL_ANNOTATION_UI ? handleSetCellPendingConfirm : undefined,
+    onSetCellPendingConfirmNote: ENABLE_TABLE_CELL_ANNOTATION_UI ? handleSetCellPendingConfirmNote : undefined,
     onCellEdited: handleMarkCellManual,
     onResetOrderedStartBlock: handleResetOrderedStart,
   }), [

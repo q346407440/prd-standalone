@@ -33,7 +33,11 @@ export const BlockItem = memo(function BlockItem({
   const [showInsertMenu, setShowInsertMenu] = useState(null);
   const suppressActionbarUntilLeaveRef = useRef(false);
   const rootRef = useRef(null);
-  const hasGlobalSelection = globalSelection != null;
+  /** 選區在「其他 block」時，不應開啟本 block 的操作欄 */
+  const selectionOnOtherBlock = globalSelection != null && globalSelection.blockId !== block.id;
+  /** 主文或表格內 Tiptap：選區類型為 text-block 且屬於本 block（含儲存格） */
+  const isTextUiAnchoredOnThisBlock = globalSelection?.blockId === block.id
+    && globalSelection?.type === 'text-block';
   const insertMenuOwnerId = block.id;
 
   useEffect(() => {
@@ -42,10 +46,17 @@ export const BlockItem = memo(function BlockItem({
   }, [activeInsertMenuOwnerId, insertMenuOwnerId]);
 
   const openActionbar = () => {
-    if (hasGlobalSelection) return;
+    if (selectionOnOtherBlock) return;
     if (suppressActionbarUntilLeaveRef.current) return;
     requestActionbarOpen(block.id);
   };
+
+  /** 與 PrdPage.setGlobalSelectionWithActionbar 並行：涵蓋 effect 順序／少數未經包裝 setState 路徑 */
+  useEffect(() => {
+    if (globalSelection == null || globalSelection.blockId !== block.id) return;
+    if (suppressActionbarUntilLeaveRef.current) return;
+    requestActionbarOpen(block.id, { immediate: true });
+  }, [block.id, globalSelection, requestActionbarOpen]);
 
   const closeActionbarWithDelay = () => {
     requestActionbarClose(block.id);
@@ -91,9 +102,22 @@ export const BlockItem = memo(function BlockItem({
   }, [shouldFocus, onFocusConsumed, clearActionbarState]);
 
   useEffect(() => {
-    if (activeActionBlockId !== block.id || hasGlobalSelection || suppressActionbarUntilLeaveRef.current) return undefined;
+    if (activeActionBlockId !== block.id || selectionOnOtherBlock || suppressActionbarUntilLeaveRef.current) return undefined;
     const handlePointerOutside = (event) => {
-      if (nodeContainsTarget(rootRef.current, event.target)) return;
+      const t = event.target;
+      if (nodeContainsTarget(rootRef.current, t)) return;
+      // Tiptap 選區工具列 / 連結等氣泡掛在 body，仍屬當前編輯上下文
+      if (t && typeof t.closest === 'function') {
+        if (t.closest('.prd-tiptap-bubble-menu')) return;
+        if (t.closest('.prd-floating-action-bubble')) return;
+      }
+      // 游標經過間隙移向工具列時：只要焦點仍在本 block 內，不收操作欄
+      if (
+        isTextUiAnchoredOnThisBlock
+        && rootRef.current?.contains(document.activeElement)
+      ) {
+        return;
+      }
       closeActionbarImmediately();
     };
     const handleWindowMouseOut = (event) => {
@@ -109,7 +133,7 @@ export const BlockItem = memo(function BlockItem({
       window.removeEventListener('blur', closeActionbarImmediately);
       window.removeEventListener('mouseout', handleWindowMouseOut);
     };
-  }, [activeActionBlockId, block.id, closeActionbarImmediately, hasGlobalSelection]);
+  }, [activeActionBlockId, block.id, closeActionbarImmediately, isTextUiAnchoredOnThisBlock, selectionOnOtherBlock]);
 
   const renderContent = () => {
     switch (block.type) {
@@ -215,6 +239,8 @@ export const BlockItem = memo(function BlockItem({
       onMouseEnter={openActionbar}
       onMouseLeave={() => {
         suppressActionbarUntilLeaveRef.current = false;
+        // 預覽→編輯 DOM 替換或移向 body 上的格式條時會誤觸 leave；編輯態下保持操作欄常駐
+        if (isTextUiAnchoredOnThisBlock) return;
         closeActionbarWithDelay();
       }}
     >
@@ -227,15 +253,24 @@ export const BlockItem = memo(function BlockItem({
       <ActionPanel
         visible={
           activeActionBlockId === block.id
-          && !hasGlobalSelection
-          && !suppressActionbarUntilLeaveRef.current
-          && !(globalSelection && globalSelection.blockId === block.id)
+          && !selectionOnOtherBlock
+          && (
+            !suppressActionbarUntilLeaveRef.current
+            || isTextUiAnchoredOnThisBlock
+          )
         }
         className="prd-block-actionbar"
         onMouseEnter={() => {
           keepActionbarOpen(block.id);
         }}
-        onMouseLeave={closeActionbarWithDelay}
+        onMouseLeave={(e) => {
+          if (isTextUiAnchoredOnThisBlock) {
+            const next = e.relatedTarget;
+            if (next && rootRef.current?.contains(next)) return;
+            if (next && typeof next.closest === 'function' && next.closest('.prd-tiptap-bubble-menu')) return;
+          }
+          closeActionbarWithDelay();
+        }}
       >
         <button
           type="button"

@@ -8,7 +8,13 @@ import {
   ACTIONBAR_CLOSE_DELAY_MS,
   ELEMENT_TYPE_LABELS,
 } from '../prd-constants.js';
-import { isNodeHovered, nodeContainsTarget, cloneSerializable } from '../prd-utils.js';
+import {
+  isNodeHovered,
+  nodeContainsTarget,
+  cloneSerializable,
+  isGlobalSelectionOnTableCellElement,
+  isForeignSelectionForTableCell,
+} from '../prd-utils.js';
 import {
   parseListPrefix,
   createTypedMarkdownListOptions,
@@ -142,7 +148,7 @@ export function CellRenderer({
   }, []);
 
   const requestElementActionOpen = useCallback((idx, { immediate = false } = {}) => {
-    if (globalSelection != null || hoverSuppressed) return;
+    if (hoverSuppressed || isForeignSelectionForTableCell(globalSelection, blockId, ri, ci)) return;
     clearPendingElementActionClose();
     const activeIdx = activeElementActionIdxRef.current;
     if (activeIdx === idx) {
@@ -155,7 +161,8 @@ export function CellRenderer({
     const open = () => {
       if (pendingActionIdxRef.current !== idx) return;
       const container = containerRefs.current[idx];
-      if (!isNodeHovered(container)) {
+      const fromSelection = isGlobalSelectionOnTableCellElement(globalSelection, blockId, ri, ci, idx);
+      if (!isNodeHovered(container) && !fromSelection) {
         pendingActionIdxRef.current = null;
         actionOpenTimerRef.current = null;
         return;
@@ -169,7 +176,7 @@ export function CellRenderer({
       return;
     }
     actionOpenTimerRef.current = setTimeout(open, delay);
-  }, [clearPendingElementActionClose, clearPendingElementActionOpen, globalSelection, hoverSuppressed]);
+  }, [blockId, ci, clearPendingElementActionClose, clearPendingElementActionOpen, globalSelection, hoverSuppressed, ri]);
 
   const requestElementActionClose = useCallback((idx, { immediate = false } = {}) => {
     clearPendingElementActionOpen(idx);
@@ -186,16 +193,16 @@ export function CellRenderer({
   }, [clearPendingElementActionClose, clearPendingElementActionOpen]);
 
   const keepElementActionOpen = useCallback((idx) => {
-    if (globalSelection != null || hoverSuppressed) return;
+    if (hoverSuppressed || isForeignSelectionForTableCell(globalSelection, blockId, ri, ci)) return;
     clearPendingElementActionOpen();
     clearPendingElementActionClose();
     if (activeElementActionIdxRef.current !== idx) {
       setActiveElementActionIdx(idx);
     }
-  }, [clearPendingElementActionClose, clearPendingElementActionOpen, globalSelection, hoverSuppressed]);
+  }, [blockId, ci, clearPendingElementActionClose, clearPendingElementActionOpen, globalSelection, hoverSuppressed, ri]);
 
   useEffect(() => {
-    if (activeElementActionIdx == null || globalSelection != null || hoverSuppressed) return undefined;
+    if (activeElementActionIdx == null || hoverSuppressed) return undefined;
     const closeActiveAction = () => {
       const idx = activeElementActionIdxRef.current;
       if (idx == null) return;
@@ -229,11 +236,19 @@ export function CellRenderer({
   }, [clearPendingElementActionClose, clearPendingElementActionOpen]);
 
   useEffect(() => {
-    if (globalSelection == null && !hoverSuppressed) return;
-    clearPendingElementActionOpen();
-    clearPendingElementActionClose();
-    setActiveElementActionIdx(null);
-  }, [clearPendingElementActionClose, clearPendingElementActionOpen, globalSelection, hoverSuppressed]);
+    if (hoverSuppressed) {
+      clearPendingElementActionOpen();
+      clearPendingElementActionClose();
+      setActiveElementActionIdx(null);
+      return;
+    }
+    if (globalSelection == null) return;
+    if (isForeignSelectionForTableCell(globalSelection, blockId, ri, ci)) {
+      clearPendingElementActionOpen();
+      clearPendingElementActionClose();
+      setActiveElementActionIdx(null);
+    }
+  }, [blockId, ci, clearPendingElementActionClose, clearPendingElementActionOpen, globalSelection, hoverSuppressed, ri]);
 
   const updateElement = useCallback((idx, newEl) => {
     let next = elements.map((el, i) => i === idx ? newEl : el);
@@ -344,11 +359,15 @@ export function CellRenderer({
 
   return (
     <div className="prd-cell-renderer">
-      {elements.map((element, idx) => (
+      {elements.map((element, idx) => {
+        const barFromCellSelection = isGlobalSelectionOnTableCellElement(
+          globalSelection, blockId, ri, ci, idx,
+        );
+        return (
         <div
           className={[
             'prd-cell-element',
-            activeElementActionIdx === idx ? 'prd-cell-element--action-active' : '',
+            (activeElementActionIdx === idx || barFromCellSelection) ? 'prd-cell-element--action-active' : '',
           ].filter(Boolean).join(' ')}
           key={idx}
           ref={(el) => {
@@ -356,13 +375,28 @@ export function CellRenderer({
             else delete containerRefs.current[idx];
           }}
           onMouseEnter={() => requestElementActionOpen(idx)}
-          onMouseLeave={() => requestElementActionClose(idx)}
+          onMouseLeave={() => {
+            if (barFromCellSelection) return;
+            requestElementActionClose(idx);
+          }}
         >
           <ActionPanel
-            visible={globalSelection == null && activeElementActionIdx === idx}
+            visible={
+              !hoverSuppressed
+              && (
+                barFromCellSelection
+                || (
+                  activeElementActionIdx === idx
+                  && !isForeignSelectionForTableCell(globalSelection, blockId, ri, ci)
+                )
+              )
+            }
             className="prd-cell-element__actions"
             onMouseEnter={() => keepElementActionOpen(idx)}
-            onMouseLeave={() => requestElementActionClose(idx)}
+            onMouseLeave={() => {
+              if (barFromCellSelection) return;
+              requestElementActionClose(idx);
+            }}
           >
             <button
               type="button"
@@ -468,7 +502,8 @@ export function CellRenderer({
             prdAssetCacheBust={prdAssetCacheBust}
           />
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

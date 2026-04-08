@@ -25,13 +25,13 @@ alwaysApply: false
    - macOS 示例：`pkill -f "user-data-dir=.*/chrome-devtools-mcp/chrome-profile"`
    - 或：`ps aux | grep chrome-devtools-mcp/chrome-profile`，对**主进程** `kill <PID>`（子进程通常会随主进程退出）。
 3. **重试** MCP：`list_pages`、`navigate_page` 等应恢复正常。
-4. **仍失败**：再考虑备选 **cursor-ide-browser**（若当前环境已启用），或 PRD 设计列 **截图待补** + 修订说明；**仍禁止**为截图安装 Playwright（见下节）。
+4. **仍失败**：再考虑备选 **cursor-ide-browser**（若当前环境已启用），或 PRD 设计列 **截图待补**（可在对话或 README 中说明）；**仍禁止**为截图安装 Playwright（见下节）。
 
 ## 禁止为截图安装额外自动化栈
 
 - **不要**为产出 PRD 设计列截图而 **`npm install` / 引入 Playwright、Puppeteer、Selenium** 等无头浏览器依赖；**不要**在业务仓或 `prd-standalone` 内新增上述依赖「只为截一张图」。
 - 成图路径**仅限**：**Chrome DevTools MCP**（及 SKILL 允许的备选 **cursor-ide-browser**）+ 本机 **`sips` / Pillow 等裁切**（无头浏览器栈以外的像素处理可接受）。
-- 若 MCP 暂时不可用：**宁可**在设计列写清场景 / 状态 +「打开真实页面」链接，并在修订记录注明 **截图待补**，也**不要**用 Playwright 等绕过。
+- 若 MCP 暂时不可用：**宁可**在设计列写清场景 / 状态 +「打开真实页面」链接，并注明 **截图待补**（对话或 README 等），也**不要**用 Playwright 等绕过。
 
 ## 页缩放（强制 67%）
 

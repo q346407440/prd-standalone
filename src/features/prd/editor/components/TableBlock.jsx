@@ -6,8 +6,15 @@ import { ActionPanel } from './FloatingActionBubble.jsx';
 import { useViewportFit } from '../useViewportFit.js';
 import { getCellColumnKey, getCellState } from '../prd-annotations.js';
 import { measurePrdTask } from '../prd-performance.js';
-import { TABLE_EDGE_HOTZONE_PX, TABLE_HOVER_CLOSE_DELAY_MS } from '../prd-constants.js';
-import { isTableKindSelection, isNodeHovered, nodeContainsTarget } from '../prd-utils.js';
+import {
+  ENABLE_TABLE_CELL_ANNOTATION_UI,
+  TABLE_EDGE_HOTZONE_PX,
+  TABLE_HOVER_CLOSE_DELAY_MS,
+} from '../prd-constants.js';
+import {
+  isTableKindSelection,
+  isGlobalSelectionInTableBlock,
+} from '../prd-utils.js';
 import { makeEmptyCell, makeEmptyRow } from '../prd-block-operations.js';
 
 export function sameNumberArray(a, b) {
@@ -257,6 +264,7 @@ export function TableBlock({
   const [tableGeom, setTableGeom] = useState(null);
   const tableRef = useRef(null);
   const wrapRef = useRef(null);
+  const mouseInsideWrapRef = useRef(false);
   const hoverHideTimerRef = useRef(null);
   const hoverEdgeFrameRef = useRef(null);
   const hoverEdgeRef = useRef({ col: null, row: null });
@@ -284,22 +292,24 @@ export function TableBlock({
   }, [flushHoverEdges]);
 
   const openHoverBars = useCallback(() => {
-    if (globalSelection != null || hoverSuppressed) return;
+    if (hoverSuppressed) return;
+    if (globalSelection != null && !isGlobalSelectionInTableBlock(block.id, globalSelection)) return;
     if (hoverHideTimerRef.current) {
       clearTimeout(hoverHideTimerRef.current);
       hoverHideTimerRef.current = null;
     }
     setShowHoverBars(true);
-  }, [globalSelection, hoverSuppressed]);
+  }, [block.id, globalSelection, hoverSuppressed]);
 
   const closeHoverBarsWithDelay = useCallback(() => {
+    if (isGlobalSelectionInTableBlock(block.id, globalSelection)) return;
     if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
     hoverHideTimerRef.current = setTimeout(() => {
       setShowHoverBars(false);
       flushHoverEdges(null, null);
       hoverHideTimerRef.current = null;
     }, TABLE_HOVER_CLOSE_DELAY_MS);
-  }, [flushHoverEdges]);
+  }, [block.id, flushHoverEdges, globalSelection]);
 
   useEffect(() => () => {
     if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
@@ -308,10 +318,29 @@ export function TableBlock({
   }, []);
 
   useEffect(() => {
-    if (globalSelection == null && !hoverSuppressed) return;
-    if (showHoverBars) setShowHoverBars(false);
+    if (hoverSuppressed) {
+      if (showHoverBars) setShowHoverBars(false);
+      flushHoverEdges(null, null);
+      return;
+    }
+    if (isGlobalSelectionInTableBlock(block.id, globalSelection)) {
+      setShowHoverBars(true);
+      return;
+    }
+    if (globalSelection != null) {
+      if (showHoverBars) setShowHoverBars(false);
+      flushHoverEdges(null, null);
+    }
+  }, [block.id, flushHoverEdges, globalSelection, hoverSuppressed, showHoverBars]);
+
+  /** 選區在表內時曾略過 mouseLeave 關閉；選區清空且游標已不在包裝上時補收橫條 */
+  useEffect(() => {
+    if (globalSelection != null) return;
+    if (!showHoverBars) return;
+    if (mouseInsideWrapRef.current) return;
+    setShowHoverBars(false);
     flushHoverEdges(null, null);
-  }, [flushHoverEdges, globalSelection, hoverSuppressed, showHoverBars]);
+  }, [flushHoverEdges, globalSelection, showHoverBars]);
 
   const measureTable = useCallback(() => {
     const table = tableRef.current;
@@ -488,8 +517,14 @@ export function TableBlock({
           foreignSel ? 'prd-block-table__wrap--foreign-selection' : '',
           localSel ? 'prd-block-table__wrap--has-selection' : '',
         ].filter(Boolean).join(' ')}
-        onMouseEnter={openHoverBars}
-        onMouseLeave={closeHoverBarsWithDelay}
+        onMouseEnter={() => {
+          mouseInsideWrapRef.current = true;
+          openHoverBars();
+        }}
+        onMouseLeave={() => {
+          mouseInsideWrapRef.current = false;
+          closeHoverBarsWithDelay();
+        }}
       >
         <table
           className="prd-table"
@@ -545,7 +580,9 @@ export function TableBlock({
           <tbody>
             {displayRows.map((row, ri) => {
               const rowBinding = rowBindings[ri];
-              const rowCellState = rowBinding ? getCellState(annotationsDoc, rowBinding.rowKey) : null;
+              const rowCellState = rowBinding && ENABLE_TABLE_CELL_ANNOTATION_UI
+                ? getCellState(annotationsDoc, rowBinding.rowKey)
+                : null;
               return (
               <tr
                 key={ri}
@@ -554,7 +591,8 @@ export function TableBlock({
                 {headers.map((h, ci) => {
                   const columnKey = getCellColumnKey(headers, ci);
                   const cellState = rowCellState;
-                  const isLockable = columnKey === 'interaction' || columnKey === 'logic';
+                  const isLockable = ENABLE_TABLE_CELL_ANNOTATION_UI
+                    && (columnKey === 'interaction' || columnKey === 'logic');
                   const unchanged = cellState?.[columnKey]?.changeIntent === 'unchanged';
                   const pendingConfirm = Boolean(cellState?.[columnKey]?.pendingConfirm);
                   const pendingConfirmNote = cellState?.[columnKey]?.pendingConfirmNote || '';

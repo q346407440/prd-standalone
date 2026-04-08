@@ -14,6 +14,14 @@ export const PRD_EVENTS_API = '/__prd__/events';
  * 需要框選標註時改回 true。
  */
 export const ENABLE_IMAGE_ANNOTATION_UI = false;
+
+/**
+ * 表格「交互 / 逻辑」列上的「待确认」「仅参考」控件与单元格高亮样式。
+ * 为 false 时不挂载相关组件（含每格 useViewportFit / 弹层监听），不读取 getCellState；PrdPage 不向子树传入写入回调（与 ENABLE_IMAGE_ANNOTATION_UI 一致）；perf key 不读 cellStates、不序列化 changeIntent / pendingConfirm。
+ * `.annotations.json` 仍照常加载与保存；需要时再改为 true。
+ */
+export const ENABLE_TABLE_CELL_ANNOTATION_UI = false;
+
 export const ACTIVE_DOC_API = '/__prd__/active-doc';
 export const LIST_DOCS_API = '/__prd__/list-docs';
 export const CREATE_DOC_API = '/__prd__/create-doc';
