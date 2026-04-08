@@ -37,6 +37,7 @@ function serializeCellElement(cell) {
 }
 
 // ─── GFM 表格序列化 ──────────────────────────────────────────────────────────
+// 與 PRD 規範一致：表頭與儲存格不為「視覺對齊」補空格；分隔行用最短合法 `| --- |`（見 prd-writing-guard / prd-agent SKILL）。
 
 function serializeGfmTable(headers, rows) {
   if (!headers.length) return '';
@@ -49,16 +50,11 @@ function serializeGfmTable(headers, rows) {
     })
   );
 
-  const colWidths = headers.map((h, i) => {
-    const maxData = stringRows.reduce((max, row) => Math.max(max, (row[i] || '').length), 0);
-    return Math.max(h.length, maxData, 3);
-  });
-
-  const pad = (str, width) => (str || '').padEnd(width);
-  const headerLine = '| ' + headers.map((h, i) => pad(h, colWidths[i])).join(' | ') + ' |';
-  const sepLine = '| ' + colWidths.map((w) => '-'.repeat(w)).join(' | ') + ' |';
+  const cellText = (v) => (v == null ? '' : String(v));
+  const headerLine = '| ' + headers.map(cellText).join(' | ') + ' |';
+  const sepLine = '| ' + headers.map(() => '---').join(' | ') + ' |';
   const dataLines = stringRows.map(
-    (row) => '| ' + headers.map((_, i) => pad(row[i] || '', colWidths[i])).join(' | ') + ' |'
+    (row) => '| ' + headers.map((_, i) => cellText(row[i])).join(' | ') + ' |'
   );
 
   return [headerLine, sepLine, ...dataLines].join('\n');
