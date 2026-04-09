@@ -322,7 +322,11 @@
 }
 
 /* 表格 cell 内的 mermaid：铺满 cell 宽度 */
+/* z-index：须高于同格 .prd-cell-element__actions（6）与表 .prd-table-selector-actions（80），
+   否则「视图」下拉被格操作条 / 行列插入条挡住 */
 .prd-cell-mermaid-wrap {
+  position: relative;
+  z-index: 100;
   width: 100%;
 }
 
@@ -393,14 +397,19 @@
   font-weight: 500;
 }
 
-/* 代码视图 */
+/* 代码视图：最大高度约 16 行（13px × line-height 1.6 × 16 + 上下 padding 各 12px），超出则内部滚动 */
 .prd-mermaid-renderer__code-area {
   display: flex;
+  align-items: stretch;
   min-height: 60px;
+  font-size: 13px;
+  line-height: 1.6;
+  max-height: calc(24px + 16 * 1.6 * 13px);
 }
 
 .prd-mermaid-renderer__line-numbers {
   flex: 0 0 auto;
+  min-height: 0;
   padding: 12px 0 12px 12px;
   text-align: right;
   user-select: none;
@@ -408,6 +417,13 @@
   font-size: 13px;
   line-height: 1.6;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.prd-mermaid-renderer__line-numbers::-webkit-scrollbar {
+  display: none;
 }
 
 .prd-mermaid-renderer__line-number {
@@ -418,6 +434,7 @@
 .prd-mermaid-renderer__textarea {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   padding: 12px 12px 12px 4px;
   border: none;
   outline: none;
@@ -428,7 +445,10 @@
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   color: #333;
   tab-size: 2;
-  overflow: hidden;
+  overflow: auto;
+  white-space: pre;
+  word-wrap: normal;
+  overflow-wrap: normal;
 }
 
 /* 图表视图 */
@@ -510,6 +530,8 @@
 }
 
 .prd-cell-mindmap-wrap {
+  position: relative;
+  z-index: 100;
   width: 100%;
 }
 
@@ -580,13 +602,19 @@
   font-weight: 500;
 }
 
+/* 与 Mermaid 代码区一致：约 16 行高 */
 .prd-mindmap-renderer__code-area {
   display: flex;
+  align-items: stretch;
   min-height: 60px;
+  font-size: 13px;
+  line-height: 1.6;
+  max-height: calc(24px + 16 * 1.6 * 13px);
 }
 
 .prd-mindmap-renderer__line-numbers {
   flex: 0 0 auto;
+  min-height: 0;
   padding: 12px 0 12px 12px;
   text-align: right;
   user-select: none;
@@ -594,6 +622,13 @@
   font-size: 13px;
   line-height: 1.6;
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.prd-mindmap-renderer__line-numbers::-webkit-scrollbar {
+  display: none;
 }
 
 .prd-mindmap-renderer__line-number {
@@ -604,6 +639,7 @@
 .prd-mindmap-renderer__textarea {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   padding: 12px 12px 12px 4px;
   border: none;
   outline: none;
@@ -614,7 +650,10 @@
   font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
   color: #333;
   tab-size: 2;
-  overflow: hidden;
+  overflow: auto;
+  white-space: pre;
+  word-wrap: normal;
+  overflow-wrap: normal;
 }
 
 .prd-mindmap-renderer__chart-area {

@@ -3,7 +3,12 @@ import { createPortal } from 'react-dom';
 import { FiAlertCircle, FiCode, FiBarChart2 } from 'react-icons/fi';
 import { PrdLightbox } from '../PrdLightbox.jsx';
 import { AsyncDiagramSurface } from '../AsyncDiagramSurface.jsx';
-import { convertMermaidMindmapToMarkdown, waitForNextAnimationFrame } from './MermaidRenderer.jsx';
+import { emitPrdToast } from '../../prd-toast.js';
+import {
+  convertMermaidMindmapToMarkdown,
+  estimateMermaidTextareaRows,
+  waitForNextAnimationFrame,
+} from './MermaidRenderer.jsx';
 
 let _markmapDepsPromise = null;
 let _markmapTransformer = null;
@@ -96,6 +101,7 @@ export function MindmapRenderer({
   const markmapRef = useRef(null);
   const dragRef = useRef(null);
   const textareaRef = useRef(null);
+  const lineNumbersRef = useRef(null);
   const viewMenuRef = useRef(null);
   const renderTaskRef = useRef(0);
 
@@ -200,10 +206,16 @@ export function MindmapRenderer({
   }, [showViewMenu]);
 
   const handleViewModeSwitch = useCallback((mode) => {
+    setShowViewMenu(false);
+    if (mode === localViewMode) return;
     setLocalViewMode(mode);
     onViewModeChange?.(mode);
-    setShowViewMenu(false);
-  }, [onViewModeChange]);
+    emitPrdToast(
+      mode === 'code'
+        ? '已保存视图偏好：仅展示代码'
+        : '已保存视图偏好：仅展示图表',
+    );
+  }, [onViewModeChange, localViewMode]);
 
   const handleResizeMouseDown = useCallback((e, corner) => {
     if (!resizable) return;
@@ -234,8 +246,31 @@ export function MindmapRenderer({
   }, [resizable, onWidthChange]);
 
   const lines = (code || '').split('\n');
-  const lineCount = Math.max(lines.length, 1);
-  const lineNumbers = Array.from({ length: lineCount }, (_, i) => i + 1);
+  const gutterLineCount = Math.max(lines.length, 1);
+  const textareaRows = Math.max(gutterLineCount, estimateMermaidTextareaRows(code));
+  const lineNumbers = Array.from({ length: gutterLineCount }, (_, i) => i + 1);
+
+  const syncLineNumbersScroll = useCallback(() => {
+    const ta = textareaRef.current;
+    const ln = lineNumbersRef.current;
+    if (!ta || !ln) return;
+    ln.scrollTop = ta.scrollTop;
+  }, []);
+
+  const syncTextareaScroll = useCallback(() => {
+    const ta = textareaRef.current;
+    const ln = lineNumbersRef.current;
+    if (!ta || !ln) return;
+    ta.scrollTop = ln.scrollTop;
+  }, []);
+
+  useEffect(() => {
+    if (localViewMode !== 'code') return;
+    const id = requestAnimationFrame(() => {
+      syncLineNumbersScroll();
+    });
+    return () => cancelAnimationFrame(id);
+  }, [code, localViewMode, gutterLineCount, syncLineNumbersScroll]);
 
   const rootStyle = resizable && localWidthPx != null ? { width: localWidthPx } : {};
 
@@ -246,7 +281,10 @@ export function MindmapRenderer({
       style={rootStyle}
       data-prd-no-block-select
     >
-      <div className="prd-mindmap-renderer__toolbar">
+      <div
+        className="prd-mindmap-renderer__toolbar"
+        onMouseMove={(e) => e.stopPropagation()}
+      >
         <button
           type="button"
           className="prd-mindmap-renderer__view-btn"
@@ -256,7 +294,11 @@ export function MindmapRenderer({
           <span>视图</span>
         </button>
         {showViewMenu && (
-          <div ref={viewMenuRef} className="prd-mindmap-renderer__view-menu">
+          <div
+            ref={viewMenuRef}
+            className="prd-mindmap-renderer__view-menu"
+            onMouseMove={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               className={`prd-mindmap-renderer__view-menu-item${localViewMode === 'code' ? ' prd-mindmap-renderer__view-menu-item--active' : ''}`}
@@ -277,7 +319,12 @@ export function MindmapRenderer({
 
       {localViewMode === 'code' && (
         <div className="prd-mindmap-renderer__code-area">
-          <div className="prd-mindmap-renderer__line-numbers" aria-hidden="true">
+          <div
+            ref={lineNumbersRef}
+            className="prd-mindmap-renderer__line-numbers"
+            aria-hidden="true"
+            onScroll={syncTextareaScroll}
+          >
             {lineNumbers.map((n) => (
               <div key={n} className="prd-mindmap-renderer__line-number">{n}</div>
             ))}
@@ -287,8 +334,9 @@ export function MindmapRenderer({
             className="prd-mindmap-renderer__textarea"
             value={code || ''}
             onChange={(e) => onCodeChange?.(e.target.value)}
+            onScroll={syncLineNumbersScroll}
             spellCheck={false}
-            rows={lineCount}
+            rows={textareaRows}
           />
         </div>
       )}

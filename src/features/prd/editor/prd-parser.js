@@ -67,9 +67,9 @@ function normalizeBareListPrefix(text) {
 
 function parseSingleElement(s) {
   const mermaidMatch = s.match(CELL_MERMAID_RE);
-  if (mermaidMatch) return { type: 'mermaid', code: mermaidMatch[1] };
+  if (mermaidMatch) return { type: 'mermaid', code: mermaidMatch[1].trim() };
   const mindmapMatch = s.match(CELL_MINDMAP_RE);
-  if (mindmapMatch) return { type: 'mindmap', code: mindmapMatch[1] };
+  if (mindmapMatch) return { type: 'mindmap', code: mindmapMatch[1].trim() };
   const normalized = normalizeBareListPrefix(s);
   const imgMatch = normalized.match(PURE_IMAGE_RE);
   if (imgMatch) return { type: 'image', src: imgMatch[2] };
@@ -78,8 +78,8 @@ function parseSingleElement(s) {
 
 /**
  * 把單元格字串解析為 CellElement。
- * 格內多個段落以 <br> 或連續兩個換行分隔（Markdown 表格格內不能有真正換行，
- * 所以多段落以 <br> 表示）。
+ * 格內多個段落以 <br> 分隔。表格列在原始檔中須以 `|` 開頭；儲格內若需真換行（如 Mermaid 多行），
+ * 由 parseGfmTable 合併後續不以 `|` 開頭的續行。
  * 回傳 { elements: Element[] }
  */
 function parseCellElement(cellStr) {
@@ -100,7 +100,24 @@ function parseGfmTable(block) {
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
-  const tableLines = lines.filter((l) => l.startsWith('|'));
+  // 合併「儲格內含真換行」的續行：GFM 表格式要求每列以 | 開頭；儲格內 Mermaid 等多行內容寫在後續不以 | 開頭的行上。
+  const merged = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (!line.startsWith('|')) {
+      i += 1;
+      continue;
+    }
+    let row = line;
+    i += 1;
+    while (i < lines.length && !lines[i].startsWith('|')) {
+      row += `\n${lines[i]}`;
+      i += 1;
+    }
+    merged.push(row);
+  }
+  const tableLines = merged;
   if (tableLines.length < 2) return { type: 'table', headers: [], rows: [] };
 
   const parseRow = (line) =>
