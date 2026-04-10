@@ -52,6 +52,7 @@ export const BlockCanvas = memo(function BlockCanvas({
             onFocusConsumed={blockUiState.clearFocusBlockId}
             onEnterBlock={callbacks.onEnterBlock}
             onBackspaceEmptyBlock={callbacks.onBackspaceEmptyBlock}
+            onBackspaceMergeBlock={callbacks.onBackspaceMergeBlock}
             onPasteImageAsBlockBlock={callbacks.onPasteImageAsBlockBlock}
             imageMeta={sidecarState.imageMeta}
             onImageWidthChange={sidecarState.onImageWidthChange}

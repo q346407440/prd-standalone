@@ -1,7 +1,12 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { ElementRenderer, getEnterCurrentMarkdown, getEnterNextMarkdown } from './renderers/ElementRenderer.jsx';
 import { ActionPanel } from './FloatingActionBubble.jsx';
-import { mermaidCodeToMetaKey, mindmapCodeToMetaKey } from '../prd-perf-keys.js';
+import {
+  mermaidTableMetaKey,
+  mindmapTableMetaKey,
+  resolveMermaidViewMode,
+  resolveMindmapViewMode,
+} from '../prd-perf-keys.js';
 import {
   ACTIONBAR_OPEN_DELAY_MS,
   ACTIONBAR_SWITCH_DELAY_MS,
@@ -317,6 +322,19 @@ export function CellRenderer({
     setFocusIdx(Math.max(0, idx - 1));
   }, [elements, onUpdate]);
 
+  const mergeWithPrevElement = useCallback((idx, currentMd) => {
+    if (idx <= 0) return;
+    const prevEl = elements[idx - 1];
+    if (!prevEl || prevEl.type !== 'text') return;
+    const prevMd = prevEl.markdown || '';
+    const merged = prevMd ? prevMd + currentMd : currentMd;
+    const next = elements
+      .map((el, i) => (i === idx - 1 ? { ...el, markdown: merged } : el))
+      .filter((_, i) => i !== idx);
+    onUpdate({ elements: next });
+    setFocusIdx(idx - 1);
+  }, [elements, onUpdate]);
+
   const moveElement = useCallback((idx, direction) => {
     const targetIdx = idx + direction;
     if (targetIdx < 0 || targetIdx >= elements.length) return;
@@ -346,16 +364,6 @@ export function CellRenderer({
     }
     setElementInsertMenu(null);
   }, [insertElementAfter, insertElementBefore]);
-
-  const getMermaidMetaKey = useCallback((idx) => {
-    const el = elements[idx];
-    return mermaidCodeToMetaKey(el?.code || '');
-  }, [elements]);
-
-  const getMindmapMetaKey = useCallback((idx) => {
-    const el = elements[idx];
-    return mindmapCodeToMetaKey(el?.code || '');
-  }, [elements]);
 
   return (
     <div className="prd-cell-renderer">
@@ -471,6 +479,7 @@ export function CellRenderer({
             onBackspaceEmpty={() => {
               if (elements.length > 1) removeElement(idx);
             }}
+            onBackspaceMerge={idx > 0 ? (currentMd) => mergeWithPrevElement(idx, currentMd) : undefined}
             onPasteImageAsBlock={(src) => insertElementAfter(idx, { type: 'image', src })}
             onReplaceWithImage={(src) => updateElement(idx, { type: 'image', src })}
             placeholder={idx === 0 ? '—' : ''}
@@ -489,15 +498,21 @@ export function CellRenderer({
               next = renumberCellElementsFrom(next, idx, startNum);
               onUpdate({ elements: next });
             }}
-            mermaidViewMode={element.type === 'mermaid' ? (mermaidMeta?.mermaidViewModes?.[getMermaidMetaKey(idx)] || 'code') : undefined}
+            mermaidViewMode={element.type === 'mermaid'
+              ? resolveMermaidViewMode(mermaidMeta, element.code, {
+                kind: 'table', blockId, ri, ci, idx,
+              })
+              : undefined}
             onMermaidViewModeChange={element.type === 'mermaid' ? (mode) => {
-              const key = getMermaidMetaKey(idx);
-              onMermaidMetaChange?.('mermaidViewModes', key, mode);
+              onMermaidMetaChange?.('mermaidViewModes', mermaidTableMetaKey(blockId, ri, ci, idx), mode);
             } : undefined}
-            mindmapViewMode={element.type === 'mindmap' ? (mindmapMeta?.mindmapViewModes?.[getMindmapMetaKey(idx)] || 'code') : undefined}
+            mindmapViewMode={element.type === 'mindmap'
+              ? resolveMindmapViewMode(mindmapMeta, element.code, {
+                kind: 'table', blockId, ri, ci, idx,
+              })
+              : undefined}
             onMindmapViewModeChange={element.type === 'mindmap' ? (mode) => {
-              const key = getMindmapMetaKey(idx);
-              onMindmapMetaChange?.('mindmapViewModes', key, mode);
+              onMindmapMetaChange?.('mindmapViewModes', mindmapTableMetaKey(blockId, ri, ci, idx), mode);
             } : undefined}
             prdAssetCacheBust={prdAssetCacheBust}
           />

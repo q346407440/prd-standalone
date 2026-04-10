@@ -2,7 +2,7 @@ import { ElementRenderer } from '../renderers/ElementRenderer.jsx';
 
 export function ParagraphBlock({
   block, onUpdate, globalSelection, setGlobalSelection,
-  onEnter, onBackspaceEmpty, onPasteImageAsBlock,
+  onEnter, onBackspaceEmpty, onBackspaceMerge, onPasteImageAsBlock,
   imageMeta, onImageWidthChange, prdAssetCacheBust = 0, setFocusBlockId,
   onMoveUp, onMoveDown, canMoveUp, canMoveDown,
   onEditingFinished,
@@ -24,6 +24,7 @@ export function ParagraphBlock({
         setGlobalSelection={setGlobalSelection}
         onEnter={onEnter}
         onBackspaceEmpty={onBackspaceEmpty}
+        onBackspaceMerge={onBackspaceMerge}
         onPasteImageAsBlock={onPasteImageAsBlock}
         imageMeta={imageMeta}
         onImageWidthChange={onImageWidthChange}

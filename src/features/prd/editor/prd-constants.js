@@ -44,6 +44,9 @@ export const BUBBLE_MARGIN = 8;
 export const MERMAID_BLOCK_DEFAULT_WIDTH = 628;
 export const MINDMAP_BLOCK_DEFAULT_WIDTH = 628;
 
+/** Mermaid / Mindmap 块默认视图：图表优先（未写入 meta 时） */
+export const DEFAULT_DIAGRAM_VIEW_MODE = 'chart';
+
 export const HEADING_BLOCK_TYPES = Array.from({ length: 7 }, (_, index) => `h${index + 1}`);
 export const BLOCK_LEVEL_TYPES = ['paragraph', ...HEADING_BLOCK_TYPES];
 export const HEADING_BLOCK_TYPE_SET = new Set(HEADING_BLOCK_TYPES);

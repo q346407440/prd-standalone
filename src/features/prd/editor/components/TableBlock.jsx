@@ -16,6 +16,7 @@ import {
   isGlobalSelectionInTableBlock,
 } from '../prd-utils.js';
 import { makeEmptyCell, makeEmptyRow } from '../prd-block-operations.js';
+import { cellFromMarkdownString } from '../prd-inline-image-split.js';
 
 export function sameNumberArray(a, b) {
   if (a === b) return true;
@@ -432,9 +433,7 @@ export function TableBlock({
         return { elements: [cell.element] };
       }
       const s = cell || '';
-      const imgMatch = s.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-      if (imgMatch) return { elements: [{ type: 'image', src: imgMatch[2] }] };
-      return { elements: [{ type: 'text', markdown: s }] };
+      return cellFromMarkdownString(s);
     })
   );
 

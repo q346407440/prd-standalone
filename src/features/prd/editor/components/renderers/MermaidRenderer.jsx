@@ -4,6 +4,7 @@ import { FiAlertCircle, FiCode, FiBarChart2 } from 'react-icons/fi';
 import { PrdLightbox } from '../PrdLightbox.jsx';
 import { AsyncDiagramSurface } from '../AsyncDiagramSurface.jsx';
 import { emitPrdToast } from '../../prd-toast.js';
+import { DEFAULT_DIAGRAM_VIEW_MODE } from '../../prd-constants.js';
 
 let _mermaidInitialized = false;
 let _mermaidLibPromise = null;
@@ -102,7 +103,7 @@ export async function renderMermaidSvgForExport(code) {
 export function MermaidRenderer({
   code,
   onCodeChange,
-  viewMode = 'code',
+  viewMode = DEFAULT_DIAGRAM_VIEW_MODE,
   onViewModeChange,
   widthPx = null,
   onWidthChange,

@@ -17,6 +17,38 @@ export function applyListPrefix(inlineMd, prefix) {
   return prefix + inlineMd;
 }
 
+/**
+ * Tiptap 將多個段落序列化為以 \\n\\n 分隔的 Markdown；本編輯器對整塊正文只保留「單一」外層列表前綴。
+ * 若直接用 {@link applyListPrefix}，只會在全文開頭加一次前綴，其餘段落會變成無前綴 + 空行，
+ * 與預覽/源文件不一致，且空行會觸發載入時 expandParagraphBlocksOnBlankLines 拆成多個 paragraph block。
+ *
+ * 對每個由 \\n\\n 切出的段落：若其首行已符合列表前綴則保留；否則在該段前補上同一個 prefix。
+ * 段落之間用單一 \\n 拼接，避免產生「空行」。
+ */
+export function mergeListPrefixWithParagraphMarkdown(serializedMd, prefix) {
+  if (!prefix) return serializedMd ?? '';
+  const normalized = String(serializedMd ?? '').replace(/\n+$/, '');
+  if (!normalized.trim()) {
+    return prefix.endsWith(' ') ? prefix : `${prefix} `;
+  }
+  const parts = normalized
+    .split(/\n\n+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (parts.length <= 1) {
+    return applyListPrefix(normalized, prefix);
+  }
+  return parts
+    .map((part) => {
+      const firstLine = part.split(/\n/)[0] ?? '';
+      if (parseListPrefix(firstLine)) {
+        return part;
+      }
+      return prefix + part;
+    })
+    .join('\n');
+}
+
 export function indentMarkdown(md) {
   if (!md) return md;
   return md.replace(/^/gm, '  ');

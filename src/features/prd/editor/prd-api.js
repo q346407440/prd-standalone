@@ -64,12 +64,13 @@ export async function fetchPrdMeta(slug) {
   } catch { return {}; }
 }
 
-export async function savePrdMeta(meta, slug) {
+export async function savePrdMeta(meta, slug, { keepalive = false } = {}) {
   try {
     await fetch(`${SAVE_META_API}${slugToApiSuffix(slug)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(meta),
+      keepalive,
     });
   } catch (e) {
     console.error('meta save failed', e);

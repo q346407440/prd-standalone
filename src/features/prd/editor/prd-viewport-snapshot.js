@@ -77,6 +77,25 @@ export function getBlockIdentitySignature(block) {
   return `${block.type}:${JSON.stringify(block.content ?? null)}`;
 }
 
+/**
+ * 文档中第 N 个 mermaid / mindmap 块在仅改代码重载后仍对应同一 prev id，
+ * 以便 mermaid_s_${id} 等 meta 键不因外部改码而失效。
+ */
+function reconcileDiagramBlockIdsByOrdinal(prevBlocks, nextBlocks) {
+  let out = nextBlocks;
+  for (const t of ['mermaid', 'mindmap']) {
+    const prevIds = prevBlocks.filter((b) => b.type === t).map((b) => b.id);
+    let ord = 0;
+    out = out.map((block) => {
+      if (block.type !== t) return block;
+      const oldId = prevIds[ord];
+      ord += 1;
+      return oldId ? { ...block, id: oldId } : block;
+    });
+  }
+  return out;
+}
+
 export function reconcileLoadedBlockIds(prevBlocks, nextBlocks) {
   if (!prevBlocks?.length || !nextBlocks?.length) return nextBlocks;
   const idBuckets = new Map();
@@ -88,13 +107,15 @@ export function reconcileLoadedBlockIds(prevBlocks, nextBlocks) {
     idBuckets.set(signature, bucket);
   });
 
-  return nextBlocks.map((block) => {
+  const merged = nextBlocks.map((block) => {
     const signature = getBlockIdentitySignature(block);
     const bucket = idBuckets.get(signature);
     if (!bucket?.length) return block;
     const reusedId = bucket.shift();
     return reusedId ? { ...block, id: reusedId } : block;
   });
+
+  return reconcileDiagramBlockIdsByOrdinal(prevBlocks, merged);
 }
 
 export function captureViewportSnapshot(blocks, blockRefsMap, container) {

@@ -3,6 +3,13 @@ import markdownit from 'markdown-it';
 import { toSafeDocBaseName } from '../../../../shared/prd-filename-sanitize.js';
 import { parseListPrefix } from './prd-list-utils.js';
 import { serializePrd } from './prd-writer.js';
+import {
+  resolveMermaidViewMode,
+  resolveMermaidWidth,
+  resolveMindmapViewMode,
+  resolveMindmapWidth,
+} from './prd-perf-keys.js';
+import { DEFAULT_DIAGRAM_VIEW_MODE } from './prd-constants.js';
 import prdCssRaw from './styles/prd.css?raw';
 import prdEditableCssRaw from './styles/prd-editable.css?raw';
 import prdTableEditCssRaw from './styles/prd-table-edit.css?raw';
@@ -168,26 +175,6 @@ async function fetchAssetBlob(url, cache) {
     cache.delete(normalized);
     throw error;
   }
-}
-
-function mermaidCodeToMetaKey(code) {
-  const s = (code || '').trim();
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h) ^ s.charCodeAt(i);
-    h >>>= 0;
-  }
-  return `mermaid_${h.toString(36)}`;
-}
-
-function mindmapCodeToMetaKey(code) {
-  const s = (code || '').trim();
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) + h) ^ s.charCodeAt(i);
-    h >>>= 0;
-  }
-  return `mindmap_${h.toString(36)}`;
 }
 
 function extractDocTitle(blocks, fallbackTitle) {
@@ -360,16 +347,18 @@ function buildImageHtml(src, widthPx, assetPathMap) {
   `;
 }
 
-async function buildElementHtml(element, context) {
+async function buildElementHtml(element, context, diagramPlacement = null) {
   if (!element) return '';
   if (element.type === 'image') {
     const widthPx = context.imageMeta?.[element.src] ?? null;
     return buildImageHtml(element.src, widthPx, context.assetPathMap);
   }
   if (element.type === 'mermaid') {
-    const metaKey = mermaidCodeToMetaKey(element.code || '');
-    const initialView = context.mermaidMeta?.mermaidViewModes?.[metaKey] || 'code';
-    const widthPx = context.mermaidMeta?.mermaidWidths?.[metaKey] ?? MERMAID_BLOCK_DEFAULT_WIDTH;
+    const placement = diagramPlacement && (diagramPlacement.kind === 'standalone' || diagramPlacement.kind === 'table')
+      ? diagramPlacement
+      : null;
+    const initialView = resolveMermaidViewMode(context.mermaidMeta, element.code, placement);
+    const widthPx = resolveMermaidWidth(context.mermaidMeta, element.code, placement, MERMAID_BLOCK_DEFAULT_WIDTH);
     const rendered = await context.renderMermaidSvg(element.code || '');
     return renderDiagramHtml({
       rendererClass: 'prd-mermaid-renderer',
@@ -381,9 +370,11 @@ async function buildElementHtml(element, context) {
     });
   }
   if (element.type === 'mindmap') {
-    const metaKey = mindmapCodeToMetaKey(element.code || '');
-    const initialView = context.mindmapMeta?.mindmapViewModes?.[metaKey] || 'code';
-    const widthPx = context.mindmapMeta?.mindmapWidths?.[metaKey] ?? MINDMAP_BLOCK_DEFAULT_WIDTH;
+    const placement = diagramPlacement && (diagramPlacement.kind === 'standalone' || diagramPlacement.kind === 'table')
+      ? diagramPlacement
+      : null;
+    const initialView = resolveMindmapViewMode(context.mindmapMeta, element.code, placement);
+    const widthPx = resolveMindmapWidth(context.mindmapMeta, element.code, placement, MINDMAP_BLOCK_DEFAULT_WIDTH);
     const rendered = await context.renderMindmapSvg(element.code || '');
     return renderDiagramHtml({
       rendererClass: 'prd-mindmap-renderer',
@@ -407,8 +398,14 @@ async function buildTableHtml(block, context) {
     for (let ci = 0; ci < headers.length; ci += 1) {
       const elements = normalizeCellElements(row[ci]);
       const pieces = [];
-      for (const element of elements) {
-        pieces.push(await buildElementHtml(element, context));
+      for (let elIdx = 0; elIdx < elements.length; elIdx += 1) {
+        pieces.push(await buildElementHtml(elements[elIdx], context, {
+          kind: 'table',
+          blockId: block.id,
+          ri,
+          ci,
+          idx: elIdx,
+        }));
       }
       cellHtmlList.push(`
         <td data-label="${escapeAttribute(headers[ci] || '')}">
@@ -468,7 +465,7 @@ async function buildContentHtml(blocks, context) {
     if (block.type === 'mermaid' || block.type === 'mindmap') {
       parts.push(`
         <section class="prd-export-block prd-export-block--diagram">
-          ${await buildElementHtml(block.content, context)}
+          ${await buildElementHtml(block.content, context, { kind: 'standalone', blockId: block.id })}
         </section>
       `);
       continue;
@@ -896,7 +893,7 @@ function buildStandaloneHtml({ title }) {
         buttons.forEach((button) => {
           button.addEventListener('click', () => applyView(button.getAttribute('data-view-btn')));
         });
-        applyView(diagram.getAttribute('data-current-view') || 'code');
+        applyView(diagram.getAttribute('data-current-view') || DEFAULT_DIAGRAM_VIEW_MODE);
       });
 
       const lightbox = document.querySelector('[data-lightbox]');

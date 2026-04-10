@@ -3,6 +3,7 @@ import { MermaidRenderer } from './MermaidRenderer.jsx';
 import { MindmapRenderer } from './MindmapRenderer.jsx';
 import { ImageRenderer } from './ImageRenderer.jsx';
 import { inferListPrefix } from '../../prd-list-utils.js';
+import { DEFAULT_DIAGRAM_VIEW_MODE } from '../../prd-constants.js';
 
 export function hasOwnEnterField(payload, key) {
   return !!payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, key);
@@ -39,6 +40,7 @@ export function ElementRenderer({
   setGlobalSelection,
   onEnter,
   onBackspaceEmpty,
+  onBackspaceMerge,
   onPasteImageAsBlock,
   onReplaceWithImage,
   onImageWidthChange,
@@ -77,6 +79,7 @@ export function ElementRenderer({
         placeholder={placeholder || '点击此处填写内容（支持 Markdown）'}
         onEnter={onEnter}
         onBackspaceEmpty={onBackspaceEmpty}
+        onBackspaceMerge={onBackspaceMerge}
         onPasteImageAsBlock={onPasteImageAsBlock}
         onReplaceWithImage={onReplaceWithImage ?? ((src) => onUpdate({ type: 'image', src }))}
         onEditingFinished={onEditingFinished}
@@ -132,7 +135,7 @@ export function ElementRenderer({
         <MindmapRenderer
           code={element.code || ''}
           onCodeChange={(newCode) => onUpdate({ type: 'mindmap', code: newCode })}
-          viewMode={mindmapViewMode || 'code'}
+          viewMode={mindmapViewMode || DEFAULT_DIAGRAM_VIEW_MODE}
           onViewModeChange={onMindmapViewModeChange}
           resizable={false}
         />

@@ -5,6 +5,9 @@ node_modules/
 dist/
 dist-ssr/
 
+# Vite 根目录本地缓存（依赖预构建等，不应入库）
+.vite/
+
 # Environment secrets (use .env.example as template)
 *.local
 .env
@@ -30,6 +33,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+
+# Bugfix 記錄（僅本地參考，不提交）
+bugfix/
 
 # OS
 .DS_Store

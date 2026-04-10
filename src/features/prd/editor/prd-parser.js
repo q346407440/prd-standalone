@@ -1,3 +1,5 @@
+import { splitMarkdownByInlineImages } from './prd-inline-image-split.js';
+
 /**
  * prd-parser.js
  * 把 prd.md 解析成扁平的 Block[] 陣列。
@@ -92,7 +94,14 @@ function parseCellElement(cellStr) {
   if (parts.length === 0) {
     return { elements: [{ type: 'text', markdown: '' }] };
   }
-  return { elements: parts.map(parseSingleElement) };
+  return {
+    elements: parts
+      .map(parseSingleElement)
+      .flatMap((el) => {
+        if (el.type !== 'text') return [el];
+        return splitMarkdownByInlineImages(el.markdown ?? '');
+      }),
+  };
 }
 
 function parseGfmTable(block) {

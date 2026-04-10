@@ -17,6 +17,7 @@ import {
 } from './prd-export.js';
 import {
   isEmptyOrderedListMd,
+  parseListPrefix,
 } from './prd-list-utils.js';
 import { buildCropBase64, buildFocusBase64, loadImageElement } from './prd-annotation-images.js';
 import { measurePrdTask, recordPrdInteraction } from './prd-performance.js';
@@ -80,6 +81,8 @@ import {
   cloneBlockWithNewId,
   makePrdSectionTemplateBlocks,
   normalizeLegacyBlocks,
+  expandParagraphBlocksOnBlankLines,
+  getBlockMd,
   setBlockMd,
   isMainDocTextListBlock,
   renumberMainDocTextListAt,
@@ -615,7 +618,9 @@ export function PrdPage() {
     hasPendingLocalChangesRef.current = false;
     hasExternalMdConflictRef.current = false;
     setLoadErr('');
-    const parsedBlocks = normalizeLegacyBlocks(parsePrd(mdText));
+    const parsedBlocks = expandParagraphBlocksOnBlankLines(
+      normalizeLegacyBlocks(parsePrd(mdText)),
+    );
     setBlocks(reconcileLoadedBlockIds(blocksRef.current, parsedBlocks));
   }, []);
 
@@ -821,17 +826,41 @@ export function PrdPage() {
     };
   }, [refreshPrdMdFromDisk, showToast]);
 
+  const saveMergedMetaNow = useCallback((opts) => {
+    void savePrdMeta(
+      {
+        ...imageMetaRef.current,
+        ...mermaidMetaRef.current,
+        ...mindmapMetaRef.current,
+      },
+      activeSlugRef.current,
+      opts,
+    );
+  }, []);
+
   const debounceSaveMeta = useCallback(() => {
     if (metaDebounceRef.current) clearTimeout(metaDebounceRef.current);
     metaDebounceRef.current = setTimeout(() => {
       metaDebounceRef.current = null;
-      void savePrdMeta({
-        ...imageMetaRef.current,
-        ...mermaidMetaRef.current,
-        ...mindmapMetaRef.current,
-      }, activeSlugRef.current);
+      saveMergedMetaNow();
     }, 800);
-  }, []);
+  }, [saveMergedMetaNow]);
+
+  // 刷新 / 关页前若仍有待写入的 meta debounce，立即落盘（宽度等）；视图模式已即时保存
+  useEffect(() => {
+    const flushMetaDebounce = () => {
+      if (!metaDebounceRef.current) return;
+      clearTimeout(metaDebounceRef.current);
+      metaDebounceRef.current = null;
+      saveMergedMetaNow({ keepalive: true });
+    };
+    window.addEventListener('pagehide', flushMetaDebounce);
+    window.addEventListener('beforeunload', flushMetaDebounce);
+    return () => {
+      window.removeEventListener('pagehide', flushMetaDebounce);
+      window.removeEventListener('beforeunload', flushMetaDebounce);
+    };
+  }, [saveMergedMetaNow]);
 
   // 图片宽度变更：更新 state + debounce 写盘
   const handleImageWidthChange = useCallback((src, widthPx) => {
@@ -848,8 +877,16 @@ export function PrdPage() {
     };
     mermaidMetaRef.current = nextMm;
     setMermaidMeta(nextMm);
-    debounceSaveMeta();
-  }, [debounceSaveMeta]);
+    if (section === 'mermaidViewModes') {
+      if (metaDebounceRef.current) {
+        clearTimeout(metaDebounceRef.current);
+        metaDebounceRef.current = null;
+      }
+      saveMergedMetaNow();
+    } else {
+      debounceSaveMeta();
+    }
+  }, [debounceSaveMeta, saveMergedMetaNow]);
 
   const handleMindmapMetaChange = useCallback((section, key, value) => {
     const nextMm = {
@@ -858,8 +895,16 @@ export function PrdPage() {
     };
     mindmapMetaRef.current = nextMm;
     setMindmapMeta(nextMm);
-    debounceSaveMeta();
-  }, [debounceSaveMeta]);
+    if (section === 'mindmapViewModes') {
+      if (metaDebounceRef.current) {
+        clearTimeout(metaDebounceRef.current);
+        metaDebounceRef.current = null;
+      }
+      saveMergedMetaNow();
+    } else {
+      debounceSaveMeta();
+    }
+  }, [debounceSaveMeta, saveMergedMetaNow]);
 
   // 更新單個 Block；有序列表時自動重新編號
   const handleUpdate = useCallback((updatedBlock) => {
@@ -997,6 +1042,24 @@ export function PrdPage() {
     });
     schedulePersist();
   }, [clearAutoCreatedOrderedSeed, schedulePersist]);
+
+  const handleBackspaceMerge = useCallback((id, currentMd) => {
+    let targetId = null;
+    setBlocks((prev) => {
+      const idx = prev.findIndex((b) => b.id === id);
+      if (idx <= 0) return prev;
+      const prevBlock = prev[idx - 1];
+      if (prevBlock.type !== 'paragraph' || prevBlock.content?.type !== 'text') return prev;
+      const prevMd = getBlockMd(prevBlock);
+      const merged = prevMd ? prevMd + currentMd : currentMd;
+      targetId = prevBlock.id;
+      return prev
+        .map((b, i) => (i === idx - 1 ? setBlockMd(b, merged) : b))
+        .filter((b) => b.id !== id);
+    });
+    if (targetId) setFocusBlockId(targetId);
+    schedulePersist();
+  }, [schedulePersist]);
 
   const handleResetOrderedStart = useCallback((blockId, newMd, startNum) => {
     setBlocks((prev) => {
@@ -1267,6 +1330,7 @@ export function PrdPage() {
     onMoveDown: handleMoveDown,
     onEnterBlock: handleEnterBlock,
     onBackspaceEmptyBlock: handleBackspaceEmpty,
+    onBackspaceMergeBlock: handleBackspaceMerge,
     onPasteImageAsBlockBlock: handlePasteImageAsBlock,
     onAddAtEnd: handleAddAtEnd,
   }), [
@@ -1279,6 +1343,7 @@ export function PrdPage() {
     handleMoveDown,
     handleEnterBlock,
     handleBackspaceEmpty,
+    handleBackspaceMerge,
     handlePasteImageAsBlock,
     handleAddAtEnd,
   ]);

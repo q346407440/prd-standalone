@@ -3,6 +3,7 @@ import {
   ENABLE_TABLE_CELL_ANNOTATION_UI,
   MERMAID_BLOCK_DEFAULT_WIDTH,
   MINDMAP_BLOCK_DEFAULT_WIDTH,
+  DEFAULT_DIAGRAM_VIEW_MODE,
 } from './prd-constants.js';
 import { extractPrdImagePaths, isTableKindSelection } from './prd-utils.js';
 import { getUsageRegions } from './prd-annotations.js';
@@ -17,6 +18,41 @@ export function mermaidCodeToMetaKey(code) {
   return `mermaid_${h.toString(36)}`;
 }
 
+/** 独立 Mermaid 块 meta：按 block.id，避免仅改代码导致视图模式退回「仅代码」 */
+export function mermaidStandaloneMetaKey(blockId) {
+  return `mermaid_s_${blockId}`;
+}
+
+/** 表格单元格内 Mermaid：块 id + 单元格坐标 + 元素序号 */
+export function mermaidTableMetaKey(blockId, ri, ci, elementIdx) {
+  return `mermaid_t_${blockId}_${ri}_${ci}_${elementIdx}`;
+}
+
+export function resolveMermaidViewMode(mermaidMeta, code, placement) {
+  const legacy = mermaidCodeToMetaKey(code || '');
+  let primary = legacy;
+  if (placement?.kind === 'standalone' && placement.blockId) {
+    primary = mermaidStandaloneMetaKey(placement.blockId);
+  } else if (placement?.kind === 'table' && placement.blockId != null) {
+    primary = mermaidTableMetaKey(placement.blockId, placement.ri, placement.ci, placement.idx);
+  }
+  return mermaidMeta?.mermaidViewModes?.[primary]
+    ?? mermaidMeta?.mermaidViewModes?.[legacy]
+    ?? DEFAULT_DIAGRAM_VIEW_MODE;
+}
+
+export function resolveMermaidWidth(mermaidMeta, code, placement, defaultWidth) {
+  const legacy = mermaidCodeToMetaKey(code || '');
+  let primary = legacy;
+  if (placement?.kind === 'standalone' && placement.blockId) {
+    primary = mermaidStandaloneMetaKey(placement.blockId);
+  } else if (placement?.kind === 'table' && placement.blockId != null) {
+    primary = mermaidTableMetaKey(placement.blockId, placement.ri, placement.ci, placement.idx);
+  }
+  const w = mermaidMeta?.mermaidWidths?.[primary] ?? mermaidMeta?.mermaidWidths?.[legacy];
+  return w ?? defaultWidth;
+}
+
 export function mindmapCodeToMetaKey(code) {
   const s = (code || '').trim();
   let h = 5381;
@@ -25,6 +61,39 @@ export function mindmapCodeToMetaKey(code) {
     h = h >>> 0;
   }
   return `mindmap_${h.toString(36)}`;
+}
+
+export function mindmapStandaloneMetaKey(blockId) {
+  return `mindmap_s_${blockId}`;
+}
+
+export function mindmapTableMetaKey(blockId, ri, ci, elementIdx) {
+  return `mindmap_t_${blockId}_${ri}_${ci}_${elementIdx}`;
+}
+
+export function resolveMindmapViewMode(mindmapMeta, code, placement) {
+  const legacy = mindmapCodeToMetaKey(code || '');
+  let primary = legacy;
+  if (placement?.kind === 'standalone' && placement.blockId) {
+    primary = mindmapStandaloneMetaKey(placement.blockId);
+  } else if (placement?.kind === 'table' && placement.blockId != null) {
+    primary = mindmapTableMetaKey(placement.blockId, placement.ri, placement.ci, placement.idx);
+  }
+  return mindmapMeta?.mindmapViewModes?.[primary]
+    ?? mindmapMeta?.mindmapViewModes?.[legacy]
+    ?? DEFAULT_DIAGRAM_VIEW_MODE;
+}
+
+export function resolveMindmapWidth(mindmapMeta, code, placement, defaultWidth) {
+  const legacy = mindmapCodeToMetaKey(code || '');
+  let primary = legacy;
+  if (placement?.kind === 'standalone' && placement.blockId) {
+    primary = mindmapStandaloneMetaKey(placement.blockId);
+  } else if (placement?.kind === 'table' && placement.blockId != null) {
+    primary = mindmapTableMetaKey(placement.blockId, placement.ri, placement.ci, placement.idx);
+  }
+  const w = mindmapMeta?.mindmapWidths?.[primary] ?? mindmapMeta?.mindmapWidths?.[legacy];
+  return w ?? defaultWidth;
 }
 
 export function getBlockTextContent(block) {
@@ -79,12 +148,16 @@ function getTableMetaPerfKeys(block) {
   const mermaidKeys = [];
   const mindmapKeys = [];
   if (block?.type !== 'table') return { mermaidKeys, mindmapKeys };
-  for (const row of block.content?.rows || []) {
-    for (const cell of row || []) {
-      for (const element of getCellElements(cell)) {
-        if (element?.type === 'mermaid') mermaidKeys.push(mermaidCodeToMetaKey(element.code || ''));
-        if (element?.type === 'mindmap') mindmapKeys.push(mindmapCodeToMetaKey(element.code || ''));
-      }
+  const blockId = block.id;
+  const rows = block.content?.rows || [];
+  for (let ri = 0; ri < rows.length; ri += 1) {
+    const row = rows[ri] || [];
+    for (let ci = 0; ci < row.length; ci += 1) {
+      const elements = getCellElements(row[ci]);
+      elements.forEach((element, idx) => {
+        if (element?.type === 'mermaid') mermaidKeys.push(mermaidTableMetaKey(blockId, ri, ci, idx));
+        if (element?.type === 'mindmap') mindmapKeys.push(mindmapTableMetaKey(blockId, ri, ci, idx));
+      });
     }
   }
   return { mermaidKeys, mindmapKeys };
@@ -92,22 +165,58 @@ function getTableMetaPerfKeys(block) {
 
 export function getBlockMermaidMetaPerfKey(block, mermaidMeta) {
   if (block?.type === 'mermaid') {
-    const key = mermaidCodeToMetaKey(block.content?.code || '');
-    return `${key}:${mermaidMeta?.mermaidViewModes?.[key] || 'code'}:${mermaidMeta?.mermaidWidths?.[key] ?? MERMAID_BLOCK_DEFAULT_WIDTH}`;
+    const code = block.content?.code || '';
+    const placement = { kind: 'standalone', blockId: block.id };
+    const mode = resolveMermaidViewMode(mermaidMeta, code, placement);
+    const w = resolveMermaidWidth(mermaidMeta, code, placement, MERMAID_BLOCK_DEFAULT_WIDTH);
+    const primary = mermaidStandaloneMetaKey(block.id);
+    return `${primary}:${mode}:${w}`;
   }
   if (block?.type !== 'table') return '';
-  const { mermaidKeys } = getTableMetaPerfKeys(block);
-  return mermaidKeys.map((key) => `${key}:${mermaidMeta?.mermaidViewModes?.[key] || 'code'}`).join('|');
+  const rows = block.content?.rows || [];
+  const parts = [];
+  const blockId = block.id;
+  for (let ri = 0; ri < rows.length; ri += 1) {
+    const row = rows[ri] || [];
+    for (let ci = 0; ci < row.length; ci += 1) {
+      const elements = getCellElements(row[ci]);
+      elements.forEach((element, idx) => {
+        if (element?.type !== 'mermaid') return;
+        const placement = { kind: 'table', blockId, ri, ci, idx };
+        const mode = resolveMermaidViewMode(mermaidMeta, element.code, placement);
+        parts.push(`${mermaidTableMetaKey(blockId, ri, ci, idx)}:${mode}`);
+      });
+    }
+  }
+  return parts.join('|');
 }
 
 export function getBlockMindmapMetaPerfKey(block, mindmapMeta) {
   if (block?.type === 'mindmap') {
-    const key = mindmapCodeToMetaKey(block.content?.code || '');
-    return `${key}:${mindmapMeta?.mindmapViewModes?.[key] || 'code'}:${mindmapMeta?.mindmapWidths?.[key] ?? MINDMAP_BLOCK_DEFAULT_WIDTH}`;
+    const code = block.content?.code || '';
+    const placement = { kind: 'standalone', blockId: block.id };
+    const mode = resolveMindmapViewMode(mindmapMeta, code, placement);
+    const w = resolveMindmapWidth(mindmapMeta, code, placement, MINDMAP_BLOCK_DEFAULT_WIDTH);
+    const primary = mindmapStandaloneMetaKey(block.id);
+    return `${primary}:${mode}:${w}`;
   }
   if (block?.type !== 'table') return '';
-  const { mindmapKeys } = getTableMetaPerfKeys(block);
-  return mindmapKeys.map((key) => `${key}:${mindmapMeta?.mindmapViewModes?.[key] || 'code'}`).join('|');
+  const rows = block.content?.rows || [];
+  const parts = [];
+  const blockId = block.id;
+  for (let ri = 0; ri < rows.length; ri += 1) {
+    const row = rows[ri] || [];
+    for (let ci = 0; ci < row.length; ci += 1) {
+      const elements = getCellElements(row[ci]);
+      elements.forEach((element, idx) => {
+        if (element?.type !== 'mindmap') return;
+        const placement = { kind: 'table', blockId, ri, ci, idx };
+        const mode = resolveMindmapViewMode(mindmapMeta, element.code, placement);
+        parts.push(`${mindmapTableMetaKey(blockId, ri, ci, idx)}:${mode}`);
+      });
+    }
+  }
+  return parts.join('|');
 }
 
 export function getTableAnnotationsPerfKey(rowBindings, annotationsDoc) {

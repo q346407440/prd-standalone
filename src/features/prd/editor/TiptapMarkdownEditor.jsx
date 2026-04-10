@@ -4,6 +4,7 @@ import { BsLink45Deg, BsTypeBold, BsTypeItalic } from 'react-icons/bs';
 import { MdFormatListNumbered } from 'react-icons/md';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import HardBreak from '@tiptap/extension-hard-break';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -22,6 +23,7 @@ import {
   indentMarkdown,
   inferListPrefix,
   numToAlphaMarker,
+  mergeListPrefixWithParagraphMarkdown,
   parseListPrefix,
   switchMarkdownListKind,
 } from './prd-list-utils.js';
@@ -40,6 +42,57 @@ md.renderer.rules.image = (tokens, idx) => {
   const titleAttr = title ? ` title="${md.utils.escapeHtml(title)}"` : '';
   return `<img class="prd-md-preview-img" src="${md.utils.escapeHtml(src)}" alt="${md.utils.escapeHtml(alt)}"${titleAttr} />`;
 };
+
+/**
+ * 列表行預覽：與編輯態 hanging indent 一致——符號與正文分欄 flex，換行後續行對齊正文左緣，
+ * 不可再用「行內 span + 正文」否則換行會貼齊容器左側。
+ */
+function renderListLinePreviewHtml(parsed) {
+  if (!parsed) return '';
+  const indentLevel = Math.floor(parsed.indent.length / 2);
+  const isBullet = /^[-*+]$/.test(parsed.marker);
+  const markerChar = isBullet ? '•' : parsed.marker;
+  const pad = indentLevel * 16;
+  const body = md.renderInline(parsed.body);
+  const markerEsc = md.utils.escapeHtml(markerChar);
+  const classes = ['prd-md-preview-list-line'];
+  if (!isBullet) classes.push('prd-md-preview-list-line--ordered');
+  if (isBullet && indentLevel === 0) {
+    // 根層無序：與編輯態完全同構——不輸出 marker span，用 CSS ::before + padding-left
+    // 不設 inline padding-left（由 CSS class 統一控制，避免 inline style 覆蓋 CSS 變數）
+    return `<div class="prd-md-preview-list-line--root-bullet"><span class="prd-md-preview-list-line__body">${body}</span></div>`;
+  }
+  return `<div class="${classes.join(' ')}" style="padding-left:${pad}px"><span class="prd-md-preview-list-line__marker">${markerEsc}</span><span class="prd-md-preview-list-line__body">${body}</span></div>`;
+}
+
+/**
+ * 段落預覽：與編輯態（markdown 前綴列表、無 ul 節點）對齊。
+ * - 空白段（\n\n）→ 多個段落塊，段間留白與原 `<br /><br />` 相近
+ * - 列表行：flex hanging indent（見 renderListLinePreviewHtml）
+ * - 純文字行：塊級行容器，與列表行同層堆疊
+ */
+function renderParagraphMarkdownPreviewToHtml(raw) {
+  if (raw == null || !String(raw).trim()) return '';
+  const text = String(raw);
+  const paragraphs = text.split(/\n\n+/).map((p) => p.trimEnd()).filter((p) => p.trim());
+  return paragraphs
+    .map((para) => {
+      const lines = para
+        .split(/\n/)
+        .map((line) => {
+          const trimmed = line.trimEnd();
+          if (!trimmed.trim()) return '';
+          const parsed = parseListPrefix(trimmed);
+          if (parsed) {
+            return renderListLinePreviewHtml(parsed);
+          }
+          return `<div class="prd-md-preview-line prd-md-preview-line--text">${md.renderInline(trimmed)}</div>`;
+        })
+        .filter(Boolean);
+      return `<div class="prd-md-preview-para">${lines.join('')}</div>`;
+    })
+    .join('');
+}
 
 const BLOCK_LEVEL_TYPES = ['paragraph', ...Array.from({ length: 7 }, (_, index) => `h${index + 1}`)];
 const BLOCK_LEVEL_OPTIONS = BLOCK_LEVEL_TYPES.map((type) => ({
@@ -110,7 +163,7 @@ function serializeMarkdownFragment(editor, fragment) {
 
 function buildEnterPayload(editor, prefix) {
   const inlineMd = trimTrailingEmptyLines(editorToMarkdown(editor));
-  const currentMarkdownFallback = applyListPrefix(inlineMd, prefix);
+  const currentMarkdownFallback = mergeListPrefixWithParagraphMarkdown(inlineMd, prefix);
 
   if (!editor?.state?.selection) {
     const inheritedPrefix = inferListPrefix(currentMarkdownFallback);
@@ -187,6 +240,28 @@ async function uploadPastedImage(file) {
 
 // ─── Tiptap extensions ────────────────────────────────────────────────────
 
+/**
+ * 自定義 HardBreak：序列化為純 `\n` 而非 tiptap-markdown 默認的 `\\\n`，
+ * 配合 `Markdown.configure({ breaks: true })` 實現「直接換行」的雙向轉換。
+ */
+const PrdHardBreak = HardBreak.extend({
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state, node, parent, index) {
+          for (let i = index + 1; i < parent.childCount; i++) {
+            if (parent.child(i).type !== node.type) {
+              state.write('\n');
+              return;
+            }
+          }
+        },
+        parse: {},
+      },
+    };
+  },
+});
+
 /** 禁用列表節點，列表由外層 markdown 前綴管理；行內圖與預覽態 ![](…) 對齊 */
 function makeEditableExtensions(placeholder) {
   return [
@@ -200,7 +275,9 @@ function makeEditableExtensions(placeholder) {
       orderedList: false,
       listItem: false,
       link: false,
+      hardBreak: false,
     }),
+    PrdHardBreak,
     Link.configure({
       openOnClick: false,
       HTMLAttributes: { class: 'prd-md-link' },
@@ -213,6 +290,7 @@ function makeEditableExtensions(placeholder) {
     Placeholder.configure({ placeholder }),
     Markdown.configure({
       html: false,
+      breaks: true,
       transformPastedText: true,
       transformCopiedText: true,
     }),
@@ -600,6 +678,7 @@ function TiptapEditingSurface({
   onEnter,
   singleLine,
   onBackspaceEmpty,
+  onBackspaceMerge,
   onPasteImageAsBlock,
   onReplaceWithImage,
   onEditingFinished,
@@ -630,9 +709,9 @@ function TiptapEditingSurface({
   useEffect(() => { onPrefixManualChangeRef.current = onPrefixManualChange; }, [onPrefixManualChange]);
   const onResetOrderedStartRef = useRef(onResetOrderedStart);
   useEffect(() => { onResetOrderedStartRef.current = onResetOrderedStart; }, [onResetOrderedStart]);
-  const callbacksRef = useRef({ onPasteImageAsBlock, onReplaceWithImage, onEnter, onBackspaceEmpty });
+  const callbacksRef = useRef({ onPasteImageAsBlock, onReplaceWithImage, onEnter, onBackspaceEmpty, onBackspaceMerge });
   useEffect(() => {
-    callbacksRef.current = { onPasteImageAsBlock, onReplaceWithImage, onEnter, onBackspaceEmpty };
+    callbacksRef.current = { onPasteImageAsBlock, onReplaceWithImage, onEnter, onBackspaceEmpty, onBackspaceMerge };
   });
 
   useEffect(() => { valueRef.current = value; }, [value]);
@@ -746,6 +825,14 @@ function TiptapEditingSurface({
               forceUpdateRef.current?.();
               return true;
             }
+          } else {
+            const { $from } = ed.state.selection;
+            if ($from.pos === 1 && callbacksRef.current.onBackspaceMerge) {
+              event.preventDefault();
+              const bodyMd = trimTrailingEmptyLines(editorToMarkdown(ed));
+              callbacksRef.current.onBackspaceMerge(bodyMd);
+              return true;
+            }
           }
           return false;
         }
@@ -782,7 +869,7 @@ function TiptapEditingSurface({
       skipNextBlurCommitRef.current = true;
     }
     const inlineMd = trimTrailingEmptyLines(editorToMarkdown(editor));
-    const fullMd = nextMarkdown ?? applyListPrefix(inlineMd, prefixRef.current);
+    const fullMd = nextMarkdown ?? mergeListPrefixWithParagraphMarkdown(inlineMd, prefixRef.current);
     if (fullMd !== valueRef.current) {
       onSave(fullMd);
     }
@@ -845,7 +932,7 @@ function TiptapEditingSurface({
 
   const updatePrefix = useCallback((newPrefix) => {
     const inlineMd = editor ? trimTrailingEmptyLines(editorToMarkdown(editor)) : '';
-    const newMd = applyListPrefix(inlineMd, newPrefix);
+    const newMd = mergeListPrefixWithParagraphMarkdown(inlineMd, newPrefix);
     applyMarkdownValue(newMd);
   }, [editor, applyMarkdownValue]);
 
@@ -867,7 +954,7 @@ function TiptapEditingSurface({
 
     if (onResetOrderedStartRef.current) {
       const inlineMd = editor ? trimTrailingEmptyLines(editorToMarkdown(editor)) : '';
-      const newMd = applyListPrefix(inlineMd, newPrefix);
+      const newMd = mergeListPrefixWithParagraphMarkdown(inlineMd, newPrefix);
       prefixRef.current = newPrefix;
       valueRef.current = newMd;
       forceUpdate((n2) => n2 + 1);
@@ -883,7 +970,7 @@ function TiptapEditingSurface({
     return !!parsed && /^(\d+\.|[a-z]+\.)$/.test(parsed.marker);
   }, []);
 
-  const getCurrentMarkdown = useCallback(() => applyListPrefix(
+  const getCurrentMarkdown = useCallback(() => mergeListPrefixWithParagraphMarkdown(
     editor ? trimTrailingEmptyLines(editorToMarkdown(editor)) : '',
     prefixRef.current,
   ), [editor]);
@@ -925,7 +1012,7 @@ function TiptapEditingSurface({
     if (e.key !== 'Tab') return;
     e.preventDefault();
     e.stopPropagation();
-    const fullMd = applyListPrefix(
+    const fullMd = mergeListPrefixWithParagraphMarkdown(
       editor ? trimTrailingEmptyLines(editorToMarkdown(editor)) : '',
       prefixRef.current,
     );
@@ -944,7 +1031,7 @@ function TiptapEditingSurface({
   return (
     <div
       ref={editorContainerRef}
-      className="prd-tiptap-editor"
+      className={['prd-tiptap-editor', cellPath != null ? 'prd-tiptap-editor--in-cell' : ''].filter(Boolean).join(' ')}
       data-prd-no-block-select
       onMouseDown={selectCurrentTextTarget}
       onFocus={selectCurrentTextTarget}
@@ -1001,6 +1088,7 @@ export function TiptapMarkdownEditor({
   onEnter,
   singleLine = false,
   onBackspaceEmpty,
+  onBackspaceMerge,
   onPasteImageAsBlock,
   onReplaceWithImage,
   onEditingFinished,
@@ -1077,6 +1165,7 @@ export function TiptapMarkdownEditor({
         className={[
           'prd-editable-md',
           'prd-editable-md--preview',
+          cellPath != null ? 'prd-editable-md--in-cell' : '',
           paragraphPreviewSelected ? 'prd-editable-md--preview-selected' : '',
         ].filter(Boolean).join(' ')}
         title="点击编辑"
@@ -1105,7 +1194,7 @@ export function TiptapMarkdownEditor({
         onPaste={handlePreviewPaste}
       >
         {value ? (
-          <TiptapPreview value={value} contentRef={previewContentRef} />
+          <TiptapPreview value={value} contentRef={previewContentRef} inCell={cellPath != null} />
         ) : (
           <span className="prd-editable__placeholder">{placeholder}</span>
         )}
@@ -1126,6 +1215,7 @@ export function TiptapMarkdownEditor({
       onEnter={onEnter}
       singleLine={singleLine}
       onBackspaceEmpty={onBackspaceEmpty}
+      onBackspaceMerge={onBackspaceMerge}
       onPasteImageAsBlock={onPasteImageAsBlock}
       onReplaceWithImage={onReplaceWithImage}
       onEditingFinished={onEditingFinished}
@@ -1149,11 +1239,14 @@ function renderListMarker(prefix, interactive = null) {
   const isBullet = /^[-*+]$/.test(parsed.marker);
   const marker = isBullet ? '•' : parsed.marker;
 
+  const rootBulletClass =
+    isBullet && indentLevel === 0 ? ' prd-list-marker--root-bullet' : '';
+
   if (interactive) {
     const { buttonRef, onClickMarker } = interactive;
     return (
       <span
-        className="prd-list-marker"
+        className={`prd-list-marker${rootBulletClass}`.trim()}
         style={{ paddingLeft: indentLevel * 16 }}
       >
         <button
@@ -1173,7 +1266,7 @@ function renderListMarker(prefix, interactive = null) {
 
   return (
     <span
-      className="prd-list-marker"
+      className={`prd-list-marker${rootBulletClass}`.trim()}
       style={{ paddingLeft: indentLevel * 16 }}
     >
       {marker}{' '}
@@ -1183,21 +1276,12 @@ function renderListMarker(prefix, interactive = null) {
 
 // ─── TiptapPreview（輕量 HTML 渲染，不創建 Tiptap editor 實例） ────────────
 
-const TiptapPreview = memo(function TiptapPreview({ value, contentRef }) {
-  const parsed = parseListPrefix(value);
-  const body = parsed ? parsed.body : value;
-  const prefix = parsed ? parsed.prefix : '';
-
-  const html = useMemo(() => {
-    if (!body) return '';
-    const rendered = md.renderInline(body);
-    return rendered;
-  }, [body]);
+const TiptapPreview = memo(function TiptapPreview({ value, contentRef, inCell }) {
+  const html = useMemo(() => renderParagraphMarkdownPreviewToHtml(value ?? ''), [value]);
 
   return (
-    <div className="prd-tiptap-preview-row">
-      {prefix && renderListMarker(prefix)}
-      <span
+    <div className={['prd-tiptap-preview-row', inCell ? 'prd-tiptap-preview-row--in-cell' : ''].filter(Boolean).join(' ')}>
+      <div
         ref={contentRef}
         className="prd-tiptap-prosemirror prd-tiptap-prosemirror--readonly"
         dangerouslySetInnerHTML={{ __html: html }}

@@ -4,6 +4,7 @@ import { FiAlertCircle, FiCode, FiBarChart2 } from 'react-icons/fi';
 import { PrdLightbox } from '../PrdLightbox.jsx';
 import { AsyncDiagramSurface } from '../AsyncDiagramSurface.jsx';
 import { emitPrdToast } from '../../prd-toast.js';
+import { DEFAULT_DIAGRAM_VIEW_MODE } from '../../prd-constants.js';
 import {
   convertMermaidMindmapToMarkdown,
   estimateMermaidTextareaRows,
@@ -82,7 +83,7 @@ export async function renderMindmapSvgForExport(code) {
 export function MindmapRenderer({
   code,
   onCodeChange,
-  viewMode = 'code',
+  viewMode = DEFAULT_DIAGRAM_VIEW_MODE,
   onViewModeChange,
   widthPx = null,
   onWidthChange,

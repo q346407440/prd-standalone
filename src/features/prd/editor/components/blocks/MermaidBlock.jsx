@@ -1,13 +1,18 @@
 import { MERMAID_BLOCK_DEFAULT_WIDTH } from '../../prd-constants.js';
-import { mermaidCodeToMetaKey } from '../../prd-perf-keys.js';
+import {
+  mermaidStandaloneMetaKey,
+  resolveMermaidViewMode,
+  resolveMermaidWidth,
+} from '../../prd-perf-keys.js';
 import { MermaidRenderer } from '../renderers/MermaidRenderer.jsx';
 
 export function MermaidBlock({
   block, onUpdate, mermaidMeta, onMermaidMetaChange,
 }) {
-  const metaKey = mermaidCodeToMetaKey(block.content?.code);
-  const viewMode = mermaidMeta?.mermaidViewModes?.[metaKey] || 'code';
-  const widthPx = mermaidMeta?.mermaidWidths?.[metaKey] ?? MERMAID_BLOCK_DEFAULT_WIDTH;
+  const placement = { kind: 'standalone', blockId: block.id };
+  const viewMode = resolveMermaidViewMode(mermaidMeta, block.content?.code, placement);
+  const widthPx = resolveMermaidWidth(mermaidMeta, block.content?.code, placement, MERMAID_BLOCK_DEFAULT_WIDTH);
+  const metaKey = mermaidStandaloneMetaKey(block.id);
 
   return (
     <div className="prd-block-mermaid" data-prd-no-block-select>

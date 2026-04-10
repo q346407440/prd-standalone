@@ -4,6 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { parseListPrefix } from './src/features/prd/editor/prd-list-utils.js';
+import {
+  expandParagraphBlocksOnBlankLines,
+  normalizeLegacyBlocks,
+} from './src/features/prd/editor/prd-block-operations.js';
 import { parsePrd } from './src/features/prd/editor/prd-parser.js';
 
 const FEISHU_AUTH_STATUS_API = '/__prd__/feishu/auth/status';
@@ -650,21 +654,37 @@ function getBlockDataKey(blockType) {
 }
 
 function convertMarkdownToDocxBlocks(markdown, preferredType = BLOCK_TYPE_TEXT) {
-  const normalized = String(markdown || '').replace(/\r\n/g, '\n').trim();
-  if (!normalized) return [buildTextBlock(preferredType, '')];
+  // 只做 trimEnd，保留行首缩进空格（列表子级缩进依赖此空格）
+  const normalized = String(markdown || '').replace(/\r\n/g, '\n').trimEnd();
+  if (!normalized.trim()) return [buildTextBlock(preferredType, '')];
   const isHeading = preferredType >= 3 && preferredType <= 11;
-  if (isHeading) return [buildTextBlock(preferredType, normalized)];
+  if (isHeading) return [buildTextBlock(preferredType, normalized.trim())];
+
   const lines = normalized.split('\n').map((line) => line.replace(/\s+$/g, ''));
   const nonEmpty = lines.filter((line) => line.trim());
   const isListOnly = nonEmpty.length > 0 && nonEmpty.every((line) => parseListPrefix(line));
   if (isListOnly) {
-    return nonEmpty.map((line) => {
-      const parsed = parseListPrefix(line);
-      const blockType = /^[-*+]$/.test(parsed.marker) ? BLOCK_TYPE_BULLET : BLOCK_TYPE_ORDERED;
-      return buildTextBlock(blockType, parsed.body || '');
-    });
+    return nonEmpty.map((line) => convertLineToBlock(line));
   }
-  return [buildTextBlock(preferredType, normalized)];
+  const hasList = nonEmpty.some((line) => parseListPrefix(line));
+  const isMultiLine = nonEmpty.length > 1;
+  if (hasList || isMultiLine) {
+    return nonEmpty.map((line) => convertLineToBlock(line));
+  }
+  return [buildTextBlock(preferredType, normalized.trimEnd())];
+}
+
+function convertLineToBlock(line) {
+  const parsed = parseListPrefix(line);
+  if (parsed) {
+    const isBullet = /^[-*+]$/.test(parsed.marker);
+    const blockType = isBullet ? BLOCK_TYPE_BULLET : BLOCK_TYPE_ORDERED;
+    const block = buildTextBlock(blockType, parsed.body || '');
+    const indentLevel = parsed.indent ? Math.floor(parsed.indent.length / 2) : 0;
+    if (indentLevel > 0) block._indentLevel = indentLevel;
+    return block;
+  }
+  return buildTextBlock(BLOCK_TYPE_TEXT, line);
 }
 
 function createDocxImagePlaceholder(src) {
@@ -710,12 +730,57 @@ function createTempId(prefix) {
   return `${prefix}-${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
 }
 
+/**
+ * 把 markdown 转为飞书 descendant 节点列表。
+ * 列表子级通过 children 父子关系实现缩进（docx v1 不支持 style.list.indentLevel）。
+ * 返回的是**平铺**的 descriptor 数组，但 children 字段已正确指向子节点 block_id。
+ */
 function createDescendantTextNodes(markdown, preferredType = BLOCK_TYPE_TEXT) {
-  return convertMarkdownToDocxBlocks(markdown, preferredType).map((child) => ({
-    block_id: createTempId('text'),
-    ...child,
-    children: [],
-  }));
+  const rawBlocks = convertMarkdownToDocxBlocks(markdown, preferredType);
+
+  const hasIndent = rawBlocks.some((b) => b._indentLevel > 0);
+  if (!hasIndent) {
+    return rawBlocks.map((child) => {
+      const { _indentLevel: _il, ...rest } = child;
+      return { block_id: createTempId('text'), ...rest, children: [] };
+    });
+  }
+
+  // 按 _indentLevel 建立父子关系：每个节点挂到最近的、indent 比自己小的节点上
+  const nodes = rawBlocks.map((child) => {
+    const { _indentLevel: _il, ...rest } = child;
+    return { block_id: createTempId('text'), ...rest, children: [], _indentLevel: _il || 0 };
+  });
+
+  // parentStack[level] = 该层级最后一个节点的 index
+  const parentStack = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const level = nodes[i]._indentLevel;
+    parentStack[level] = i;
+    // 清除比当前 level 更深的 stack 条目
+    for (let d = level + 1; d < parentStack.length; d++) parentStack[d] = undefined;
+    if (level > 0) {
+      // 找最近的更浅层级作为父节点
+      for (let p = level - 1; p >= 0; p--) {
+        if (parentStack[p] != null) {
+          nodes[parentStack[p]].children.push(nodes[i].block_id);
+          break;
+        }
+      }
+    }
+  }
+
+  // 收集所有被引用为 child 的 block_id
+  const childIds = new Set();
+  for (const node of nodes) {
+    for (const cid of node.children) childIds.add(cid);
+  }
+
+  // 平铺输出（飞书 descendant API 需要平铺），标记顶层节点
+  return nodes.map(({ _indentLevel: _il, ...rest }) => {
+    if (childIds.has(rest.block_id)) rest._isChild = true;
+    return rest;
+  });
 }
 
 function createFallbackCodeNodes(title, code) {
@@ -726,9 +791,20 @@ function createCellContentNodes(cell) {
   const descriptors = [];
   const elements = Array.isArray(cell?.elements) ? cell.elements : [];
   if (!elements.length) return createDescendantTextNodes('', BLOCK_TYPE_TEXT);
+
+  // 收集连续的 text element markdown，合并后一次性建立父子关系
+  let pendingTextLines = [];
+  function flushTextLines() {
+    if (!pendingTextLines.length) return;
+    const combined = pendingTextLines.join('\n');
+    descriptors.push(...createDescendantTextNodes(combined, BLOCK_TYPE_TEXT));
+    pendingTextLines = [];
+  }
+
   for (const element of elements) {
     if (!element) continue;
     if (element.type === 'image') {
+      flushTextLines();
       descriptors.push({
         block_id: createTempId('image'),
         ...createDocxImagePlaceholder(element.src),
@@ -736,16 +812,19 @@ function createCellContentNodes(cell) {
       });
       continue;
     }
-    if (element.type === 'mermaid') {
-      descriptors.push(...createFallbackCodeNodes('Mermaid', element.code || ''));
+    if (element.type === 'mermaid' || element.type === 'mindmap') {
+      flushTextLines();
+      descriptors.push({
+        block_id: createTempId('board'),
+        _boardCode: element.code || '',
+        _boardType: element.type,
+        children: [],
+      });
       continue;
     }
-    if (element.type === 'mindmap') {
-      descriptors.push(...createFallbackCodeNodes('Mindmap', element.code || ''));
-      continue;
-    }
-    descriptors.push(...createDescendantTextNodes(element.markdown || '', BLOCK_TYPE_TEXT));
+    pendingTextLines.push(element.markdown || '');
   }
+  flushTextLines();
   return descriptors.length ? descriptors : createDescendantTextNodes('', BLOCK_TYPE_TEXT);
 }
 
@@ -767,13 +846,19 @@ function buildTableDescendants(block, imageTokens) {
     const childNodes = Array.isArray(cellContent)
       ? createCellContentNodes({ elements: cellContent }, imageTokens)
       : createDescendantTextNodes(cellContent || '', BLOCK_TYPE_TEXT);
+    // 只把顶层节点（非其他节点的 child）放到 table_cell.children
+    const topLevelIds = childNodes.filter((n) => !n._isChild).map((n) => n.block_id);
     descendants.push({
       block_id: cellId,
       block_type: BLOCK_TYPE_TABLE_CELL,
       table_cell: {},
-      children: childNodes.map((node) => node.block_id),
+      children: topLevelIds,
     });
-    descendants.push(...childNodes);
+    // 平铺所有节点（含子级），清理内部标记
+    for (const node of childNodes) {
+      const { _isChild: _ic, ...clean } = node;
+      descendants.push(clean);
+    }
   }
 
   for (const header of headers) pushCell(String(header || ''));
@@ -1025,6 +1110,18 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
     }
   }
 
+  // 辅助：判断 cell 内容是否包含嵌套列表（有 children 的节点）
+  function hasNestedChildren(nodes) {
+    return nodes.some((n) => Array.isArray(n.children) && n.children.length > 0);
+  }
+
+  // 辅助：从节点列表中提取干净的 schema（去除内部标记）
+  function toCleanSchema({ block_id: _id, children: _ch, _isChild: _ic, _imageSrc, _boardCode, _boardType, ...rest }) {
+    if (_imageSrc) rest._imageSrc = _imageSrc;
+    if (_boardCode != null) { rest._boardCode = _boardCode; rest._boardType = _boardType; }
+    return rest;
+  }
+
   // 分类：哪些 cell 的第一个内容块是纯文本（可以 batch_update 改写），哪些需要额外处理
   const batchUpdateRequests = [];
   const cellsNeedExtraWork = [];
@@ -1032,29 +1129,34 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
   for (let i = 0; i < cellIds.length; i += 1) {
     const cellId = cellIds[i];
     const cellChildren = allCellContents[i] || createDescendantTextNodes('', BLOCK_TYPE_TEXT);
-    const blockSchemas = cellChildren.map(({ block_id: _id, children: _ch, ...rest }) => rest);
-    if (!blockSchemas.length) continue;
+    if (!cellChildren.length) continue;
 
+    const nested = hasNestedChildren(cellChildren);
     const emptyBlockId = emptyBlockIdByCell.get(cellId);
-    const firstSchema = blockSchemas[0];
-    const restSchemas = blockSchemas.slice(1);
-    const firstIsText = firstSchema.block_type === BLOCK_TYPE_TEXT && !firstSchema._imageSrc;
 
-    if (firstIsText && emptyBlockId) {
-      // 用 batch_update 把空块改写为第一个文本块的内容
-      const textData = firstSchema.text || {};
-      batchUpdateRequests.push({
-        block_id: emptyBlockId,
-        update_text_elements: {
-          elements: textData.elements || [{ text_run: { content: ' ' } }],
-        },
-      });
-      if (restSchemas.length > 0) {
-        cellsNeedExtraWork.push({ cellId, schemas: restSchemas, deleteFirst: false });
-      }
+    if (nested) {
+      // 含嵌套列表：必须用 descendant API，无法 batch_update 首块
+      cellsNeedExtraWork.push({ cellId, nodes: cellChildren, deleteFirst: true, nested: true });
     } else {
-      // 第一个块不是纯文本（图片/列表等），用老逻辑：追加内容 + 删空块
-      cellsNeedExtraWork.push({ cellId, schemas: blockSchemas, deleteFirst: true });
+      const blockSchemas = cellChildren.map(toCleanSchema);
+      const firstSchema = blockSchemas[0];
+      const restSchemas = blockSchemas.slice(1);
+      const firstIsText = firstSchema.block_type === BLOCK_TYPE_TEXT && !firstSchema._imageSrc && !firstSchema._boardCode;
+
+      if (firstIsText && emptyBlockId) {
+        const textData = firstSchema.text || {};
+        batchUpdateRequests.push({
+          block_id: emptyBlockId,
+          update_text_elements: {
+            elements: textData.elements || [{ text_run: { content: ' ' } }],
+          },
+        });
+        if (restSchemas.length > 0) {
+          cellsNeedExtraWork.push({ cellId, schemas: restSchemas, deleteFirst: false });
+        }
+      } else {
+        cellsNeedExtraWork.push({ cellId, schemas: blockSchemas, deleteFirst: true });
+      }
     }
   }
 
@@ -1065,23 +1167,51 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
   }
 
   // 处理需要额外工作的 cell
-  for (const { cellId, schemas, deleteFirst } of cellsNeedExtraWork) {
+  for (const work of cellsNeedExtraWork) {
+    const { cellId, deleteFirst } = work;
+
+    if (work.nested) {
+      // 嵌套列表：用 descendant API 一次性创建带父子关系的块树
+      const { nodes } = work;
+      const topLevelIds = nodes.filter((n) => !n._isChild).map((n) => n.block_id);
+      const descendants = nodes.map(({ _isChild: _ic, ...rest }) => rest);
+      await docxCreateDescendants(state, accessToken, documentId, cellId, {
+        children_id: topLevelIds,
+        descendants,
+      });
+      if (deleteFirst) {
+        // 删除飞书自动创建的空 text block（它在 index 0）
+        await docxBatchDelete(state, accessToken, documentId, cellId, 0, 1);
+      }
+      continue;
+    }
+
+    // 非嵌套：沿用原逻辑（children/create 平铺）
+    const { schemas } = work;
     let batch = [];
+
+    async function flushCellBatch() {
+      if (!batch.length) return;
+      for (let bIdx = 0; bIdx < batch.length; bIdx += MAX_LINEAR_BLOCKS_PER_REQUEST) {
+        // eslint-disable-next-line no-await-in-loop
+        await docxCreateChildren(state, accessToken, documentId, cellId, batch.slice(bIdx, bIdx + MAX_LINEAR_BLOCKS_PER_REQUEST));
+      }
+      batch = [];
+    }
+
     for (const schema of schemas) {
-      if (schema.block_type === BLOCK_TYPE_IMAGE && schema._imageSrc) {
-        if (batch.length > 0) {
-          await docxCreateChildren(state, accessToken, documentId, cellId, batch);
-          batch = [];
-        }
+      if (schema._boardCode != null) {
+        await flushCellBatch();
+        await createBoardFromCode(state, accessToken, documentId, schema._boardCode, schema._boardType || 'mermaid', undefined, cellId);
+      } else if (schema.block_type === BLOCK_TYPE_IMAGE && schema._imageSrc) {
+        await flushCellBatch();
         await createAndUploadImage(state, accessToken, documentId, cellId, schema._imageSrc);
       } else {
-        const { _imageSrc: _s, ...cleanSchema } = schema;
+        const { _imageSrc: _s, _boardCode: _bc, _boardType: _bt, ...cleanSchema } = schema;
         batch.push(cleanSchema);
       }
     }
-    if (batch.length > 0) {
-      await docxCreateChildren(state, accessToken, documentId, cellId, batch);
-    }
+    await flushCellBatch();
     if (deleteFirst) {
       await docxBatchDelete(state, accessToken, documentId, cellId, 0, 1);
     }
@@ -1146,10 +1276,18 @@ async function createAndUploadImage(state, accessToken, documentId, parentBlockI
   return imgBlock;
 }
 
-async function createBoardFromCode(state, accessToken, documentId, code, type, insertIndex) {
-  const createResult = await docxCreateChildren(state, accessToken, documentId, documentId, [
-    createBoardBlock(type === 'mindmap' ? BOARD_HEIGHT_MINDMAP : BOARD_HEIGHT_DEFAULT),
-  ], insertIndex);
+/**
+ * 在指定父块下创建画板并注入 Mermaid / Mindmap 代码。
+ * parentBlockId 缺省时挂到文档根层（documentId）；传入 cellId 时可挂入表格单元格。
+ * insertIndex 仅对根层生效（单元格内追加不传 index）。
+ */
+async function createBoardFromCode(state, accessToken, documentId, code, type, insertIndex, parentBlockId) {
+  const actualParentId = parentBlockId ?? documentId;
+  const createResult = await docxCreateChildren(
+    state, accessToken, documentId, actualParentId,
+    [createBoardBlock(type === 'mindmap' ? BOARD_HEIGHT_MINDMAP : BOARD_HEIGHT_DEFAULT)],
+    parentBlockId == null ? insertIndex : undefined,
+  );
   const boardBlock = (createResult.children || []).find((item) => item.block_type === BLOCK_TYPE_BOARD);
   const whiteboardId = boardBlock?.board?.token || boardBlock?.token;
   if (!whiteboardId) throw new Error('创建飞书画板成功，但未拿到 whiteboard_id');
@@ -1614,7 +1752,7 @@ export function createFeishuSyncApi({ rootDir, publicDir }) {
               const mdFiles = fs.readdirSync(slugDir).filter(f => f.endsWith('.md'));
               if (mdFiles.length > 0) {
                 const mdText = fs.readFileSync(path.join(slugDir, mdFiles[0]), 'utf-8');
-                blocks = parsePrd(mdText);
+                blocks = expandParagraphBlocksOnBlankLines(normalizeLegacyBlocks(parsePrd(mdText)));
               }
             }
           }

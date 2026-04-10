@@ -16,7 +16,7 @@ export const BlockItem = memo(function BlockItem({
   activeInsertMenuOwnerId, openInsertMenu, closeInsertMenu,
   globalSelection, setGlobalSelection,
   shouldFocus, onFocusConsumed,
-  onEnterBlock, onBackspaceEmptyBlock, onPasteImageAsBlockBlock,
+  onEnterBlock, onBackspaceEmptyBlock, onBackspaceMergeBlock, onPasteImageAsBlockBlock,
   imageMeta, onImageWidthChange, prdAssetCacheBust = 0,
   setFocusBlockId, registerBlockRef, onEditingFinishedBlock,
   rowBindings,
@@ -77,6 +77,10 @@ export const BlockItem = memo(function BlockItem({
   const handleBackspaceEmpty = useCallback(() => {
     onBackspaceEmptyBlock(block.id);
   }, [onBackspaceEmptyBlock, block.id]);
+
+  const handleBackspaceMerge = useCallback((currentMd) => {
+    onBackspaceMergeBlock?.(block.id, currentMd);
+  }, [onBackspaceMergeBlock, block.id]);
 
   const handlePasteImageAsBlock = useCallback((src) => {
     onPasteImageAsBlockBlock(block.id, src);
@@ -165,6 +169,7 @@ export const BlockItem = memo(function BlockItem({
             setGlobalSelection={setGlobalSelection}
             onEnter={handleEnter}
             onBackspaceEmpty={handleBackspaceEmpty}
+            onBackspaceMerge={handleBackspaceMerge}
             onPasteImageAsBlock={handlePasteImageAsBlock}
             imageMeta={imageMeta}
             onImageWidthChange={onImageWidthChange}

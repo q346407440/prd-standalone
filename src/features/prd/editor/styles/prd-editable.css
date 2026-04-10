@@ -235,6 +235,9 @@
 /* ─── EditableMarkdown 預覽模式 ─────────────────────────────────────────── */
 
 .prd-editable-md--preview {
+  --prd-root-bullet-marker-width: 0.5em;
+  --prd-root-bullet-gap: 0.35em;
+  --prd-root-bullet-text-indent: calc(var(--prd-root-bullet-marker-width) + var(--prd-root-bullet-gap));
   cursor: text;
   border-radius: 4px;
   padding: 4px 6px;
@@ -300,6 +303,84 @@
   border-radius: 3px;
 }
 
+/* 表格單元格內 Markdown 預覽：段落間距 + 列表行 hanging indent（與編輯態一致） */
+.prd-md-preview-para + .prd-md-preview-para {
+  margin-top: 1.05em;
+}
+
+.prd-md-preview-line--text {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.prd-md-preview-list-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35em;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.prd-md-preview-list-line__marker {
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #333;
+  white-space: nowrap;
+}
+
+.prd-md-preview-list-line__body {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #333;
+}
+
+/* 根層無序列表（預覽態）：與編輯態完全同構——::before 偽元素畫 •，padding-left 撐文字起點，
+   不再用 <span> marker + flex gap，徹底消除字元寬度 vs gap 的漂移 */
+.prd-md-preview-list-line--root-bullet {
+  display: block;
+  position: relative;
+  padding-left: var(--prd-root-bullet-text-indent);
+  box-sizing: border-box;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #333;
+}
+
+.prd-md-preview-list-line--root-bullet::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  width: var(--prd-root-bullet-marker-width);
+  font-size: inherit;
+  line-height: inherit;
+  text-align: left;
+  color: #555;
+  pointer-events: none;
+  user-select: none;
+}
+
+.prd-md-preview-list-line--root-bullet .prd-md-preview-list-line__body {
+  display: block;
+}
+
+/* 有序/字母列表：對齊編輯態按鈕式標記（.prd-list-marker__btn padding 0 2px + 標記後半角空格） */
+.prd-md-preview-list-line--ordered {
+  gap: 0.28em;
+}
+
+.prd-md-preview-list-line--ordered .prd-md-preview-list-line__marker {
+  padding: 0 2px;
+  box-sizing: content-box;
+}
+
 .prd-md-preview-img {
   max-width: 100%;
   height: auto;
@@ -326,6 +407,9 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 .prd-tiptap-editor {
+  --prd-root-bullet-marker-width: 0.5em;
+  --prd-root-bullet-gap: 0.35em;
+  --prd-root-bullet-text-indent: calc(var(--prd-root-bullet-marker-width) + var(--prd-root-bullet-gap));
   position: relative;
   padding: 4px 6px;
   border: 1.5px solid #4a90e2;
@@ -582,6 +666,50 @@
   min-width: 0;
 }
 
+/* 有序／字母列表（按鈕式標記）：預覽態列表行正文略偏右，編輯區補少量左內距對齊可視正文起點 */
+.prd-tiptap-editor:has(.prd-list-marker__btn) .tiptap {
+  padding-left: 3px;
+  box-sizing: border-box;
+}
+
+/*
+ * 根層無序列表（.prd-list-marker--root-bullet）：預覽對每行前綴畫 •；編輯器若只 flex 左側一顆 •，
+ * 後續段落会像扁平正文。隱藏外側前綴視覺、改為每個 <p> ::before 畫 •，正文左緣與預覽一致。
+ * 縮排子層（無 --root-bullet）仍用外側前綴，避免巢狀錯位。
+ */
+.prd-tiptap-editor:has(.prd-list-marker--root-bullet) .prd-list-prefix {
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* 預覽態同一段列表是 <br /> 換行，無段落 margin；編輯態每行一個 <p> 時若保留全域 p{margin-bottom:4px} 會明顯比預覽疏 */
+.prd-tiptap-editor:has(.prd-list-marker--root-bullet) .prd-tiptap-prosemirror > p {
+  position: relative;
+  padding-left: var(--prd-root-bullet-text-indent);
+  box-sizing: border-box;
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.prd-tiptap-editor:has(.prd-list-marker--root-bullet) .prd-tiptap-prosemirror > p::before {
+  content: '•';
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--prd-root-bullet-marker-width);
+  color: #555;
+  font-size: inherit;
+  line-height: inherit;
+  text-align: left;
+  pointer-events: none;
+  user-select: none;
+}
+
 .prd-tiptap-preview-row {
   display: flex;
   align-items: baseline;
@@ -591,6 +719,40 @@
 .prd-tiptap-preview-row .prd-tiptap-prosemirror {
   flex: 1;
   min-width: 0;
+}
+
+/* ─── 表格單元格內：預覽與編輯區域同尺 ───────────────────────────────────
+   預覽用 <br> 串行無「段距」；編輯態 ProseMirror 多個 <p> 若保留全域 p{margin-bottom:4px}
+   會整塊變高。另預覽原用 <span> 根節點，與編輯器 <div.tiptap> 塊級排版不一致，改為 div 後對齊寬度。 */
+.prd-editable-md--in-cell.prd-editable-md--preview {
+  box-sizing: border-box;
+}
+
+.prd-tiptap-preview-row--in-cell {
+  width: 100%;
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.prd-editable-md--in-cell .prd-tiptap-prosemirror--readonly {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.prd-tiptap-editor--in-cell {
+  box-sizing: border-box;
+}
+
+/* 與 .prd-tiptap-preview-row--in-cell 一致，避免 baseline 對齊與多行換行時編輯框視覺高度與預覽不一致 */
+.prd-tiptap-editor--in-cell:has(.prd-list-prefix) {
+  align-items: flex-start;
+}
+
+.prd-tiptap-editor--in-cell .prd-tiptap-prosemirror > p {
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 /* BubbleMenu（選取浮窗）：無白色底，與 block actionbar 一致 */

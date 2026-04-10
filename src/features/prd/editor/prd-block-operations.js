@@ -1,3 +1,4 @@
+import { cellFromMarkdownString } from './prd-inline-image-split.js';
 import { PRD_SECTION_HEADERS } from './prd-constants.js';
 import { genId, cloneSerializable } from './prd-utils.js';
 import {
@@ -127,6 +128,43 @@ export function makePrdSectionTemplateBlocks() {
   return [heading, table];
 }
 
+/**
+ * 將「單一 block:paragraph 內含多段 GFM 段落（\\n\\n）」拆成多個 paragraph block，
+ * 與編輯器內 Enter 拆 block、序列化後多個 <!-- block:paragraph --> 的結構對齊。
+ *
+ * 含 ``` 圍欄的段落不拆，避免誤切 code fence。
+ */
+export function expandParagraphBlocksOnBlankLines(blocks) {
+  const out = [];
+  for (const block of blocks || []) {
+    if (block.type !== 'paragraph' || block.content?.type !== 'text') {
+      out.push(block);
+      continue;
+    }
+    const md = block.content.markdown ?? '';
+    if (!md.includes('\n\n') || md.includes('```')) {
+      out.push(block);
+      continue;
+    }
+    const parts = md
+      .split(/\n\n+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    if (parts.length <= 1) {
+      out.push(block);
+      continue;
+    }
+    parts.forEach((part, i) => {
+      out.push({
+        ...block,
+        id: i === 0 ? block.id : genId(),
+        content: { type: 'text', markdown: part },
+      });
+    });
+  }
+  return out;
+}
+
 export function normalizeLegacyBlocks(blocks) {
   const out = [];
   for (const block of blocks || []) {
@@ -135,9 +173,7 @@ export function normalizeLegacyBlocks(blocks) {
       out.push({ id: genId(), type: 'h2', content: { type: 'text', markdown: title || '新章节' } });
       const toCell = (v) => {
         if (!v) return makeEmptyCell();
-        const imgMatch = v.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
-        if (imgMatch) return { elements: [{ type: 'image', src: imgMatch[2] }] };
-        return { elements: [{ type: 'text', markdown: v }] };
+        return cellFromMarkdownString(v);
       };
       out.push({
         id: genId(),
