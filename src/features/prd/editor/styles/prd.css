@@ -862,11 +862,32 @@
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  /*
+   * 主文每個 block 一個 flex 子項；若用 gap，連續段落/表格會多出「整塊級」縱距，
+   * 表格格內則是同一段 Markdown、無此 gap，視覺會比格內疏很多。
+   * gap 取消後，段距改由格內同款 .prd-md-preview-para 規則 + 下述標題前後微距承擔。
+   */
+  gap: 0;
   width: 100%;
   min-width: 0;
   min-height: max-content;
   padding: 20px 16px 32px;
+}
+
+/* gap 為 0 時：標題 block 與鄰塊保留呼吸距，避免貼死 */
+.prd-page__main > .prd-block-item:has(.prd-block-heading) + .prd-block-item {
+  margin-top: 8px;
+}
+
+.prd-page__main > .prd-block-item + .prd-block-item:has(.prd-block-heading) {
+  margin-top: 14px;
+}
+
+/* 表格 / 圖表等重塊：與上一段文字略分開，避免 gap 取消後完全貼死 */
+.prd-page__main > .prd-block-item + .prd-block-item:has(.prd-block-table),
+.prd-page__main > .prd-block-item + .prd-block-item:has(.prd-block-mermaid),
+.prd-page__main > .prd-block-item + .prd-block-item:has(.prd-block-mindmap) {
+  margin-top: 10px;
 }
 
 /* ── switch-row：包裹正常行 或 重命名内联编辑 ── */

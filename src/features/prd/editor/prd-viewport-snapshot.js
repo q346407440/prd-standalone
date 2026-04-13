@@ -49,7 +49,7 @@ function getCellScrollSignature(cell) {
     if (element.type === 'mermaid') return `mermaid:${element.code || ''}`;
     if (element.type === 'mindmap') return `mindmap:${element.code || ''}`;
     return `txt:${element.markdown || ''}`;
-  }).join('<br>');
+  }).join('\n');
 }
 
 export function getBlockScrollSignature(block) {

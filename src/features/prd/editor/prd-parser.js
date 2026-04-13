@@ -1,5 +1,3 @@
-import { splitMarkdownByInlineImages } from './prd-inline-image-split.js';
-
 /**
  * prd-parser.js
  * 把 prd.md 解析成扁平的 Block[] 陣列。
@@ -23,9 +21,18 @@ import { splitMarkdownByInlineImages } from './prd-inline-image-split.js';
  *   { element: { type: 'text', markdown: string } | { type: 'image', src: string } | { type: 'mermaid', code: string } | { type: 'mindmap', code: string } }
  */
 
+import {
+  parseGfmTable,
+  parseCellFormatTable,
+  isCellFormat,
+  parseTableBlockMeta,
+} from './prd-table-parser.js';
+import { migrateFromLegacy } from './prd-legacy-migration.js';
+
 // ─── 常量 ────────────────────────────────────────────────────────────────────
 
 const BLOCK_MARKER_RE = /^<!--\s*block:([\w-]+)\s*-->$/;
+const BLOCK_MARKER_WITH_ATTRS_RE = /^<!--\s*block:([\w-]+)(?:\s+(.*?))?\s*-->$/;
 const HEADING_BLOCK_RE = /^h([1-7])$/;
 
 const SECTION_MARKERS = {
@@ -35,8 +42,9 @@ const SECTION_MARKERS = {
   end: '<!-- section:end -->',
 };
 
-// 舊格式標記（用於遷移檢測）
-const LEGACY_SECTIONS_START = '<!-- prd:sections -->';
+const PURE_IMAGE_RE = /^!\[([^\]]*)\]\(([^)]+)\)$/;
+const MERMAID_FENCE_RE = /^```mermaid\s*\n([\s\S]*?)```\s*$/;
+const BARE_LIST_PREFIX_RE = /^(\s*)([-*+]|\d+\.|[a-z]+\.)$/;
 
 let _idCounter = 0;
 function genId() {
@@ -53,92 +61,11 @@ function trimLines(str) {
     .trim();
 }
 
-/** 判斷字串是否為純圖片 markdown：![alt](src) */
-const PURE_IMAGE_RE = /^!\[([^\]]*)\]\(([^)]+)\)$/;
-const MERMAID_FENCE_RE = /^```mermaid\s*\n([\s\S]*?)```\s*$/;
-const CELL_MERMAID_RE = /^:::mermaid:::([\s\S]*?):::end-mermaid:::$/;
-const CELL_MINDMAP_RE = /^:::mindmap:::([\s\S]*?):::end-mindmap:::$/;
-const BARE_LIST_PREFIX_RE = /^(\s*)([-*+]|\d+\.|[a-z]+\.)$/;
-
 function normalizeBareListPrefix(text) {
   if (!text) return text;
   const match = text.match(BARE_LIST_PREFIX_RE);
   if (!match) return text;
   return `${match[1]}${match[2]} `;
-}
-
-function parseSingleElement(s) {
-  const mermaidMatch = s.match(CELL_MERMAID_RE);
-  if (mermaidMatch) return { type: 'mermaid', code: mermaidMatch[1].trim() };
-  const mindmapMatch = s.match(CELL_MINDMAP_RE);
-  if (mindmapMatch) return { type: 'mindmap', code: mindmapMatch[1].trim() };
-  const normalized = normalizeBareListPrefix(s);
-  const imgMatch = normalized.match(PURE_IMAGE_RE);
-  if (imgMatch) return { type: 'image', src: imgMatch[2] };
-  return { type: 'text', markdown: normalized };
-}
-
-/**
- * 把單元格字串解析為 CellElement。
- * 格內多個段落以 <br> 分隔。表格列在原始檔中須以 `|` 開頭；儲格內若需真換行（如 Mermaid 多行），
- * 由 parseGfmTable 合併後續不以 `|` 開頭的續行。
- * 回傳 { elements: Element[] }
- */
-function parseCellElement(cellStr) {
-  const s = (cellStr || '').trimEnd();
-  // 以 <br> 分割多段（序列化時也用 <br>）
-  const parts = s
-    .split(/<br\s*\/?>/i)
-    .map((p) => p.trimEnd())
-    .filter((p) => p.trim() !== '');
-  if (parts.length === 0) {
-    return { elements: [{ type: 'text', markdown: '' }] };
-  }
-  return {
-    elements: parts
-      .map(parseSingleElement)
-      .flatMap((el) => {
-        if (el.type !== 'text') return [el];
-        return splitMarkdownByInlineImages(el.markdown ?? '');
-      }),
-  };
-}
-
-function parseGfmTable(block) {
-  const lines = block
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
-  // 合併「儲格內含真換行」的續行：GFM 表格式要求每列以 | 開頭；儲格內 Mermaid 等多行內容寫在後續不以 | 開頭的行上。
-  const merged = [];
-  let i = 0;
-  while (i < lines.length) {
-    const line = lines[i];
-    if (!line.startsWith('|')) {
-      i += 1;
-      continue;
-    }
-    let row = line;
-    i += 1;
-    while (i < lines.length && !lines[i].startsWith('|')) {
-      row += `\n${lines[i]}`;
-      i += 1;
-    }
-    merged.push(row);
-  }
-  const tableLines = merged;
-  if (tableLines.length < 2) return { type: 'table', headers: [], rows: [] };
-
-  const parseRow = (line) =>
-    line
-      .replace(/^\||\|$/g, '')
-      .split('|')
-      // Markdown 表格每格外側有 1 個對齊空格，僅去掉這層；保留內容本身的前導縮進。
-      .map((c) => c.replace(/^ /, '').trimEnd());
-
-  const headers = parseRow(tableLines[0]);
-  const rows = tableLines.slice(2).map((line) => parseRow(line).map(parseCellElement));
-  return { type: 'table', headers, rows };
 }
 
 function parseLinks(block) {
@@ -174,22 +101,25 @@ function parseNewFormat(mdText) {
   const blocks = [];
 
   let currentType = null;
+  let currentMeta = null;
   let currentLines = [];
 
   const flush = () => {
     if (!currentType) return;
     const raw = currentLines.join('\n');
-    const block = parseBlockContent(currentType, raw);
+    const block = parseBlockContent(currentType, raw, currentMeta);
     if (block) blocks.push(block);
     currentType = null;
+    currentMeta = null;
     currentLines = [];
   };
 
   for (const line of lines) {
-    const markerMatch = line.trim().match(BLOCK_MARKER_RE);
+    const markerMatch = line.trim().match(BLOCK_MARKER_WITH_ATTRS_RE);
     if (markerMatch) {
       flush();
       currentType = markerMatch[1];
+      currentMeta = markerMatch[2] ? parseBlockMarkerAttrs(markerMatch[2]) : null;
       currentLines = [];
     } else if (currentType !== null) {
       currentLines.push(line);
@@ -200,7 +130,15 @@ function parseNewFormat(mdText) {
   return blocks;
 }
 
-function parseBlockContent(type, raw) {
+function parseBlockMarkerAttrs(attrsStr) {
+  if (!attrsStr) return null;
+  const meta = {};
+  const colsMatch = attrsStr.match(/cols="([^"]+)"/);
+  if (colsMatch) meta.cols = colsMatch[1];
+  return Object.keys(meta).length ? meta : null;
+}
+
+function parseBlockContent(type, raw, meta) {
   const text = trimLines(raw);
   const headingMatch = type.match(HEADING_BLOCK_RE);
   if (headingMatch) {
@@ -212,7 +150,6 @@ function parseBlockContent(type, raw) {
   switch (type) {
     case 'paragraph': {
       const normalizedText = normalizeBareListPrefix(text);
-      // 純圖片段落 → image element
       const imgMatch = normalizedText.match(PURE_IMAGE_RE);
       if (imgMatch) {
         return { id: genId(), type: 'paragraph', content: { type: 'image', src: imgMatch[2] } };
@@ -235,6 +172,10 @@ function parseBlockContent(type, raw) {
     }
 
     case 'table': {
+      if (isCellFormat(raw)) {
+        const tableContent = parseCellFormatTable(raw, meta);
+        return { id: genId(), type: 'table', content: tableContent };
+      }
       const tableStart = text.indexOf('|');
       if (tableStart < 0) {
         return { id: genId(), type: 'table', content: { type: 'table', headers: [], rows: [] } };
@@ -276,7 +217,6 @@ function parseBlockContent(type, raw) {
       const imgMatch = design.match(/!\[[^\]]*\]\(([^)]+)\)/);
       const designImage = imgMatch ? imgMatch[1] : '';
 
-      // 舊的 prd-section 轉換為 h2 + table（由 normalizeLegacyBlocks 處理）
       return {
         id: genId(),
         type: 'prd-section',
@@ -293,117 +233,6 @@ function parseBlockContent(type, raw) {
     default:
       return null;
   }
-}
-
-// ─── 舊格式遷移（v1 → Block[]）──────────────────────────────────────────────
-
-function migrateFromLegacy(mdText) {
-  const blocks = [];
-  const lines = mdText.split('\n');
-
-  const h1Line = lines.find((l) => /^# /.test(l));
-  if (h1Line) {
-    blocks.push({
-      id: genId(),
-      type: 'h1',
-      content: { type: 'text', markdown: h1Line.replace(/^# /, '').trim() },
-    });
-  }
-
-  const sectionsStartIdx = lines.findIndex((l) => l.trim() === LEGACY_SECTIONS_START);
-  const overviewText = sectionsStartIdx >= 0
-    ? lines.slice(0, sectionsStartIdx).join('\n')
-    : mdText;
-  const sectionsText = sectionsStartIdx >= 0
-    ? lines.slice(sectionsStartIdx + 1).join('\n')
-    : '';
-
-  const h2Blocks = splitByH2(overviewText);
-  for (const { title, body } of h2Blocks) {
-    if (!title) continue;
-
-    blocks.push({ id: genId(), type: 'h2', content: { type: 'text', markdown: title } });
-
-    if (title === '需求概述') {
-      const bgMatch = body.match(/###\s*目的\/背景\s*\n([\s\S]*)/);
-      const bg = bgMatch ? trimLines(bgMatch[1]) : trimLines(body);
-      if (bg) {
-        blocks.push({ id: genId(), type: 'paragraph', content: { type: 'text', markdown: bg } });
-      }
-    } else if (title === '需求功能清单') {
-      const tableStart = body.indexOf('|');
-      if (tableStart >= 0) {
-        blocks.push({
-          id: genId(),
-          type: 'table',
-          content: parseGfmTable(body.slice(tableStart)),
-        });
-      }
-    } else {
-      const md = trimLines(body);
-      if (md) {
-        blocks.push({ id: genId(), type: 'paragraph', content: { type: 'text', markdown: md } });
-      }
-    }
-  }
-
-  blocks.push({ id: genId(), type: 'divider', content: { type: 'divider' } });
-
-  if (sectionsText.trim()) {
-    const sectionH2Blocks = splitByH2(sectionsText);
-    for (const { title, body } of sectionH2Blocks) {
-      if (!title) continue;
-
-      const id = title
-        .toLowerCase()
-        .replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')
-        .replace(/^-|-$/g, '');
-
-      const design = extractBetween(body, SECTION_MARKERS.design, [
-        SECTION_MARKERS.interaction,
-        SECTION_MARKERS.logic,
-        SECTION_MARKERS.end,
-      ]);
-      const interaction = extractBetween(body, SECTION_MARKERS.interaction, [
-        SECTION_MARKERS.logic,
-        SECTION_MARKERS.end,
-      ]);
-      const logic = extractBetween(body, SECTION_MARKERS.logic, [SECTION_MARKERS.end]);
-
-      const imgMatch = design.match(/!\[[^\]]*\]\(([^)]+)\)/);
-      const designImage = imgMatch ? imgMatch[1] : '';
-
-      blocks.push({
-        id: genId(),
-        type: 'prd-section',
-        content: {
-          sectionId: id || genId(),
-          title,
-          designImage,
-          interactionMarkdown: trimLines(interaction),
-          logicMarkdown: trimLines(logic),
-        },
-      });
-    }
-  }
-
-  return blocks;
-}
-
-function splitByH2(text) {
-  const blocks = [];
-  let current = null;
-  for (const line of text.split('\n')) {
-    const h2 = line.match(/^## (.+)/);
-    if (h2) {
-      if (current) blocks.push({ title: current.title, body: current.lines.join('\n') });
-      current = { title: h2[1].trim(), lines: [] };
-    } else if (current) {
-      current.lines.push(line);
-    }
-  }
-  if (current) blocks.push({ title: current.title, body: current.lines.join('\n') });
-  return blocks;
 }
 
 // ─── 主入口 ──────────────────────────────────────────────────────────────────

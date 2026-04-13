@@ -104,7 +104,8 @@ bash start.sh
 `.cursor/` 目录包含 AI 写作配置，Cursor 打开 `prd-standalone/` 目录后自动加载：
 
 - `.cursor/rules/prd-writing-guard.mdc` — PRD 格式守护（自动应用）
-- `.cursor/skills/prd-agent/SKILL.md` — PRD 写作协议（设计列截图优先使用 **Chrome DevTools MCP**（`chrome-devtools-mcp@latest`）；截图前页面缩放 **67%**；详见 `SKILL.md` 第七节）
+- `.cursor/skills/prd-spec/SKILL.md` — PRD **硬协议**（路径、block、表格、列职责、截图 67%、annotations 等；设计列优先 **Chrome DevTools MCP**，详见第七节）
+- `.cursor/skills/prd-writing-style/SKILL.md` — PRD **文风与写作习惯**（待确认句式、禁止占位符、变更用语、标题命名等；与 `prd-spec` 併用）
 
 **重要**：
 
@@ -132,11 +133,11 @@ bash <prd-standalone 路径>/start.sh
 
 ### 写 PRD
 
-在 Cursor 中 `@prd-agent`，用自然语言描述需求。AI 会自动遵守 PRD 的 block 结构约定。
+在 Cursor 中 `@prd-spec`（需要文风与润色习惯时 `@prd-writing-style`），用自然语言描述需求。AI 会自动遵守 PRD 的 block 结构约定。
 
 当 `prd-standalone` 作为业务项目的子目录时，可以告诉 AI 去阅读父目录（`../`）的业务代码来辅助撰写 PRD。例如：
 
-> @prd-agent 请阅读 ../src/ 下的会员弹窗相关代码，帮我补充弹窗展示规则的逻辑列
+> @prd-spec 请阅读 ../src/ 下的会员弹窗相关代码，帮我补充弹窗展示规则的逻辑列
 
 ### 同步到飞书
 

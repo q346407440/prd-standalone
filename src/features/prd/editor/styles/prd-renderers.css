@@ -174,11 +174,14 @@
 }
 
 .prd-lightbox-content__html {
-  width: 80vw;
+  width: fit-content;
+  max-width: 90vw;
 }
 
 .prd-lightbox-content__html svg {
   display: block;
+  max-width: 90vw;
+  height: auto;
 }
 
 .prd-lightbox-controls {

@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { BsArrowUpShort, BsArrowDownShort } from 'react-icons/bs';
 import {
   copyImageToClipboard,
   cutImageToClipboard,
@@ -20,10 +19,6 @@ export function ImageRenderer({
   initialWidthPx,
   onWidthChange,
   onEnter,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp = false,
-  canMoveDown = false,
   onAnnotate,
   annotationCount = 0,
   prdAssetCacheBust = 0,
@@ -194,58 +189,19 @@ export function ImageRenderer({
               />
             ))}
 
-            {showSelectedTools && (
+            {showSelectedTools && onAnnotate && (
               <div className="prd-image-renderer__overlay-toolbar">
-                {onAnnotate && (
-                  <button
-                    type="button"
-                    className="prd-action-btn prd-image-renderer__overlay-label"
-                    title="标注"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onAnnotate();
-                    }}
-                  >
-                    标注{annotationCount > 0 ? `(${annotationCount})` : ''}
-                  </button>
-                )}
                 <button
                   type="button"
-                  className="prd-action-btn prd-image-renderer__overlay-btn"
-                  title="上移"
-                  disabled={!canMoveUp}
+                  className="prd-action-btn prd-image-renderer__overlay-label"
+                  title="标注"
                   onMouseDown={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    if (canMoveUp) onMoveUp?.();
+                    onAnnotate();
                   }}
                 >
-                  <BsArrowUpShort aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="prd-action-btn prd-image-renderer__overlay-btn"
-                  title="下移"
-                  disabled={!canMoveDown}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    if (canMoveDown) onMoveDown?.();
-                  }}
-                >
-                  <BsArrowDownShort aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  className="prd-action-btn prd-action-btn--danger"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onDelete();
-                  }}
-                >
-                  删除
+                  标注{annotationCount > 0 ? `(${annotationCount})` : ''}
                 </button>
               </div>
             )}

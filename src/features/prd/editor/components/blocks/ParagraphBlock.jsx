@@ -9,6 +9,13 @@ export function ParagraphBlock({
   onResetOrderedStart,
 }) {
   const content = block.content ?? { type: 'text', markdown: '' };
+  const isPreviewSelected = globalSelection?.type === 'text-block'
+    && globalSelection.blockId === block.id
+    && globalSelection.role === 'paragraph'
+    && globalSelection.cellPath == null;
+  const isImageSelected = globalSelection?.type === 'image'
+    && globalSelection.blockId === block.id
+    && globalSelection.cellPath == null;
   return (
     <div className="prd-block-paragraph" data-prd-no-block-select>
       <ElementRenderer
@@ -20,7 +27,8 @@ export function ParagraphBlock({
         canMoveUp={canMoveUp}
         canMoveDown={canMoveDown}
         blockId={block.id}
-        globalSelection={globalSelection}
+        isPreviewSelected={isPreviewSelected}
+        isImageSelected={isImageSelected}
         setGlobalSelection={setGlobalSelection}
         onEnter={onEnter}
         onBackspaceEmpty={onBackspaceEmpty}

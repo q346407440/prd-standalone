@@ -17,6 +17,18 @@ export function PrdLightbox({ imageSrc, htmlContent, onClose }) {
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
+    // Strip fixed width/height from Mermaid SVG so it scales with the container
+    // instead of forcing the white-box to be as wide as the SVG's internal canvas.
+    const svgs = el.querySelectorAll('svg');
+    svgs.forEach((svg) => {
+      const vb = svg.getAttribute('viewBox');
+      if (vb) {
+        svg.removeAttribute('width');
+        svg.removeAttribute('height');
+        svg.style.width = '100%';
+        svg.style.height = 'auto';
+      }
+    });
     const raf = requestAnimationFrame(() => {
       const rect = el.getBoundingClientRect();
       const padX = 80;

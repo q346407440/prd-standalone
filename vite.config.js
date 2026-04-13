@@ -16,10 +16,15 @@ export default defineConfig(({ mode }) => {
     publicDir: 'public',
     assetsInclude: ['**/*.md'],
     server: {
+      host: '127.0.0.1',
       port: 6001,
+      // 埠被佔用時直接失敗，不自動改用 6002/6003，避免與約定埠不一致
+      strictPort: true,
     },
     preview: {
+      host: '127.0.0.1',
       port: 6001,
+      strictPort: true,
     },
     test: {
       environment: 'node',

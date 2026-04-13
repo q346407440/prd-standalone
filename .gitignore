@@ -41,6 +41,9 @@ bugfix/
 .DS_Store
 Thumbs.db
 
+# 本地临时截图（调试用，不入库）
+tmp-chrome-*.png
+
 # Editor
 .vscode/*
 !.vscode/extensions.json

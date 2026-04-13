@@ -159,6 +159,12 @@
 .prd-block-table__wrap .prd-table td {
   position: relative;
   z-index: auto;
+  overflow: visible;
+}
+
+/* 格內 hover 操作條可高於本行：勿在 tr 上裁切 */
+.prd-block-table__wrap .prd-table tbody tr {
+  overflow: visible;
 }
 
 /* ── 行/列 选中高亮（只有点击 bar 后才变色） ── */
@@ -449,6 +455,12 @@
 .prd-cell-element__actions.prd-action-panel--visible {
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Portal + fixed（FloatingActionBubble）：覆寫格內 absolute + translateY，座標由腳本依視窗夾逼 */
+.prd-cell-element__actions.prd-floating-action-bubble {
+  bottom: auto;
+  transform: none;
 }
 
 .prd-cell-element__action-btn {

@@ -528,22 +528,29 @@ async function fetchRootBlockIds(state, accessToken, documentId) {
   return allIds;
 }
 
-function collectImageSources(blocks) {
-  const set = new Set();
+/** 统计 PRD 中出现的图片引用次数（含表格内重复），用于同步进度加权 */
+function countAllImageReferences(blocks) {
+  let n = 0;
   for (const block of blocks || []) {
     if (block?.type === 'paragraph' && block?.content?.type === 'image' && block.content.src) {
-      set.add(block.content.src);
+      n += 1;
     }
     if (block?.type !== 'table') continue;
     for (const row of block?.content?.rows || []) {
       for (const cell of row || []) {
         for (const element of cell?.elements || []) {
-          if (element?.type === 'image' && element.src) set.add(element.src);
+          if (element?.type === 'image' && element.src) n += 1;
         }
       }
     }
   }
-  return [...set];
+  return n;
+}
+
+/** 同步工作量单位：每个根层 block 计 1，每张图片再计 1（与写入时 upload 次数一致） */
+function computeTotalWorkUnits(blocks) {
+  const arr = blocks || [];
+  return arr.length + countAllImageReferences(arr);
 }
 
 /**
@@ -777,14 +784,12 @@ function createDescendantTextNodes(markdown, preferredType = BLOCK_TYPE_TEXT) {
   }
 
   // 平铺输出（飞书 descendant API 需要平铺），标记顶层节点
-  return nodes.map(({ _indentLevel: _il, ...rest }) => {
+  return nodes.map((node) => {
+    const rest = { ...node };
+    delete rest._indentLevel;
     if (childIds.has(rest.block_id)) rest._isChild = true;
     return rest;
   });
-}
-
-function createFallbackCodeNodes(title, code) {
-  return createDescendantTextNodes(`${title}\n${code || ''}`, BLOCK_TYPE_CODE);
 }
 
 function createCellContentNodes(cell) {
@@ -828,79 +833,144 @@ function createCellContentNodes(cell) {
   return descriptors.length ? descriptors : createDescendantTextNodes('', BLOCK_TYPE_TEXT);
 }
 
-function buildTableDescendants(block, imageTokens) {
-  const headers = Array.isArray(block?.content?.headers) ? block.content.headers : [];
-  const rows = Array.isArray(block?.content?.rows) ? block.content.rows : [];
-  const rowCount = rows.length + 1;
-  const columnCount = Math.max(headers.length, rows[0]?.length || 0);
-  if (rowCount <= 0 || columnCount <= 0) {
-    throw new Error('表格缺少列定义，无法同步');
-  }
-  const tableId = createTempId('table');
-  const descendants = [];
-  const cellIds = [];
+/** 发往飞书 descendant API 时去掉本地占位字段，避免产生空图片块且无法绑定素材 */
+function stripDescendantNodeForApi(node) {
+  const {
+    _isChild: _ic,
+    _imageSrc,
+    _boardCode,
+    _boardType,
+    ...rest
+  } = node;
+  return rest;
+}
 
-  function pushCell(cellContent) {
-    const cellId = createTempId('cell');
-    cellIds.push(cellId);
-    const childNodes = Array.isArray(cellContent)
-      ? createCellContentNodes({ elements: cellContent }, imageTokens)
-      : createDescendantTextNodes(cellContent || '', BLOCK_TYPE_TEXT);
-    // 只把顶层节点（非其他节点的 child）放到 table_cell.children
-    const topLevelIds = childNodes.filter((n) => !n._isChild).map((n) => n.block_id);
-    descendants.push({
-      block_id: cellId,
-      block_type: BLOCK_TYPE_TABLE_CELL,
-      table_cell: {},
-      children: topLevelIds,
-    });
-    // 平铺所有节点（含子级），清理内部标记
-    for (const node of childNodes) {
-      const { _isChild: _ic, ...clean } = node;
-      descendants.push(clean);
+/**
+ * 与嵌套单元格 nodes 树一致的 DFS 顺序收集图片 src（用于与飞书侧 IMAGE block 顺序对齐）
+ */
+function collectNestedImageSrcsFromNodes(nodes) {
+  const byId = new Map((nodes || []).map((n) => [n.block_id, n]));
+  const roots = (nodes || []).filter((n) => !n._isChild);
+  const out = [];
+  function walk(n) {
+    if (n.block_type === BLOCK_TYPE_IMAGE && n._imageSrc) out.push(n._imageSrc);
+    const ch = Array.isArray(n.children) ? n.children : [];
+    for (const cid of ch) {
+      const child = byId.get(cid);
+      if (child) walk(child);
+    }
+  }
+  for (const r of roots) walk(r);
+  return out;
+}
+
+/** 自 rootBlockId 起前序 DFS 列出块（含分页），顺序与飞书文档树一致 */
+async function listDescendantBlocksPreOrder(state, accessToken, documentId, rootBlockId) {
+  const out = [];
+  async function walk(id) {
+    let pageToken = '';
+    do {
+      // eslint-disable-next-line no-await-in-loop
+      const data = await docxGetChildren(state, accessToken, documentId, id, pageToken);
+      const items = Array.isArray(data.items) ? data.items : [];
+      for (const item of items) {
+        out.push(item);
+        // eslint-disable-next-line no-await-in-loop
+        await walk(item.block_id);
+      }
+      pageToken = data.has_more ? (data.page_token || '') : '';
+    } while (pageToken);
+  }
+  await walk(rootBlockId);
+  return out;
+}
+
+async function uploadNestedCellImagesAfterDescendant(state, accessToken, documentId, cellId, nodes, addWorkUnits) {
+  const srcs = collectNestedImageSrcsFromNodes(nodes);
+  if (!srcs.length) return;
+  const flat = await listDescendantBlocksPreOrder(state, accessToken, documentId, cellId);
+  const imageBlocks = flat.filter((b) => b.block_type === BLOCK_TYPE_IMAGE);
+  if (imageBlocks.length !== srcs.length) {
+    throw new Error(`嵌套单元格图片数量不一致：飞书 ${imageBlocks.length}，本地 ${srcs.length}`);
+  }
+  for (let i = 0; i < srcs.length; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await uploadAndBindImage(state, accessToken, documentId, imageBlocks[i].block_id, srcs[i]);
+    addWorkUnits?.(1, '上传表格内图片');
+  }
+}
+
+/**
+ * Markmap 大綱 → 飛書 plantuml mindmap：必須去掉行內 `#`，並保證單根（與 PRD2MD feishu-api-plugin 一致）。
+ */
+function convertMarkmapBodyToFeishuMindmap(body) {
+  const lines = String(body || '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((l) => l.replace(/\s+$/, ''))
+    .filter((line) => line.trim());
+  if (!lines.length) return '  空白思维导图';
+
+  let minH = null;
+  let hasHeading = false;
+  for (const line of lines) {
+    const hm = line.match(/^(\s*)(#{1,6})\s+(.+)$/);
+    if (hm) {
+      hasHeading = true;
+      const lv = hm[2].length;
+      minH = minH === null ? lv : Math.min(minH, lv);
     }
   }
 
-  for (const header of headers) pushCell(String(header || ''));
-  for (const row of rows) {
-    for (let columnIndex = 0; columnIndex < columnCount; columnIndex += 1) {
-      pushCell(row?.[columnIndex]?.elements || []);
-    }
+  const hasList = lines.some(
+    (line) => /^(\s*)[-*+]\s+/.test(line) || /^(\s*)\d+\.\s+/.test(line),
+  );
+  const needSynthRoot = (minH !== null && minH > 1) || (!hasHeading && hasList);
+
+  const out = [];
+  if (needSynthRoot) {
+    out.push('  PRD');
   }
 
-  descendants.unshift({
-    block_id: tableId,
-    block_type: BLOCK_TYPE_TABLE,
-    table: {
-      property: {
-        row_size: rowCount,
-        column_size: columnCount,
-        header_row: true,
-      },
-    },
-    children: cellIds,
-  });
+  let lastHeadingDepth = needSynthRoot && !hasHeading ? 1 : needSynthRoot ? 2 : 1;
 
-  return {
-    children_id: [tableId],
-    descendants,
-  };
+  for (const line of lines) {
+    const hm = line.match(/^(\s*)(#{1,6})\s+(.+)$/);
+    if (hm) {
+      const hlv = hm[2].length;
+      const title = hm[3].trim();
+      const depth = needSynthRoot ? hlv - minH + 2 : hlv;
+      lastHeadingDepth = depth;
+      out.push(`${'  '.repeat(depth)}${title}`);
+      continue;
+    }
+    const lm = line.match(/^(\s*)([-*+]|\d+\.)\s+(.+)$/);
+    if (lm) {
+      const indentLen = lm[1].replace(/\t/g, '  ').length;
+      const listDepth = Math.floor(indentLen / 2) + 1;
+      const depth = lastHeadingDepth + listDepth;
+      out.push(`${'  '.repeat(depth)}${lm[3].trim()}`);
+      continue;
+    }
+    const pl = line.match(/^(\s*)(.+)$/);
+    if (pl && pl[2].trim()) {
+      const text = pl[2].trim();
+      if (/^#+\s/.test(text)) continue;
+      out.push(`${'  '.repeat(lastHeadingDepth + 1)}${text}`);
+    }
+  }
+  return out.join('\n');
 }
 
 function normalizeMindmapToMermaid(code) {
   const normalized = String(code || '').replace(/\r\n/g, '\n').trim();
   if (!normalized) return 'mindmap\n  空白思维导图';
-  if (/^\s*mindmap\b/i.test(normalized)) return normalized;
-  const lines = normalized.split('\n').filter((line) => line.trim());
-  const output = ['mindmap'];
-  for (const line of lines) {
-    const match = line.match(/^(\s*)([-*+]|\d+\.|[a-z]+\.)?\s*(.+)$/i);
-    if (!match) continue;
-    const indentLength = match[1].replace(/\t/g, '  ').length;
-    const depth = Math.max(1, Math.floor(indentLength / 2) + 1);
-    output.push(`${'  '.repeat(depth)}${match[3].trim()}`);
+  let body = normalized;
+  if (/^\s*mindmap\b/i.test(body)) {
+    body = body.replace(/^\s*mindmap\s*/i, '').trim();
   }
-  return output.join('\n');
+  const converted = convertMarkmapBodyToFeishuMindmap(body);
+  return `mindmap\n${converted}`;
 }
 
 function inferMermaidDiagramType(code, fallback = 0) {
@@ -1058,8 +1128,9 @@ async function docxPatchBlock(state, accessToken, documentId, blockId, patchBody
  * 分步创建表格：
  * 1. children/create 创建空 table（飞书自动生成 table_cell block_id）
  * 2. 逐个 cell 调用 children/create 填充内容（图片用三步法）
+ * @param {((delta: number, message?: string) => void) | undefined} addWorkUnits - 每完成一张图 +1，表格块本身结束时 +1
  */
-async function docxCreateTable(state, accessToken, documentId, block, insertIndex) {
+async function docxCreateTable(state, accessToken, documentId, block, insertIndex, addWorkUnits) {
   const headers = Array.isArray(block?.content?.headers) ? block.content.headers : [];
   const rows = Array.isArray(block?.content?.rows) ? block.content.rows : [];
   const rowCount = rows.length + 1;
@@ -1116,9 +1187,11 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
   }
 
   // 辅助：从节点列表中提取干净的 schema（去除内部标记）
-  function toCleanSchema({ block_id: _id, children: _ch, _isChild: _ic, _imageSrc, _boardCode, _boardType, ...rest }) {
-    if (_imageSrc) rest._imageSrc = _imageSrc;
-    if (_boardCode != null) { rest._boardCode = _boardCode; rest._boardType = _boardType; }
+  function toCleanSchema(node) {
+    const rest = { ...node };
+    delete rest.block_id;
+    delete rest.children;
+    delete rest._isChild;
     return rest;
   }
 
@@ -1174,11 +1247,13 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
       // 嵌套列表：用 descendant API 一次性创建带父子关系的块树
       const { nodes } = work;
       const topLevelIds = nodes.filter((n) => !n._isChild).map((n) => n.block_id);
-      const descendants = nodes.map(({ _isChild: _ic, ...rest }) => rest);
+      const descendants = nodes.map((n) => stripDescendantNodeForApi(n));
       await docxCreateDescendants(state, accessToken, documentId, cellId, {
         children_id: topLevelIds,
         descendants,
       });
+      // descendant 写入的图片块默认为空壳，必须再 upload + replace_image（与非嵌套路径一致）
+      await uploadNestedCellImagesAfterDescendant(state, accessToken, documentId, cellId, nodes, addWorkUnits);
       if (deleteFirst) {
         // 删除飞书自动创建的空 text block（它在 index 0）
         await docxBatchDelete(state, accessToken, documentId, cellId, 0, 1);
@@ -1205,7 +1280,10 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
         await createBoardFromCode(state, accessToken, documentId, schema._boardCode, schema._boardType || 'mermaid', undefined, cellId);
       } else if (schema.block_type === BLOCK_TYPE_IMAGE && schema._imageSrc) {
         await flushCellBatch();
-        await createAndUploadImage(state, accessToken, documentId, cellId, schema._imageSrc);
+        await createAndUploadImage(
+          state, accessToken, documentId, cellId, schema._imageSrc, undefined,
+          () => addWorkUnits?.(1, '上传表格内图片'),
+        );
       } else {
         const { _imageSrc: _s, _boardCode: _bc, _boardType: _bt, ...cleanSchema } = schema;
         batch.push(cleanSchema);
@@ -1217,6 +1295,7 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
     }
   }
 
+  addWorkUnits?.(1, '同步表格');
   return tableBlock;
 }
 
@@ -1268,11 +1347,12 @@ async function uploadAndBindImage(state, accessToken, documentId, imageBlockId, 
  * 在指定 parentBlockId 下创建图片并上传（三步法一体化）。
  * 返回创建的 Image Block 信息。
  */
-async function createAndUploadImage(state, accessToken, documentId, parentBlockId, src, insertIndex) {
+async function createAndUploadImage(state, accessToken, documentId, parentBlockId, src, insertIndex, onUploaded) {
   const imgResult = await docxCreateChildren(state, accessToken, documentId, parentBlockId, [{ block_type: BLOCK_TYPE_IMAGE, image: {} }], insertIndex);
   const imgBlock = (imgResult.children || []).find((c) => c.block_type === BLOCK_TYPE_IMAGE);
   if (!imgBlock) throw new Error(`创建 Image Block 失败：${src}`);
   await uploadAndBindImage(state, accessToken, documentId, imgBlock.block_id, src);
+  onUploaded?.();
   return imgBlock;
 }
 
@@ -1320,26 +1400,17 @@ async function clearDocumentRootChildren(state, accessToken, documentId) {
   }
 }
 
-async function uploadAllImages(state, accessToken, documentId, blocks, onProgress) {
-  const imageSources = collectImageSources(blocks);
-  const imageTokens = new Map();
-  for (let index = 0; index < imageSources.length; index += 1) {
-    const src = imageSources[index];
-    const token = await uploadImageToFeishu(state, accessToken, documentId, src);
-    imageTokens.set(src, token);
-    onProgress?.(index + 1, imageSources.length);
-  }
-  return imageTokens;
-}
-
 /**
  * 将 PRD blocks 写入飞书文档。
  * @param {number|undefined} startInsertIndex - 在飞书文档中插入的起始 index（增量模式），undefined 时追加到末尾
+ * @param {((delta: number, message?: string) => void) | undefined} addWorkUnits - 每完成一张图 +1，每完成一个根层 block +1（与 computeTotalWorkUnits 一致）
  * @returns {string[]} 创建成功后的飞书 root block_id 数组（与 prdBlocks 一一对应）
  */
-async function writeBlocksToDocument(state, accessToken, documentId, blocks, onProgress, startInsertIndex) {
-  let processed = 0;
+async function writeBlocksToDocument(state, accessToken, documentId, blocks, addWorkUnits, startInsertIndex) {
+  const report = typeof addWorkUnits === 'function' ? addWorkUnits : () => {};
   let linearBatch = [];
+  /** 当前 linearBatch 中尚未 flush 的根层 PRD block 个数 */
+  let linearBatchBlockCount = 0;
   let currentInsertIndex = startInsertIndex;
   const createdBlockIds = [];
 
@@ -1347,14 +1418,10 @@ async function writeBlocksToDocument(state, accessToken, documentId, blocks, onP
     if (currentInsertIndex != null) currentInsertIndex += count;
   }
 
-  /**
-   * 一个 PRD block 可能展开为多个 linear children（如 heading -> text blocks）。
-   * linearBatchOrigins 追踪每个 linearBatch 条目对应的 PRD block 索引。
-   */
-  let linearBatchOrigins = [];
-
   async function flushLinearBatch() {
     if (!linearBatch.length) return;
+    const blocksToCount = linearBatchBlockCount;
+    linearBatchBlockCount = 0;
     let nonImageBatch = [];
     async function flushNonImage() {
       if (!nonImageBatch.length) return;
@@ -1370,7 +1437,10 @@ async function writeBlocksToDocument(state, accessToken, documentId, blocks, onP
     for (const block of linearBatch) {
       if (block.block_type === BLOCK_TYPE_IMAGE && block._imageSrc) {
         await flushNonImage();
-        const imgBlock = await createAndUploadImage(state, accessToken, documentId, documentId, block._imageSrc, currentInsertIndex);
+        const imgBlock = await createAndUploadImage(
+          state, accessToken, documentId, documentId, block._imageSrc, currentInsertIndex,
+          () => report(1, '上传图片'),
+        );
         if (imgBlock?.block_id) {
           createdBlockIds.push(imgBlock.block_id);
           advanceIndex(1);
@@ -1381,29 +1451,28 @@ async function writeBlocksToDocument(state, accessToken, documentId, blocks, onP
     }
     await flushNonImage();
     linearBatch = [];
-    linearBatchOrigins = [];
+    if (blocksToCount > 0) {
+      report(blocksToCount, blocksToCount > 1 ? `已写入 ${blocksToCount} 个内容块` : '已写入内容');
+    }
   }
 
   for (const block of blocks || []) {
     const linearChildren = convertRootBlockToLinearChildren(block);
     if (linearChildren) {
       linearBatch.push(...linearChildren);
-      processed += 1;
-      onProgress?.(processed, blocks.length, block.type);
+      linearBatchBlockCount += 1;
       continue;
     }
 
     await flushLinearBatch();
 
     if (block?.type === 'table') {
-      const tableBlock = await docxCreateTable(state, accessToken, documentId, block, currentInsertIndex);
+      const tableBlock = await docxCreateTable(state, accessToken, documentId, block, currentInsertIndex, report);
       const tableBlockId = tableBlock?.block_id;
       if (tableBlockId) {
         createdBlockIds.push(tableBlockId);
         advanceIndex(1);
       }
-      processed += 1;
-      onProgress?.(processed, blocks.length, block.type);
       continue;
     }
 
@@ -1413,8 +1482,7 @@ async function writeBlocksToDocument(state, accessToken, documentId, blocks, onP
         createdBlockIds.push(bid);
         advanceIndex(1);
       }
-      processed += 1;
-      onProgress?.(processed, blocks.length, block.type);
+      report(1, '同步 Mermaid');
       continue;
     }
 
@@ -1424,8 +1492,7 @@ async function writeBlocksToDocument(state, accessToken, documentId, blocks, onP
         createdBlockIds.push(bid);
         advanceIndex(1);
       }
-      processed += 1;
-      onProgress?.(processed, blocks.length, block.type);
+      report(1, '同步思维导图');
       continue;
     }
 
@@ -1520,15 +1587,18 @@ async function runSyncJob(state, job) {
       percent: 20,
       message: '正在写入 PRD 块（含图片即时上传）',
     });
-    const createdIds = await writeBlocksToDocument(state, accessToken, resolved.documentId, blocks, (done, total, blockType) => {
-      const base = 20;
-      const percent = total ? base + Math.round((done / total) * 75) : 95;
+    const totalWU = computeTotalWorkUnits(blocks);
+    let doneWU = 0;
+    function addWorkUnits(delta, message) {
+      doneWU += delta;
+      const percent = totalWU ? 20 + Math.round((doneWU / totalWU) * 75) : 95;
       updateJob(job, {
         phase: 'writing-blocks',
-        percent,
-        message: total ? `正在写入 ${blockType}（${done}/${total}）` : '正在写入内容',
+        percent: Math.min(95, percent),
+        message: message || '正在写入内容',
       });
-    });
+    }
+    const createdIds = await writeBlocksToDocument(state, accessToken, resolved.documentId, blocks, addWorkUnits);
 
     saveSnapshot(state, {
       documentId: resolved.documentId,
@@ -1581,17 +1651,20 @@ async function runSyncJob(state, job) {
 
   let insertedIds = [];
   if (insertBlocks.length > 0) {
+    const insTotal = computeTotalWorkUnits(insertBlocks);
+    let insDone = 0;
+    function addInsertWorkUnits(delta, message) {
+      insDone += delta;
+      const percent = insTotal ? 35 + Math.round((insDone / insTotal) * 60) : 95;
+      updateJob(job, {
+        phase: 'incremental-insert',
+        percent: Math.min(95, percent),
+        message: message || '增量写入',
+      });
+    }
     insertedIds = await writeBlocksToDocument(
       state, accessToken, resolved.documentId, insertBlocks,
-      (done, total, blockType) => {
-        const base = 35;
-        const percent = total ? base + Math.round((done / total) * 60) : 95;
-        updateJob(job, {
-          phase: 'incremental-insert',
-          percent,
-          message: `增量写入 ${blockType}（${done}/${total}）`,
-        });
-      },
+      addInsertWorkUnits,
       diff.oldStart,
     );
   }

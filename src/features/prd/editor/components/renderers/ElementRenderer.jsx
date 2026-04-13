@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { TiptapMarkdownEditor } from '../../TiptapMarkdownEditor.jsx';
 import { MermaidRenderer } from './MermaidRenderer.jsx';
 import { MindmapRenderer } from './MindmapRenderer.jsx';
@@ -26,17 +27,14 @@ export function getEnterNextMarkdown(payload) {
   return currentMarkdown ? (inferListPrefix(currentMarkdown) ?? '') : '';
 }
 
-export function ElementRenderer({
+export const ElementRenderer = memo(function ElementRenderer({
   element,
   onUpdate,
   onDelete,
-  onMoveUp,
-  onMoveDown,
-  canMoveUp,
-  canMoveDown,
   blockId,
   cellPath = null,
-  globalSelection,
+  isPreviewSelected = false,
+  isImageSelected = false,
   setGlobalSelection,
   onEnter,
   onBackspaceEmpty,
@@ -58,21 +56,13 @@ export function ElementRenderer({
   mindmapViewMode,
   onMindmapViewModeChange,
 }) {
-  const isSelected = globalSelection?.type === 'image'
-    && globalSelection.blockId === blockId
-    && (cellPath == null
-      ? globalSelection.cellPath == null
-      : globalSelection.cellPath?.ri === cellPath?.ri
-        && globalSelection.cellPath?.ci === cellPath?.ci
-        && globalSelection.cellPath?.idx === cellPath?.idx);
-
   if (!element || element.type === 'text') {
     const isInCell = cellPath != null;
     return (
       <TiptapMarkdownEditor
         blockId={blockId}
         cellPath={cellPath}
-        globalSelection={globalSelection}
+        isPreviewSelected={isPreviewSelected}
         setGlobalSelection={setGlobalSelection}
         value={element?.markdown ?? ''}
         onSave={(v) => onUpdate({ type: 'text', markdown: v })}
@@ -99,15 +89,11 @@ export function ElementRenderer({
           setGlobalSelection?.(null);
           onDelete();
         }}
-        isSelected={isSelected}
+        isSelected={isImageSelected}
         onSelect={() => setGlobalSelection?.({ type: 'image', blockId, cellPath })}
         initialWidthPx={imageMeta?.[element.src] ?? null}
         onWidthChange={(w) => onImageWidthChange?.(element.src, w)}
         onEnter={onEnter}
-        onMoveUp={onMoveUp}
-        onMoveDown={onMoveDown}
-        canMoveUp={canMoveUp}
-        canMoveDown={canMoveDown}
         onAnnotate={onAnnotate}
         annotationCount={annotationCount}
         prdAssetCacheBust={prdAssetCacheBust}
@@ -144,4 +130,4 @@ export function ElementRenderer({
   }
 
   return null;
-}
+});

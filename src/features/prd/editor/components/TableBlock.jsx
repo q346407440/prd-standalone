@@ -1,9 +1,6 @@
 import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
-import { FiAlertTriangle } from 'react-icons/fi';
 import { TiptapMarkdownEditor } from '../TiptapMarkdownEditor.jsx';
 import { CellRenderer } from './CellRenderer.jsx';
-import { ActionPanel } from './FloatingActionBubble.jsx';
-import { useViewportFit } from '../useViewportFit.js';
 import { getCellColumnKey, getCellState } from '../prd-annotations.js';
 import { measurePrdTask } from '../prd-performance.js';
 import {
@@ -17,8 +14,14 @@ import {
 } from '../prd-utils.js';
 import { makeEmptyCell, makeEmptyRow } from '../prd-block-operations.js';
 import { cellFromMarkdownString } from '../prd-inline-image-split.js';
+import {
+  TableColSelectorActions,
+  TableRowSelectorActions,
+  CellChangeIntentButton,
+  CellPendingConfirmControl,
+} from './table-block-controls.jsx';
 
-export function sameNumberArray(a, b) {
+function sameNumberArray(a, b) {
   if (a === b) return true;
   if (!a || !b || a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) {
@@ -27,7 +30,7 @@ export function sameNumberArray(a, b) {
   return true;
 }
 
-export function sameTableGeom(a, b) {
+function sameTableGeom(a, b) {
   if (a === b) return true;
   if (!a || !b) return false;
   return sameNumberArray(a.colLeft, b.colLeft)
@@ -38,199 +41,11 @@ export function sameTableGeom(a, b) {
     && sameNumberArray(a.rowBottom, b.rowBottom);
 }
 
-export function resolveBoundaryHoverIndex(offset, size, index, canUseBefore, hotzone = TABLE_EDGE_HOTZONE_PX) {
+function resolveBoundaryHoverIndex(offset, size, index, canUseBefore, hotzone = TABLE_EDGE_HOTZONE_PX) {
   const distBefore = canUseBefore ? offset : Number.POSITIVE_INFINITY;
   const distAfter = size - offset;
   if (distBefore > hotzone && distAfter > hotzone) return null;
   return distBefore <= distAfter ? index - 1 : index;
-}
-
-export function TableColSelectorActions({ canDelete, onDelete }) {
-  const { ref, vertical } = useViewportFit('below', 'left', { horizontal: false });
-  return (
-    <div
-      ref={ref}
-      className={[
-        'prd-table-selector-actions',
-        'prd-table-selector-actions--col',
-        vertical === 'above' && 'prd-table-selector-actions--col--flip-v',
-      ].filter(Boolean).join(' ')}
-    >
-      {canDelete && (
-        <button
-          type="button"
-          className="prd-action-btn prd-action-btn--danger"
-          onMouseDown={(e) => { e.stopPropagation(); onDelete(); }}
-        >
-          删除列
-        </button>
-      )}
-    </div>
-  );
-}
-
-export function TableRowSelectorActions({ canDelete, onDelete }) {
-  const { ref, horizontal } = useViewportFit('below', 'right', { vertical: false });
-  return (
-    <div
-      ref={ref}
-      className={[
-        'prd-table-selector-actions',
-        'prd-table-selector-actions--row',
-        horizontal === 'left' && 'prd-table-selector-actions--row--flip-h',
-      ].filter(Boolean).join(' ')}
-    >
-      {canDelete && (
-        <button
-          type="button"
-          className="prd-action-btn prd-action-btn--danger"
-          onMouseDown={(e) => { e.stopPropagation(); onDelete(); }}
-        >
-          删除行
-        </button>
-      )}
-    </div>
-  );
-}
-
-export function CellChangeIntentButton({ unchanged, onToggle }) {
-  return (
-    <button
-      type="button"
-      className={[
-        'prd-table-cell-change-intent',
-        unchanged ? 'prd-table-cell-change-intent--active' : '',
-      ].filter(Boolean).join(' ')}
-      title={unchanged ? '仅参考，不修改' : '设为仅参考，不修改'}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onToggle();
-      }}
-    >
-      仅参考
-    </button>
-  );
-}
-
-export function CellPendingConfirmControl({
-  active,
-  note,
-  onActivate,
-  onDeactivate,
-  onSaveNote,
-}) {
-  const rootRef = useRef(null);
-  const { ref: popoverRef, vertical, horizontal } = useViewportFit('below', 'right');
-  const [open, setOpen] = useState(false);
-  const [draftNote, setDraftNote] = useState(note || '');
-
-  const commitDraftAndClose = useCallback(() => {
-    onSaveNote?.(draftNote);
-    setOpen(false);
-  }, [draftNote, onSaveNote]);
-
-  useEffect(() => {
-    if (!open) return;
-    setDraftNote(note || '');
-  }, [note, open]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const handlePointerDown = (event) => {
-      if (rootRef.current?.contains(event.target)) return;
-      commitDraftAndClose();
-    };
-    const handleKeyDown = (event) => {
-      if (event.key !== 'Escape') return;
-      event.preventDefault();
-      commitDraftAndClose();
-    };
-    document.addEventListener('mousedown', handlePointerDown, true);
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown, true);
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [commitDraftAndClose, open]);
-
-  const handleOpen = useCallback(() => {
-    if (!active) onActivate?.();
-    setOpen(true);
-  }, [active, onActivate]);
-
-  const handleDeactivate = useCallback(() => {
-    onDeactivate?.();
-    setDraftNote('');
-    setOpen(false);
-  }, [onDeactivate]);
-
-  return (
-    <div className="prd-table-cell-pending-confirm" ref={rootRef}>
-      <button
-        type="button"
-        className={[
-          'prd-table-cell-pending-confirm__tag',
-          active ? 'prd-table-cell-pending-confirm__tag--active' : '',
-        ].filter(Boolean).join(' ')}
-        title={active
-          ? (note ? `待确认：${note}` : '待确认，点击补充备注')
-          : '标记为待确认'}
-        onMouseDown={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-        }}
-        onClick={handleOpen}
-      >
-        待确认
-      </button>
-      {open && (
-        <div
-          ref={popoverRef}
-          className={[
-            'prd-table-cell-note-popover',
-            vertical === 'above' ? 'prd-table-cell-note-popover--above' : '',
-            horizontal === 'left' ? 'prd-table-cell-note-popover--align-left' : '',
-          ].filter(Boolean).join(' ')}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <div className="prd-table-cell-note-popover__title">待确认备注</div>
-          <textarea
-            className="prd-table-cell-note-popover__textarea"
-            rows={4}
-            autoFocus
-            placeholder="记录后续要确认的细节点，方便下次继续查看。"
-            value={draftNote}
-            onChange={(e) => setDraftNote(e.target.value)}
-          />
-          <div className="prd-table-cell-note-popover__actions">
-            <button
-              type="button"
-              className="prd-action-btn"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onClick={handleDeactivate}
-            >
-              取消标记
-            </button>
-            <button
-              type="button"
-              className="prd-action-btn prd-action-btn--active"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              onClick={commitDraftAndClose}
-            >
-              完成
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function TableBlock({
@@ -273,6 +88,11 @@ export function TableBlock({
   const tableMeasureFrameRef = useRef(null);
 
   const flushHoverEdges = useCallback((nextCol, nextRow) => {
+    if (hoverEdgeFrameRef.current != null) {
+      cancelAnimationFrame(hoverEdgeFrameRef.current);
+      hoverEdgeFrameRef.current = null;
+    }
+    pendingHoverEdgeRef.current = { col: nextCol, row: nextRow };
     if (hoverEdgeRef.current.col !== nextCol) {
       hoverEdgeRef.current.col = nextCol;
       setColEdge(nextCol);
@@ -342,6 +162,29 @@ export function TableBlock({
     setShowHoverBars(false);
     flushHoverEdges(null, null);
   }, [flushHoverEdges, globalSelection, showHoverBars]);
+
+  /**
+   * 格內元素操作條掛在 body（Portal），游標移上去後不再觸發 td 的 mousemove/mouseleave，
+   * colEdge/rowEdge 會卡在上一幀，藍色插入線與灰條仍像「被 hover」。
+   * 在 document 捕獲階偵測游標是否進入格內浮層，若是則同步清邊緣（不走 rAF 避免競爭）。
+   */
+  useEffect(() => {
+    const onPointer = (e) => {
+      const t = e.target;
+      if (!t || typeof t.closest !== 'function') return;
+      if (!t.closest('[data-cell-action-bubble]')) return;
+      flushHoverEdges(null, null);
+      if (hoverHideTimerRef.current) {
+        clearTimeout(hoverHideTimerRef.current);
+        hoverHideTimerRef.current = null;
+      }
+      setShowHoverBars(false);
+    };
+    document.addEventListener('mousemove', onPointer, true);
+    return () => {
+      document.removeEventListener('mousemove', onPointer, true);
+    };
+  }, [flushHoverEdges]);
 
   const measureTable = useCallback(() => {
     const table = tableRef.current;
@@ -546,6 +389,7 @@ export function TableBlock({
                   }}
                   onMouseMove={(e) => {
                     if (suppressHandles) return;
+                    if (e.target?.closest?.('[data-cell-action-bubble]')) return;
                     const rect = e.currentTarget.getBoundingClientRect();
                     const nextColEdge = resolveBoundaryHoverIndex(
                       e.clientX - rect.left,
@@ -610,6 +454,7 @@ export function TableBlock({
                     }}
                     onMouseMove={(e) => {
                       if (suppressHandles) return;
+                      if (e.target?.closest?.('[data-cell-action-bubble]')) return;
                       const rect = e.currentTarget.getBoundingClientRect();
                       const nextRowEdge = resolveBoundaryHoverIndex(
                         e.clientY - rect.top,
@@ -625,6 +470,7 @@ export function TableBlock({
                       );
                       scheduleHoverEdges(nextColEdge, nextRowEdge);
                     }}
+                    onMouseLeave={() => scheduleHoverEdges(null, null)}
                   >
                     {isLockable && rowBinding && (
                       <div className="prd-table-cell-controls">

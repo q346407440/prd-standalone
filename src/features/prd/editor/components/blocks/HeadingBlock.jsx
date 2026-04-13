@@ -8,6 +8,10 @@ export function HeadingBlock({
   const tag = block.type;
   const fontSize = getHeadingFontSize(tag);
   const text = block.content?.markdown ?? block.content?.text ?? '';
+  const isPreviewSelected = globalSelection?.type === 'text-block'
+    && globalSelection.blockId === block.id
+    && globalSelection.role === 'heading'
+    && globalSelection.cellPath == null;
   return (
     <div className={`prd-block-heading prd-block-heading--${tag}`} style={{ fontSize }} data-prd-no-block-select>
       <TiptapMarkdownEditor
@@ -16,7 +20,7 @@ export function HeadingBlock({
         placeholder={`${tag.toUpperCase()} 标题`}
         blockId={block.id}
         selectionRole="heading"
-        globalSelection={globalSelection}
+        isPreviewSelected={isPreviewSelected}
         setGlobalSelection={setGlobalSelection}
         onEnter={onEnter}
         onBackspaceEmpty={onBackspaceEmpty}

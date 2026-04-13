@@ -143,6 +143,11 @@
   /* 必須高於表格列/行選中橫條（z-index:40），否則操作條與下方表格重疊時點不到 */
   z-index: 50;
   transform: translateY(calc(100% + 6px));
+  /* 不超出 block 寬度，避免撐寬 .prd-page__content-scroll 的 scrollWidth */
+  box-sizing: border-box;
+  max-width: 100%;
+  flex-wrap: wrap;
+  white-space: normal;
 }
 
 /* 透明热区桥：把 actionbar 与 block 之间的 gap + actionbar 高度纳入当前 block 的 hover 范围，
@@ -171,6 +176,16 @@
 
 .prd-block-actionbar__btn:hover {
   color: #1677ff;
+}
+
+/* 儲存格內操作條：須覆蓋上方 .prd-action-panel 的 nowrap（prd-table-edit 先載入會被蓋掉）
+   寬度由內部按鈕決定（max-content），勿用 100% 限在格寬內；換行後高度可高於列高，依賴父層 overflow:visible */
+.prd-action-panel.prd-cell-element__actions {
+  box-sizing: border-box;
+  width: max-content;
+  max-width: none;
+  flex-wrap: wrap;
+  white-space: normal;
 }
 
 /* 删除按钮 */
@@ -315,8 +330,32 @@
   color: inherit;
 }
 
-/* 段落 */
-.prd-block-paragraph { font-size: 14px; line-height: 1.8; color: #333; }
+/*
+ * 標題 block 預覽：prd-editable.css 對 .prd-md-preview-list-line* 等寫死 13px，
+ * 會壓過外層 inherit，導致「1. 目的」等列表行在預覽態小於編輯態（ProseMirror 無此 class，字級正常繼承）。
+ */
+.prd-block-heading .prd-editable-md--preview .prd-md-preview-para,
+.prd-block-heading .prd-editable-md--preview .prd-md-preview-line--text,
+.prd-block-heading .prd-editable-md--preview .prd-md-preview-list-line,
+.prd-block-heading .prd-editable-md--preview .prd-md-preview-list-line__marker,
+.prd-block-heading .prd-editable-md--preview .prd-md-preview-list-line__body,
+.prd-block-heading .prd-editable-md--preview .prd-md-preview-list-line--root-bullet {
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+
+/* 段落：字級/行高與表格格內 Markdown 預覽一致（prd-editable 列表行 13px/1.7、prd-table td 13px/1.65） */
+.prd-block-paragraph { font-size: 13px; line-height: 1.7; color: #333; }
+
+/*
+ * 主文 paragraph block 內：雙換行拆出的相鄰預覽段。全局 .prd-md-preview-para + … 為 1.05em；
+ * 格內若用單換行把標題行與列表放在同一段，不會觸發此距離，故主文單獨略收以靠近格內「密」感。
+ * 僅作用於 .prd-block-paragraph，不影響表格 td 內預覽。
+ */
+.prd-block-paragraph .prd-editable-md--preview .prd-md-preview-para + .prd-md-preview-para {
+  margin-top: 0.6em;
+}
 
 /* 分隔線 */
 .prd-block-divider {

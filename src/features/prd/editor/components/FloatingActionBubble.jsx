@@ -93,8 +93,15 @@ export function FloatingActionBubble({
     const raf = requestAnimationFrame(reposition);
     window.addEventListener('resize', reposition);
     window.addEventListener('scroll', reposition, true);
+    let ro;
+    const el = selfRef.current;
+    if (el && typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => reposition());
+      ro.observe(el);
+    }
     return () => {
       cancelAnimationFrame(raf);
+      ro?.disconnect();
       window.removeEventListener('resize', reposition);
       window.removeEventListener('scroll', reposition, true);
     };
@@ -112,6 +119,7 @@ export function FloatingActionBubble({
     <div
       ref={anchorRef ? setRef : (node) => { selfRef.current = node; if (panelRef) panelRef.current = node; }}
       data-prd-no-block-select
+      {...(anchorRef ? { 'data-cell-action-bubble': '' } : {})}
       className={[
         'prd-action-panel prd-action-panel--visible',
         'prd-floating-action-bubble',

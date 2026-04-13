@@ -37,6 +37,26 @@ describe('splitMarkdownByInlineImages', () => {
   it('圖片 URL 去首尾空白', () => {
     expect(splitMarkdownByInlineImages('![]( /y.png )')).toEqual([{ type: 'image', src: '/y.png' }]);
   });
+
+  it('多行僅圖：換行分隔不產生空白 text（避免格內空編輯塊與佔位符）', () => {
+    expect(splitMarkdownByInlineImages('![](/a.png)\n![](/b.png)')).toEqual([
+      { type: 'image', src: '/a.png' },
+      { type: 'image', src: '/b.png' },
+    ]);
+    expect(splitMarkdownByInlineImages('![](/a.png)\n\n![](/b.png)')).toEqual([
+      { type: 'image', src: '/a.png' },
+      { type: 'image', src: '/b.png' },
+    ]);
+  });
+
+  it('列表行含行內圖不拆（避免格內預覽斷成「僅前綴 + 獨立圖」）', () => {
+    expect(splitMarkdownByInlineImages('    - ![alt](/prd/a.png)')).toEqual([
+      { type: 'text', markdown: '    - ![alt](/prd/a.png)' },
+    ]);
+    expect(splitMarkdownByInlineImages('  - 說明![](/x.png)')).toEqual([
+      { type: 'text', markdown: '  - 說明![](/x.png)' },
+    ]);
+  });
 });
 
 describe('cellFromMarkdownString', () => {

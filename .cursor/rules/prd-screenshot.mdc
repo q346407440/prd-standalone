@@ -6,7 +6,11 @@ alwaysApply: false
 
 # PRD 设计列截图（`设计/原型稿` 列）
 
-> 完整流程与工具名以 `.cursor/skills/prd-agent/SKILL.md` **「七、设计列截图与链接」** 为准；本规则为 Agent 必须遵守的**摘要约束**。
+> 完整流程与工具名以 `.cursor/skills/prd-spec/SKILL.md` **「七、设计列截图」** 为准；本规则为 Agent 必须遵守的**摘要约束**。
+
+## `public/prd/` 与 Git（核对 PNG 时）
+
+- 本仓库 **`public/prd/*.png` 常被 `.gitignore`**，**Glob / 索引**可能搜不到；**勿**据此断言「没有图」。核对用只读 **`ls` / `test -f`** 或 **Read** 绝对路径；详见 **prd-spec「七 → public/prd/ 与 Git」** 与 **`prd-writing-guard.mdc`** 同主题条。
 
 ## 工具优先级（强制）
 
@@ -31,7 +35,7 @@ alwaysApply: false
 
 - **不要**为产出 PRD 设计列截图而 **`npm install` / 引入 Playwright、Puppeteer、Selenium** 等无头浏览器依赖；**不要**在业务仓或 `prd-standalone` 内新增上述依赖「只为截一张图」。
 - 成图路径**仅限**：**Chrome DevTools MCP**（及 SKILL 允许的备选 **cursor-ide-browser**）+ 本机 **`sips` / Pillow 等裁切**（无头浏览器栈以外的像素处理可接受）。
-- 若 MCP 暂时不可用：**宁可**在设计列写清场景 / 状态 +「打开真实页面」链接，并注明 **截图待补**（对话或 README 等），也**不要**用 Playwright 等绕过。
+- 若 MCP 暂时不可用：**宁可**在设计列注明 **截图待补**（对话或 README 说明如何补），也**不要**用 Playwright 等绕过。
 
 ## 页缩放（强制 67%）
 
@@ -50,13 +54,11 @@ alwaysApply: false
 
 ## 设计列单元格允许内容
 
-- 仅：`![](/prd/xxx.png)`、`**场景预览：**`、`**状态说明：**`、`[打开真实页面](本机已校验 URL)`。
-- **不写**流程说明、注意事项、链接用法等（那些属于 SKILL/对话，不写进 PRD 格）。
-
-## 「打开真实页面」链接
-
-- 须为本机 **`npm run dev` 终端输出的 origin + 路由`** 拼出并**实际打开校验**过的 URL；禁止猜端口、猜 path。
+- **以**：`![语义说明](/prd/xxx.png)`（`[]` **须非空**，见 `prd-writing-guard` / **prd-spec·五 → 图片 Markdown alt**）**为主**。
+- **可选**：极短场景或状态一句（勿与 alt、`交互` 列重复）；若用标题，`**场景预览：**` 与 `**状态说明：**` **择一即可**，非必填。
+- **禁止**：流程说明、注意事项、可点击页面 URL（PRD 设计列不要求线上/本地跳转链接）。
+- 格内用**原生 Markdown**（段落间空行分隔），**废除** `<br>` 换行。模板见 SKILL **「七 → 设计列模板」**。
 
 ## 详细步骤编号
 
-- 见 **prd-agent** SKILL **「七 → 67% 标准成图法」** 步骤 1～10 与 **「启用检测（强制）」**。
+- 见 **prd-spec** SKILL **「七 → 67% 标准成图法」** 步骤 1～10 与 **「启用检测（强制）」**。
