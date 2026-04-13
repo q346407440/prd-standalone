@@ -1,7 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { BsLink45Deg, BsTypeBold, BsTypeItalic } from 'react-icons/bs';
-import { MdFormatListNumbered } from 'react-icons/md';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import HardBreak from '@tiptap/extension-hard-break';
@@ -9,13 +6,13 @@ import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from 'tiptap-markdown';
-import markdownit from 'markdown-it';
 import { editorToMarkdown } from './tiptap-md-utils.js';
 import { getTextOffsetFromPoint } from './prd-text-editing.js';
 import { emitPrdToast } from './prd-toast.js';
+import { renderParagraphMarkdownPreviewToHtml } from './tiptap-markdown-preview.js';
+import { SelectionToolbar, ListPrefixMenu } from './tiptap-editing-toolbar.jsx';
 import {
   adjustOrderedMarkerAfterIndent,
-  alphaToNum,
   applyListPrefix,
   dedentMarkdown,
   hasIndent,
@@ -27,80 +24,6 @@ import {
   parseListPrefix,
   switchMarkdownListKind,
 } from './prd-list-utils.js';
-
-const md = markdownit({ html: false, linkify: false, breaks: false });
-md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
-  const token = tokens[idx];
-  const href = token.attrGet('href') || '';
-  return `<a href="${href}" class="prd-md-link" target="_blank" rel="noreferrer noopener">`;
-};
-md.renderer.rules.image = (tokens, idx) => {
-  const token = tokens[idx];
-  const src = token.attrGet('src') || '';
-  const alt = token.content || '';
-  const title = token.attrGet('title');
-  const titleAttr = title ? ` title="${md.utils.escapeHtml(title)}"` : '';
-  return `<img class="prd-md-preview-img" src="${md.utils.escapeHtml(src)}" alt="${md.utils.escapeHtml(alt)}"${titleAttr} />`;
-};
-
-/**
- * 列表行預覽：與編輯態 hanging indent 一致——符號與正文分欄 flex，換行後續行對齊正文左緣，
- * 不可再用「行內 span + 正文」否則換行會貼齊容器左側。
- */
-function renderListLinePreviewHtml(parsed) {
-  if (!parsed) return '';
-  const indentLevel = Math.floor(parsed.indent.length / 2);
-  const isBullet = /^[-*+]$/.test(parsed.marker);
-  const markerChar = isBullet ? '•' : parsed.marker;
-  const pad = indentLevel * 16;
-  const body = md.renderInline(parsed.body);
-  const markerEsc = md.utils.escapeHtml(markerChar);
-  const classes = ['prd-md-preview-list-line'];
-  if (!isBullet) classes.push('prd-md-preview-list-line--ordered');
-  if (isBullet && indentLevel === 0) {
-    // 根層無序：與編輯態完全同構——不輸出 marker span，用 CSS ::before + padding-left
-    // 不設 inline padding-left（由 CSS class 統一控制，避免 inline style 覆蓋 CSS 變數）
-    return `<div class="prd-md-preview-list-line--root-bullet"><span class="prd-md-preview-list-line__body">${body}</span></div>`;
-  }
-  return `<div class="${classes.join(' ')}" style="padding-left:${pad}px"><span class="prd-md-preview-list-line__marker">${markerEsc}</span><span class="prd-md-preview-list-line__body">${body}</span></div>`;
-}
-
-/**
- * 段落預覽：與編輯態（markdown 前綴列表、無 ul 節點）對齊。
- * - 空白段（\n\n）→ 多個段落塊，段間留白與原 `<br /><br />` 相近
- * - 列表行：flex hanging indent（見 renderListLinePreviewHtml）
- * - 純文字行：塊級行容器，與列表行同層堆疊
- */
-function renderParagraphMarkdownPreviewToHtml(raw) {
-  if (raw == null || !String(raw).trim()) return '';
-  const text = String(raw);
-  const paragraphs = text.split(/\n\n+/).map((p) => p.trimEnd()).filter((p) => p.trim());
-  return paragraphs
-    .map((para) => {
-      const lines = para
-        .split(/\n/)
-        .map((line) => {
-          const trimmed = line.trimEnd();
-          if (!trimmed.trim()) return '';
-          const parsed = parseListPrefix(trimmed);
-          if (parsed) {
-            return renderListLinePreviewHtml(parsed);
-          }
-          return `<div class="prd-md-preview-line prd-md-preview-line--text">${md.renderInline(trimmed)}</div>`;
-        })
-        .filter(Boolean);
-      return `<div class="prd-md-preview-para">${lines.join('')}</div>`;
-    })
-    .join('');
-}
-
-const BLOCK_LEVEL_TYPES = ['paragraph', ...Array.from({ length: 7 }, (_, index) => `h${index + 1}`)];
-const BLOCK_LEVEL_OPTIONS = BLOCK_LEVEL_TYPES.map((type) => ({
-  value: type,
-  label: type === 'paragraph' ? '正文' : type.toUpperCase(),
-}));
-const BUBBLE_GAP = 6;
-const BUBBLE_MARGIN = 8;
 
 function getShortcutBlockLevel(e) {
   if (!(e.altKey && (e.metaKey || e.ctrlKey))) return null;
@@ -192,15 +115,6 @@ function buildEnterPayload(editor, prefix) {
   return afterInlineMd !== '' || inheritedPrefix
     ? { currentMarkdown, nextMarkdown }
     : { currentMarkdown };
-}
-
-function sameBubbleStyle(a, b) {
-  if (a === b) return true;
-  if (!a || !b) return false;
-  return a.position === b.position
-    && a.top === b.top
-    && a.left === b.left
-    && a.zIndex === b.zIndex;
 }
 
 function getImageFromPaste(e) {
@@ -298,367 +212,6 @@ function makeEditableExtensions(placeholder) {
 }
 
 
-// ─── SelectionToolbar ─────────────────────────────────────────────────────
-
-function SelectionToolbar({
-  editor, blockLevel, onBlockLevelChange, containerRef, getCurrentMarkdown, panelRef,
-}) {
-  const ref = useRef(null);
-  const [style, setStyle] = useState(null);
-  const [hasTextSel, setHasTextSel] = useState(false);
-  const frameRef = useRef(null);
-
-  const hasLevelSwitcher = blockLevel != null && !!onBlockLevelChange;
-
-  const reposition = useCallback(() => {
-    if (!editor) return;
-    const { from, to, empty } = editor.state.selection;
-    const textSelected = !empty && from !== to;
-    setHasTextSel(textSelected);
-
-    const self = ref.current;
-    if (!self) return;
-
-    if (textSelected) {
-      const view = editor.view;
-      const start = view.coordsAtPos(from);
-      const end = view.coordsAtPos(to);
-      if (!start) return;
-
-      const sw = self.offsetWidth || 200;
-      const sh = self.offsetHeight || 36;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-
-      const anchorTop = Math.min(start.top, end.top);
-      const anchorBottom = Math.max(start.bottom, end.bottom);
-      const anchorLeft = Math.min(start.left, end.left);
-
-      let top;
-      const spaceAbove = anchorTop - BUBBLE_MARGIN;
-      const spaceBelow = vh - anchorBottom - BUBBLE_MARGIN;
-      if (spaceAbove >= sh + BUBBLE_GAP || spaceAbove >= spaceBelow) {
-        top = anchorTop - BUBBLE_GAP - sh;
-      } else {
-        top = anchorBottom + BUBBLE_GAP;
-      }
-      top = Math.max(BUBBLE_MARGIN, Math.min(top, vh - sh - BUBBLE_MARGIN));
-
-      let left = anchorLeft;
-      left = Math.max(BUBBLE_MARGIN, Math.min(left, vw - sw - BUBBLE_MARGIN));
-
-      const nextStyle = { position: 'fixed', top: Math.round(top), left: Math.round(left), zIndex: 9999 };
-      setStyle((prev) => (sameBubbleStyle(prev, nextStyle) ? prev : nextStyle));
-    } else if (hasLevelSwitcher && containerRef?.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const sw = self.offsetWidth || 200;
-      const sh = self.offsetHeight || 36;
-      const vw = window.innerWidth;
-
-      let top = rect.top - BUBBLE_GAP - sh;
-      top = Math.max(BUBBLE_MARGIN, top);
-      let left = rect.left;
-      left = Math.max(BUBBLE_MARGIN, Math.min(left, vw - sw - BUBBLE_MARGIN));
-
-      const nextStyle = { position: 'fixed', top: Math.round(top), left: Math.round(left), zIndex: 9999 };
-      setStyle((prev) => (sameBubbleStyle(prev, nextStyle) ? prev : nextStyle));
-    }
-  }, [editor, hasLevelSwitcher, containerRef]);
-
-  const scheduleReposition = useCallback(() => {
-    if (frameRef.current != null) return;
-    frameRef.current = requestAnimationFrame(() => {
-      frameRef.current = null;
-      reposition();
-    });
-  }, [reposition]);
-
-  useEffect(() => {
-    if (!editor) return;
-    const handler = () => scheduleReposition();
-    const blurHandler = () => { setHasTextSel(false); };
-    editor.on('selectionUpdate', handler);
-    editor.on('blur', blurHandler);
-    editor.on('focus', handler);
-    return () => {
-      if (frameRef.current != null) cancelAnimationFrame(frameRef.current);
-      editor.off('selectionUpdate', handler);
-      editor.off('blur', blurHandler);
-      editor.off('focus', handler);
-    };
-  }, [editor, scheduleReposition]);
-
-  useLayoutEffect(() => {
-    reposition();
-  }, [reposition]);
-
-  const shouldShow = hasTextSel || hasLevelSwitcher;
-  if (!shouldShow || !editor) return null;
-
-  return createPortal(
-    <div
-      ref={ref}
-      data-prd-no-block-select
-      className="prd-tiptap-bubble-menu"
-      style={style ?? { visibility: 'hidden', position: 'fixed' }}
-      onMouseDown={(e) => {
-        e.stopPropagation();
-      }}
-    >
-      {hasTextSel && (
-        <>
-          <button
-            type="button"
-            className={[
-              'prd-action-btn prd-action-btn--icon',
-              editor.isActive('bold') ? 'prd-action-btn--active' : '',
-            ].filter(Boolean).join(' ')}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            title="粗体"
-            onClick={() => editor.chain().focus().toggleBold().run()}
-          >
-            <BsTypeBold aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className={[
-              'prd-action-btn prd-action-btn--icon',
-              editor.isActive('italic') ? 'prd-action-btn--active' : '',
-            ].filter(Boolean).join(' ')}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            title="斜体"
-            onClick={() => editor.chain().focus().toggleItalic().run()}
-          >
-            <BsTypeItalic aria-hidden="true" />
-          </button>
-          <LinkButton editor={editor} />
-        </>
-      )}
-      {hasLevelSwitcher && (
-        <label className="prd-action-select-wrap" title="标题层级">
-          <select
-            ref={panelRef}
-            className="prd-action-select"
-            value={blockLevel}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
-            onChange={(e) => {
-              const md = getCurrentMarkdown ? getCurrentMarkdown() : editorToMarkdown(editor);
-              onBlockLevelChange(e.target.value, md);
-            }}
-          >
-            {BLOCK_LEVEL_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-        </label>
-      )}
-    </div>,
-    document.body,
-  );
-}
-
-function LinkButton({ editor }) {
-  const setLink = useCallback(() => {
-    const previousUrl = editor.getAttributes('link').href || '';
-    const url = window.prompt('链接地址', previousUrl);
-    if (url === null) return;
-    if (url === '') {
-      editor.chain().focus().extendMarkRange('link').unsetLink().run();
-      return;
-    }
-    editor.chain().focus().extendMarkRange('link').setLink({ href: url }).run();
-  }, [editor]);
-
-  return (
-    <button
-      type="button"
-      className={[
-        'prd-action-btn prd-action-btn--icon',
-        editor.isActive('link') ? 'prd-action-btn--active' : '',
-      ].filter(Boolean).join(' ')}
-      onMouseDown={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-      onClick={setLink}
-      title="插入/编辑链接"
-    >
-      <BsLink45Deg aria-hidden="true" />
-    </button>
-  );
-}
-
-// ─── ListPrefixMenu ──────────────────────────────────────────────────────
-
-/**
- * 有序列表前缀操作菜单：继续编号 / 重新开始编号 / 设置编号的值
- * onAction(type, value?) — type: 'continue' | 'restart' | 'setvalue'
- */
-function ListPrefixMenu({ prefix, anchorRef, menuRef: externalMenuRef, onAction, onClose }) {
-  const [showInput, setShowInput] = useState(false);
-  const [inputVal, setInputVal] = useState('1');
-  const menuRef = useRef(null);
-  const inputRef = useRef(null);
-  const [menuStyle, setMenuStyle] = useState({ position: 'fixed', top: 0, left: 0, zIndex: 9999 });
-
-  const setMenuRef = useCallback((node) => {
-    menuRef.current = node;
-    if (externalMenuRef) externalMenuRef.current = node;
-    if (node) {
-      const anchor = anchorRef?.current;
-      if (!anchor) return;
-      const rect = anchor.getBoundingClientRect();
-      const mw = node.offsetWidth || 200;
-      const mh = node.offsetHeight || 100;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      let top = rect.bottom + 4;
-      let left = rect.left;
-      if (top + mh > vh - 8) top = rect.top - mh - 4;
-      if (left + mw > vw - 8) left = vw - mw - 8;
-      setMenuStyle({ position: 'fixed', top: Math.round(top), left: Math.round(left), zIndex: 9999 });
-    }
-  }, [externalMenuRef, anchorRef]);
-
-  const parsed = parseListPrefix(prefix);
-  const isOrdered = parsed && /^(\d+\.|[a-z]+\.)$/.test(parsed.marker);
-  const isAlpha = parsed && /^[a-z]+\.$/.test(parsed.marker);
-
-  useLayoutEffect(() => {
-    const anchor = anchorRef?.current;
-    const menu = menuRef.current;
-    if (!anchor || !menu) return;
-    const rect = anchor.getBoundingClientRect();
-    const mw = menu.offsetWidth || 200;
-    const mh = menu.offsetHeight || 100;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let top = rect.bottom + 4;
-    let left = rect.left;
-    if (top + mh > vh - 8) top = rect.top - mh - 4;
-    if (left + mw > vw - 8) left = vw - mw - 8;
-    setMenuStyle({ position: 'fixed', top: Math.round(top), left: Math.round(left), zIndex: 9999 });
-  }, [anchorRef, showInput]);
-
-  useEffect(() => {
-    const onDown = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)
-        && anchorRef?.current && !anchorRef.current.contains(e.target)) {
-        onClose?.();
-      }
-    };
-    document.addEventListener('mousedown', onDown, true);
-    return () => document.removeEventListener('mousedown', onDown, true);
-  }, [anchorRef, onClose]);
-
-  useEffect(() => {
-    if (showInput && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [showInput]);
-
-  if (!isOrdered) return null;
-
-  const currentNum = isAlpha
-    ? alphaToNum(parsed.marker.slice(0, -1))
-    : parseInt(parsed.marker, 10);
-
-  return createPortal(
-    <div
-      ref={setMenuRef}
-      className="prd-list-prefix-menu"
-      style={menuStyle}
-      onMouseDown={(e) => e.stopPropagation()}
-    >
-      {!showInput ? (
-        <>
-          <button
-            type="button"
-            className="prd-list-prefix-menu__item"
-            onClick={() => { onAction('continue'); onClose?.(); }}
-          >
-            <span className="prd-list-prefix-menu__icon">
-              <MdFormatListNumbered aria-hidden="true" style={{ transform: 'scaleX(-1)' }} />
-            </span>
-            继续标题编号
-          </button>
-          <button
-            type="button"
-            className="prd-list-prefix-menu__item"
-            onClick={() => { onAction('restart'); onClose?.(); }}
-          >
-            <span className="prd-list-prefix-menu__icon">
-              <MdFormatListNumbered aria-hidden="true" />
-            </span>
-            重新开始编号
-          </button>
-          <button
-            type="button"
-            className="prd-list-prefix-menu__item"
-            onClick={() => {
-              setInputVal(String(currentNum));
-              setShowInput(true);
-            }}
-          >
-            <span className="prd-list-prefix-menu__icon prd-list-prefix-menu__icon--set">
-              <span>1</span>
-              <span style={{ fontSize: 9, lineHeight: 1 }}>2</span>
-              <span className="prd-list-prefix-menu__pencil">✏</span>
-            </span>
-            设置编号的值
-          </button>
-        </>
-      ) : (
-        <div className="prd-list-prefix-menu__input-row">
-          <label className="prd-list-prefix-menu__input-label">当前编号的值为</label>
-          <div className="prd-list-prefix-menu__input-wrap">
-            <input
-              ref={inputRef}
-              type="number"
-              min="1"
-              className="prd-list-prefix-menu__input"
-              value={inputVal}
-              onChange={(e) => setInputVal(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const n = Math.max(1, parseInt(inputVal, 10) || 1);
-                  onAction('setvalue', n);
-                  onClose?.();
-                }
-                if (e.key === 'Escape') onClose?.();
-              }}
-            />
-            <div className="prd-list-prefix-menu__input-arrows">
-              <button type="button" onMouseDown={(e) => { e.preventDefault(); setInputVal((v) => String(Math.max(1, (parseInt(v, 10) || 1) + 1))); }}>▲</button>
-              <button type="button" onMouseDown={(e) => { e.preventDefault(); setInputVal((v) => String(Math.max(1, (parseInt(v, 10) || 1) - 1))); }}>▼</button>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="prd-list-prefix-menu__confirm"
-            onClick={() => {
-              const n = Math.max(1, parseInt(inputVal, 10) || 1);
-              onAction('setvalue', n);
-              onClose?.();
-            }}
-          >
-            确定
-          </button>
-        </div>
-      )}
-    </div>,
-    document.body,
-  );
-}
-
 // ─── TiptapMarkdownEditor ─────────────────────────────────────────────────
 
 /**
@@ -682,7 +235,6 @@ function TiptapEditingSurface({
   onPasteImageAsBlock,
   onReplaceWithImage,
   onEditingFinished,
-  globalSelection,
   setGlobalSelection,
   onPrefixManualChange,
   onResetOrderedStart,
@@ -1067,7 +619,6 @@ function TiptapEditingSurface({
         editor={editor}
         blockLevel={blockLevel}
         onBlockLevelChange={onBlockLevelChange}
-        containerRef={editorContainerRef}
         getCurrentMarkdown={getCurrentMarkdown}
         panelRef={toolbarPanelRef}
       />
@@ -1076,7 +627,7 @@ function TiptapEditingSurface({
   );
 }
 
-export function TiptapMarkdownEditor({
+export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
   value,
   onSave,
   placeholder = '点击此处编辑（支持 Markdown）…',
@@ -1092,7 +643,7 @@ export function TiptapMarkdownEditor({
   onPasteImageAsBlock,
   onReplaceWithImage,
   onEditingFinished,
-  globalSelection,
+  isPreviewSelected = false,
   setGlobalSelection,
   onPrefixManualChange,
   onResetOrderedStart,
@@ -1117,19 +668,6 @@ export function TiptapMarkdownEditor({
     setEditingInitialCaretOffset(null);
     setEditing(false);
   }, []);
-
-  const paragraphPreviewSelected =
-    blockId
-    && globalSelection?.type === 'text-block'
-    && globalSelection.blockId === blockId
-    && globalSelection.role === selectionRole
-    && (
-      cellPath == null
-        ? globalSelection.cellPath == null
-        : globalSelection.cellPath?.ri === cellPath.ri
-          && globalSelection.cellPath?.ci === cellPath.ci
-          && globalSelection.cellPath?.idx === cellPath.idx
-    );
 
   const handlePreviewPaste = useCallback((e) => {
     const file = getImageFromPaste(e);
@@ -1166,7 +704,7 @@ export function TiptapMarkdownEditor({
           'prd-editable-md',
           'prd-editable-md--preview',
           cellPath != null ? 'prd-editable-md--in-cell' : '',
-          paragraphPreviewSelected ? 'prd-editable-md--preview-selected' : '',
+          isPreviewSelected ? 'prd-editable-md--preview-selected' : '',
         ].filter(Boolean).join(' ')}
         title="点击编辑"
         data-prd-no-block-select
@@ -1219,7 +757,6 @@ export function TiptapMarkdownEditor({
       onPasteImageAsBlock={onPasteImageAsBlock}
       onReplaceWithImage={onReplaceWithImage}
       onEditingFinished={onEditingFinished}
-      globalSelection={globalSelection}
       setGlobalSelection={setGlobalSelection}
       onPrefixManualChange={onPrefixManualChange}
       onResetOrderedStart={onResetOrderedStart}
@@ -1228,7 +765,7 @@ export function TiptapMarkdownEditor({
       onClose={handleFinishEditing}
     />
   );
-}
+});
 
 /** 把 markdown 前綴（如 `- `, `  - `, `1. `, `a. `）轉成視覺符號 */
 function renderListMarker(prefix, interactive = null) {

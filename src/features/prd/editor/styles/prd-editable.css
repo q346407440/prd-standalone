@@ -766,3 +766,14 @@
   border-radius: 0;
   box-shadow: none;
 }
+
+/* level-switcher：absolute 定位在編輯器容器上方，與 .prd-block-actionbar 同機制 */
+.prd-tiptap-level-switcher {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform: translateY(calc(-100% - 6px));
+  z-index: 50;
+  pointer-events: auto;
+  white-space: nowrap;
+}

@@ -38,6 +38,10 @@ export const BlockItem = memo(function BlockItem({
   /** 主文或表格內 Tiptap：選區類型為 text-block 且屬於本 block（含儲存格） */
   const isTextUiAnchoredOnThisBlock = globalSelection?.blockId === block.id
     && globalSelection?.type === 'text-block';
+  /** 文字類 block（標題 / 段落）：hover 不觸發操作欄，只有進入編輯態才顯示 */
+  const isTextBlock = block.type === 'paragraph'
+    || block.type === 'h1' || block.type === 'h2' || block.type === 'h3'
+    || block.type === 'h4' || block.type === 'h5' || block.type === 'h6' || block.type === 'h7';
   const insertMenuOwnerId = block.id;
 
   useEffect(() => {
@@ -48,6 +52,7 @@ export const BlockItem = memo(function BlockItem({
   const openActionbar = () => {
     if (selectionOnOtherBlock) return;
     if (suppressActionbarUntilLeaveRef.current) return;
+    if (isTextBlock) return;
     requestActionbarOpen(block.id);
   };
 

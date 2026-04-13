@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { ElementRenderer, getEnterCurrentMarkdown, getEnterNextMarkdown } from './renderers/ElementRenderer.jsx';
-import { ActionPanel } from './FloatingActionBubble.jsx';
+import { FloatingActionBubble } from './FloatingActionBubble.jsx';
 import {
   mermaidTableMetaKey,
   mindmapTableMetaKey,
@@ -103,6 +103,8 @@ export function CellRenderer({
   const [focusIdx, setFocusIdx] = useState(null);
   const [activeElementActionIdx, setActiveElementActionIdx] = useState(null);
   const containerRefs = useRef({});
+  /** 每格一個穩定 ref，供 FloatingActionBubble 錨定（Portal 後仍指向 .prd-cell-element） */
+  const anchorRefsPool = useRef({});
   const activeElementActionIdxRef = useRef(null);
   const actionOpenTimerRef = useRef(null);
   const actionCloseTimerRef = useRef(null);
@@ -137,6 +139,13 @@ export function CellRenderer({
   useEffect(() => {
     activeElementActionIdxRef.current = activeElementActionIdx;
   }, [activeElementActionIdx]);
+
+  const getAnchorRef = useCallback((idx) => {
+    if (!anchorRefsPool.current[idx]) {
+      anchorRefsPool.current[idx] = { current: null };
+    }
+    return anchorRefsPool.current[idx];
+  }, []);
 
   const clearPendingElementActionOpen = useCallback((idx = null) => {
     if (idx != null && pendingActionIdxRef.current !== idx) return;
@@ -216,8 +225,11 @@ export function CellRenderer({
     const handlePointerOutside = (event) => {
       const idx = activeElementActionIdxRef.current;
       if (idx == null) return;
+      const t = event.target;
       const container = containerRefs.current[idx];
-      if (nodeContainsTarget(container, event.target)) return;
+      if (nodeContainsTarget(container, t)) return;
+      /* 操作條掛在 body（與 BlockItem 一致），游標在條上時不得關閉 */
+      if (t && typeof t.closest === 'function' && t.closest('.prd-floating-action-bubble')) return;
       closeActiveAction();
     };
     const handleWindowMouseOut = (event) => {
@@ -371,6 +383,17 @@ export function CellRenderer({
         const barFromCellSelection = isGlobalSelectionOnTableCellElement(
           globalSelection, blockId, ri, ci, idx,
         );
+        const isTextPreviewSelected = globalSelection?.type === 'text-block'
+          && globalSelection.blockId === blockId
+          && globalSelection.cellPath?.ri === ri
+          && globalSelection.cellPath?.ci === ci
+          && globalSelection.cellPath?.idx === idx;
+        const isImageSelected = globalSelection?.type === 'image'
+          && globalSelection.blockId === blockId
+          && globalSelection.cellPath?.ri === ri
+          && globalSelection.cellPath?.ci === ci
+          && globalSelection.cellPath?.idx === idx;
+        const anchorRef = getAnchorRef(idx);
         return (
         <div
           className={[
@@ -381,14 +404,18 @@ export function CellRenderer({
           ref={(el) => {
             if (el) containerRefs.current[idx] = el;
             else delete containerRefs.current[idx];
+            anchorRef.current = el;
           }}
-          onMouseEnter={() => requestElementActionOpen(idx)}
+          onMouseEnter={() => {
+            if (element.type === 'text' || !element.type) return;
+            requestElementActionOpen(idx);
+          }}
           onMouseLeave={() => {
             if (barFromCellSelection) return;
             requestElementActionClose(idx);
           }}
         >
-          <ActionPanel
+          <FloatingActionBubble
             visible={
               !hoverSuppressed
               && (
@@ -399,12 +426,16 @@ export function CellRenderer({
                 )
               )
             }
+            anchorRef={anchorRef}
+            preferredVertical="below"
+            preferredHorizontal="left"
             className="prd-cell-element__actions"
             onMouseEnter={() => keepElementActionOpen(idx)}
             onMouseLeave={() => {
               if (barFromCellSelection) return;
               requestElementActionClose(idx);
             }}
+            innerMouseDown={(e) => e.stopPropagation()}
           >
             <button
               type="button"
@@ -462,18 +493,15 @@ export function CellRenderer({
             >
               删除
             </button>
-          </ActionPanel>
+          </FloatingActionBubble>
           <ElementRenderer
             element={element}
             onUpdate={(newEl) => updateElement(idx, newEl)}
             onDelete={() => removeElement(idx)}
-            onMoveUp={() => moveElement(idx, -1)}
-            onMoveDown={() => moveElement(idx, 1)}
-            canMoveUp={idx > 0}
-            canMoveDown={idx < elements.length - 1}
             blockId={blockId}
             cellPath={{ ri, ci, idx }}
-            globalSelection={globalSelection}
+            isPreviewSelected={isTextPreviewSelected}
+            isImageSelected={isImageSelected}
             setGlobalSelection={setGlobalSelection}
             onEnter={(currentMd) => addElementAfter(idx, currentMd)}
             onBackspaceEmpty={() => {
