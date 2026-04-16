@@ -42,7 +42,7 @@ description: 本仓库 PRD 硬协议：只写 prd-standalone、block/GFM/hover �
 3. **hover / 说明气泡**：`交互` 列固定 **`- **【hover 文案】**：`** + 定稿全文（全角冒号在闭合 `**` 后）。**禁止**「说明（…）」括号全文。卡片内长说明用 **`**说明文案**`**，勿套【hover 文案】。详见 **五 → hover**。
 4. **交互 / 逻辑换行密度**：**加粗区块** → 一级 `-` → 必要时 **`  - `**；逻辑列**禁止**分号串多条规则。详见 **五 → 换行与子项列举**。
 5. **设计列**：以 **`![语义说明](/prd/xxx.png)`**（`[]` 非空）为主；**可选**极短场景/状态补充（见 **七**）；**不写**流程说明、整段注意事项。**不要求**设计列放置可点击的页面 URL。详见 **七 → 模板**。
-6. **截图 / 开页**：**先「七 → 启用检测」**；已配置 **Chrome DevTools MCP** 则**固定用它**；连不上先 **「七 → profile 重试」**，仍失败再备选浏览器。**全套规则见第七節**（67%、视口 PNG、rect 裁切、禁 `take_screenshot(uid)` / 100% / `style.zoom` 与页缩放混用）。若本机有可运行 Demo，导航地址以终端 origin + 路由为准，**禁止**猜端口、猜 path（见 **四**）。
+6. **截图 / 开页**：**先「七 → 启用检测」**；已配置 **Chrome DevTools MCP** 则**固定用它**；连不上先 **「七 → profile 重试」**，仍失败再备选浏览器。**全套规则见第七節**（两阶段：**探索**用 `take_snapshot`+`click(uid)` 理解页面；**入库**用 `evaluate_script` 合并构造状态 + 视口 PNG + rect 裁切；67% 缩放**同 Tab 仅首图做一次**；禁 `take_screenshot(uid)` / 100% / `style.zoom` 与页缩放混用）。若本机有可运行 Demo，导航地址以终端 origin + 路由为准，**禁止**猜端口、猜 path（见 **四**）。
 7. **写回粒度**：最小 **单行 / 单 block**；默认只改 `交互` / `逻辑`（见 **四**）。
 8. **逻辑列**：无页后规则则**整格留空**（不用「无」「—」）。详见 **五 → 逻辑列**。
 9. **正文语言**：简体中文；`block` 与 `.cursor/rules/prd-writing-guard.mdc` 一致。
@@ -249,24 +249,49 @@ API 在 `127.0.0.1:6001`；可用 Shell `curl -s -X POST … -H 'Content-Type: a
 
 报错含 `chrome-devtools-mcp/chrome-profile`、browser already running：**同一 user-data-dir 已被占用**。关 MCP 打开的 Chrome → 结束占用该 profile 的进程（例：`pkill -f "user-data-dir=.*/chrome-devtools-mcp/chrome-profile"`，勿 `killall` 误杀日常 Chrome）→ 重试 MCP。仍失败与禁止额外自动化栈等见 **`.cursor/rules/prd-screenshot.mdc`**。
 
-### 67% 标准成图法（步骤 · 强制）
+### 67% 标准成图法（两阶段 · 强制）
+
+截图分**探索**和**入库**两阶段——探索用于理解页面、发现可截状态；入库用于高效产出 67% 规范图。
+
+#### 探索阶段（确认要截什么）
+
+目的：Agent 理解页面结构、逐步交互发现值得入 PRD 的状态与截图选区。  
+本阶段**不产出入库 PNG**；可在任意缩放下操作。
 
 1. `list_pages` / `new_page` / `select_page`：打开业务 Demo URL（**四** 得真实地址；拒绝则先起 dev）。  
-2. `wait_for`：关键文案出现再截。  
-3. **页缩放 67%**：`Meta+0`/`Control+0` 后连续 **4 次** `Meta+-`/`Control+-`；**先完成再**截视口与读 rect；地址栏显示 **67%**。  
-4. （可选）`evaluate_script` 调 `localStorage` / reload 出目标态；**不得**改业务仓库。  
-5. （可选）注入 `<style>` 隐藏 Demo-only 控件。  
-6. `scrollIntoView`；需展开菜单 → `take_snapshot` + `click(uid)`，**仍不用 uid 截图**。  
-7. **rect**：`evaluate_script` 返回目标 `getBoundingClientRect()`；浮层与主容器分离时对多块 **求并集** 再裁切（可 padding）；同时返回 `innerWidth`/`innerHeight`（CSS 像素）。  
-8. **`take_screenshot`**：不传 uid，PNG 整视口。  
-9. **裁切**：`sx = pngW/innerWidth`，`sy = pngH/innerHeight`；`crop = floor(rect * scale)`，钳制在图内；`sips`/`PIL` 写入 `prd-standalone/public/prd/xxx.png`。
+2. `wait_for`：关键文案出现。  
+3. `take_snapshot`：拿 a11y 树与 uid，理解页面当前状态。  
+4. `click(uid)` / `fill(uid)` / 逐步交互：发现交互细节（如展开折叠、切 Tab、触发浮层等）；每步可再 `take_snapshot` 确认 DOM 变化。  
+5. **产出**：一份**截图计划**（心中或注释里）——列出本模块要截哪几张图、每张图需要什么 UI 状态、目标容器的 CSS 选择器。
 
-**说明**：`take_snapshot` 仅用于定位点击；`fullPage: true` 仅长页需要且仍在 67% 下。**Cursor Browser**：67% → 视口 `browser_take_screenshot` → `browser_get_bounding_box(ref)` → **同公式裁切**；**勿**把快照 `ref` 当作 `browser_take_screenshot` 的 CSS `ref`；可用 `browser_resize` 减灰边。
+#### 入库阶段（高效成图）
+
+目的：对探索阶段确认的目标状态，按 67% 规范快速出图。
+
+**A. 缩放（仅首张图做一次）**
+
+1. **页缩放 67%**：`Meta+0`/`Control+0` 后连续 **4 次** `Meta+-`/`Control+-`；地址栏显示 **67%**。  
+2. **缩放复用**：同一 Tab 内后续图**跳过**缩放步骤——Chrome 页缩放是 **Tab 级持久**，不刷新/不整页跳转则不变。仅 `navigate_page` 跳转或手动刷新后才重做。
+
+**B. 每张图三步循环**
+
+3. **`evaluate_script` 一次完成**：将该张图所需的全部状态构造（切 Tab、展开折叠卡、点击按钮、填值、失焦等）+ `scrollIntoView` + 返回 `getBoundingClientRect()` 与 `innerWidth`/`innerHeight` **合并到一次脚本**。  
+   - DOM 交互用 `querySelector` + `.click()`；React 受控输入用原生 `HTMLInputElement.prototype.value` setter + `dispatchEvent(new Event('input', { bubbles: true }))`；`.blur()` 触发失焦。  
+   - 每步交互后 `await new Promise(r => setTimeout(r, 60~100))` 等 React 重渲染（根据组件复杂度调整；含 `queueMicrotask` 的逻辑可能需要略长）。  
+   - 浮层与主容器分离时对多块 rect **求并集**（可 padding）。  
+   - （可选）注入 `<style>` 隐藏 Demo-only 控件；`localStorage` 调数据出目标态；**不得**改业务仓库。  
+4. **`take_screenshot`**：不传 uid，PNG 整视口。  
+5. **裁切**：`sx = pngW/innerWidth`，`sy = pngH/innerHeight`；`crop = floor(rect * scale)`，钳制在图内；`sips`/`PIL` 写入 `prd-standalone/public/prd/xxx.png`。  
+6. **下一张图**：重复步骤 3～5；**不重复**缩放，**不重复** `take_snapshot`。
+
+**效率对比**：每张入库图 = **1 次 `evaluate_script` + 1 次 `take_screenshot` + 1 次本机裁切**（3 次调用），而非旧流程的 `take_snapshot` → `click` → `take_snapshot` → `evaluate_script`（rect）→ `take_screenshot`（5+ 次调用）。
+
+**说明**：`take_snapshot` 在入库阶段**仅当** `evaluate_script` 内选择器无法确认目标时作为后备；`fullPage: true` 仅长页需要且仍在 67% 下。**Cursor Browser**：67% → 视口 `browser_take_screenshot` → `browser_get_bounding_box(ref)` → **同公式裁切**；**勿**把快照 `ref` 当作 `browser_take_screenshot` 的 CSS `ref`；可用 `browser_resize` 减灰边。
 
 ### 选区与画幅
 
 - **默认（模块行）**：表格行多对应 **h4 下一块功能**；截图优先包住该模块在页面上的**容器面板 DOM**（整张配置卡、分区 wrapper 等），**不要**顺手整页、**不要**只截单行/孤立图标（除非该节仅描述该控件且用户要求）。
-- **用户或 DevTools 给出矩形**：若提供 DOM Path、`getBoundingClientRect` 或与组件对齐的框，视为模块根容器范围；在 **67%** 下按 **「67% 标准成图法」** 第 7～9 步裁切；**禁止** `take_screenshot(uid)`。
+- **用户或 DevTools 给出矩形**：若提供 DOM Path、`getBoundingClientRect` 或与组件对齐的框，视为模块根容器范围；在 **67%** 下按 **「入库阶段」** 步骤 3～5 裁切；**禁止** `take_screenshot(uid)`。
 - **DOM 定位（示例）**：可在 **67%** 下对 **`[role=region][aria-label=…]`**、**`.moc-editor-shell-alert-bundle`** 等取 `getBoundingClientRect` + 视口 PNG 比例裁切（与业务实际选择器以 Demo 为准）。
 - **绝对定位浮层 / 下拉**：主容器与已展开子面板（如 **`.moc-prereq-hover-wrap--open .moc-prereq-hover-panel`**）分离时，对多块 rect **求并集** 再裁切（可 **padding**，如 6px）。
 - **`cursor-ide-browser` 的 `ref` 易错**：快照里的 **`ref`（如 e71）** 与 **`browser_take_screenshot` 的 CSS `ref`** 不是同一语义；**勿**把快照 `ref` 当截图目标。可靠做法：**视口** `browser_take_screenshot` + **`browser_get_bounding_box`（快照 ref）** + 同公式裁切。
@@ -307,7 +332,7 @@ API 在 `127.0.0.1:6001`；可用 Shell `curl -s -X POST … -H 'Content-Type: a
 - [ ] 表格是否使用 **cell 标记格式**（`<!-- block:table cols="..." -->`、`<!-- cell:rN:列名 -->`），格内原生 Markdown？  
 - [ ] 交互/逻辑是否按 **一级 `-` + `  - `** 密度，hover 是否 **`- **【hover 文案】**：`**？  
 - [ ] 无页后规则时 **逻辑是否留空**（含纯导航模块）？  
-- [ ] 设计列是否以 **`![语义说明](...)`** 为主（禁止裸 `![](...)`）；可选短注是否**未**与 alt / 交互列重复堆砌？格内图是否**单独成行**（无 `  - ![…](…)` / `1. ![…](…)` 等列表前缀挂整行图）？截图是否 **67% + 视口 PNG + rect 裁切**，禁 uid/100%？**核对磁盘是否有某 PNG** 时是否**未**仅凭 Glob（`public/prd/*.png` 可能被 gitignore）？  
+- [ ] 设计列是否以 **`![语义说明](...)`** 为主（禁止裸 `![](...)`）；可选短注是否**未**与 alt / 交互列重复堆砌？格内图是否**单独成行**（无 `  - ![…](…)` / `1. ![…](…)` 等列表前缀挂整行图）？截图是否 **67%（同 Tab 缩放复用）+ 入库阶段 `evaluate_script` 合并构造 + 视口 PNG + rect 裁切**，禁 uid/100%？**核对磁盘是否有某 PNG** 时是否**未**仅凭 Glob（`public/prd/*.png` 可能被 gitignore）？  
 - [ ] 设计列是否**未**写入可点击页面 URL？  
 - [ ] 是否只改用户要求的行/列，且未改业务代码？  
 - [ ] 若采用多 `block:h1` 长文档骨架，顺序是否大致为「文档名 → 需求概述 → … → 产品详细功能说明 → …」？大改 `h2` 后是否核对 **六** 所述表格绑定与 `annotations.json`？  

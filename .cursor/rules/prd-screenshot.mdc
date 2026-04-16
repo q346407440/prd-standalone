@@ -41,7 +41,25 @@ alwaysApply: false
 
 - **设计列入库截图**必须在浏览器 **页缩放 67%** 下完成（与配置端常见观感对齐）。
 - **做法**：`Meta+0` / `Control+0` 复位后，连续 **4 次** `Meta+-` / `Control+-`，直至地址栏显示 **67%**。
+- **缩放复用**：同一 Tab 内**首张图**完成缩放后，**后续图**不再重复 `Meta+0` + 4× `Meta+-`——Chrome 页缩放是 **Tab 级持久**，不刷新则不变。仅在 **navigate_page（整页跳转）** 或 **手动刷新** 后重做缩放。
 - **禁止**：为入库 PNG 使用 **100%** 或任意非 **67%** 页缩放；**禁止**使用 `document.documentElement.style.zoom`（或等价）与页缩放混用。
+
+## 两阶段截图流程（强制）
+
+截图分**探索阶段**和**入库阶段**，二者职责与工具选择不同。
+
+### 探索阶段（发现值得截图的状态）
+
+- 目的：理解页面结构、发现交互状态、确认哪些场景需要入 PRD。
+- **允许**使用 `take_snapshot` + `click(uid)` 逐步交互——这是 Agent 理解页面的必要手段。
+- 本阶段**不产出入库 PNG**，探索可在 **100%** 或任意缩放下进行（无须先 67%）。
+
+### 入库阶段（确认目标后高效成图）
+
+- 目的：对**已确定**的若干状态，按 67% 规范快速产出入库 PNG。
+- **状态构造用 `evaluate_script` 合并**：将探索阶段试过的多步交互（切 Tab、展开折叠卡、点击按钮、填值、失焦等）**合并到一次 `evaluate_script`** 中完成，**不再重复** `take_snapshot` → `click(uid)` → `take_snapshot` 的逐步链路。脚本末尾 `scrollIntoView` 目标容器并返回 `getBoundingClientRect()` + `innerWidth`/`innerHeight`。
+- **`evaluate_script` 内用 DOM API**（`querySelector`、`.click()`、原生 input setter + `dispatchEvent`、`.blur()`）构造状态；React 更新需 `await new Promise(r => setTimeout(r, 60~100))`。
+- **同模块多张图**：在入库阶段内，每张图为 **一次 `evaluate_script`（构造+rect）+ 一次 `take_screenshot`（无 uid）+ 一次 Python 裁切**，三步一图。
 
 ## 标准成图方法（模块 / 局部）
 
@@ -61,4 +79,4 @@ alwaysApply: false
 
 ## 详细步骤编号
 
-- 见 **prd-spec** SKILL **「七 → 67% 标准成图法」** 步骤 1～10 与 **「启用检测（强制）」**。
+- 见 **prd-spec** SKILL **「七 → 67% 标准成图法（两阶段）」**：探索阶段步骤 1～5、入库阶段步骤 A（缩放）+ B（三步循环 3～5），与 **「启用检测（强制）」**。
