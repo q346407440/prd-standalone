@@ -22,11 +22,17 @@ if ! command -v node &>/dev/null; then
   exit 1
 fi
 
-NODE_MAJOR="$(node -e 'console.log(process.versions.node.split(".")[0])')"
-if [ "$NODE_MAJOR" -lt 18 ] 2>/dev/null; then
+NODE_VER="$(node -e 'console.log(process.versions.node)')"
+NODE_OK="$(node -e '
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  const ok = (major === 20 && minor >= 19) || (major >= 22 && (major > 22 || minor >= 12));
+  console.log(ok ? "1" : "0");
+')"
+if [ "$NODE_OK" != "1" ]; then
   echo ""
   echo "============================================================"
-  echo "  [!] Node.js 版本过低 (当前: $(node --version)，要求 >= 18)"
+  echo "  [!] Node.js 版本不满足 Vite 8 要求"
+  echo "      当前: v${NODE_VER}，要求: ^20.19.0 || >=22.12.0"
   echo "  推荐运行: nvm install 22 && nvm use 22"
   echo "============================================================"
   echo ""
@@ -97,10 +103,31 @@ echo "[check] 飞书凭据已配置"
 # ── 3. 确保 .local 目录存在 ──────────────────────────────────────────────────
 mkdir -p .local
 
-# ── 4. 杀掉占用端口的旧进程 ──────────────────────────────────────────────────
+# ── 4. 检查端口占用，复用已有服务或清理后重启 ────────────────────────────────
 OLD_PIDS="$(lsof -ti:"$PORT" 2>/dev/null || true)"
 if [ -n "$OLD_PIDS" ]; then
-  echo "[restart] 终止占用端口 $PORT 的旧进程: $OLD_PIDS"
+  ALREADY_RUNNING=false
+  for pid in $OLD_PIDS; do
+    PROC_CWD="$(lsof -p "$pid" -Fn 2>/dev/null | grep '^n.*'"$PROJECT_DIR" | head -1 || true)"
+    PROC_CMD="$(ps -p "$pid" -o args= 2>/dev/null || true)"
+    if [[ "$PROC_CMD" == *vite* && -n "$PROC_CWD" ]]; then
+      ALREADY_RUNNING=true
+      break
+    fi
+  done
+
+  if [ "$ALREADY_RUNNING" = true ]; then
+    echo ""
+    echo "============================================================"
+    echo "  [ok] 端口 $PORT 上已运行本项目的 Vite 服务 (PID: $OLD_PIDS)"
+    echo "  访问地址: http://127.0.0.1:$PORT"
+    echo "  无需重启，直接使用即可"
+    echo "============================================================"
+    echo ""
+    exit 0
+  fi
+
+  echo "[restart] 终止占用端口 $PORT 的非本项目进程: $OLD_PIDS"
   echo "$OLD_PIDS" | xargs kill -9 2>/dev/null || true
   sleep 1
 fi
