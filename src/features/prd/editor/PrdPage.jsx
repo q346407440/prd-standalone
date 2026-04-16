@@ -9,6 +9,10 @@ import './styles/prd-overview.css';
 import './styles/prd-page-edit.css';
 import { parsePrd } from './prd-parser';
 import { serializePrd } from './prd-writer';
+import {
+  computePrdMdCursorLineOneBased,
+  formatPrdCursorMdRef,
+} from './prd-md-cursor-ref.js';
 import { emitPrdToast, PRD_TOAST_EVENT } from './prd-toast.js';
 import {
   buildStandalonePrdExport,
@@ -41,6 +45,7 @@ import {
 } from './prd-annotations.js';
 import {
   DEFAULT_PRD_SLUG,
+  PRD_CURSOR_REF_REPO_FOLDER,
   TOC_OPEN_STORAGE_KEY,
   PERSIST_DEBOUNCE_MS,
   TOAST_EXIT_MS,
@@ -1250,6 +1255,62 @@ export function PrdPage() {
     }
   }, [annotationsDoc, blocks, imageMeta, isExporting, mermaidMeta, mindmapMeta]);
 
+  const COPY_MD_CURSOR_TOAST =
+    '已复制当前位置的 MD 行号（@文件:行号）。在 Cursor 输入框粘贴后即可引用该处并提问。';
+
+  const handleCopyMdCursorRef = useCallback(({ blockId, cellPath }) => {
+    const list = blocksRef.current;
+    if (!list?.length) {
+      emitPrdToast('文档未就绪', { tone: 'warning' });
+      return;
+    }
+    const line = computePrdMdCursorLineOneBased(list, blockId, cellPath ?? null);
+    if (line == null || line < 1) {
+      emitPrdToast('暂时无法计算该内容在 MD 中的行号', { tone: 'warning' });
+      return;
+    }
+    const mdPath = activeMdPathRef.current || '';
+    if (!mdPath) {
+      emitPrdToast('缺少文档路径', { tone: 'warning' });
+      return;
+    }
+    const text = formatPrdCursorMdRef(mdPath, line, PRD_CURSOR_REF_REPO_FOLDER);
+    const finishOk = () => {
+      emitPrdToast(COPY_MD_CURSOR_TOAST, { duration: 4200 });
+    };
+    if (navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(text).then(finishOk).catch(() => {
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          finishOk();
+        } catch {
+          emitPrdToast('复制失败，请检查浏览器权限', { tone: 'error' });
+        }
+      });
+      return;
+    }
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      finishOk();
+    } catch {
+      emitPrdToast('复制失败，请检查浏览器权限', { tone: 'error' });
+    }
+  }, []);
+
   const blockUiState = useMemo(() => ({
     activeActionBlockId,
     activeInsertMenuOwnerId,
@@ -1333,6 +1394,7 @@ export function PrdPage() {
     onBackspaceMergeBlock: handleBackspaceMerge,
     onPasteImageAsBlockBlock: handlePasteImageAsBlock,
     onAddAtEnd: handleAddAtEnd,
+    onCopyMdCursorRef: handleCopyMdCursorRef,
   }), [
     handleUpdate,
     handleDeleteRequest,
@@ -1346,6 +1408,7 @@ export function PrdPage() {
     handleBackspaceMerge,
     handlePasteImageAsBlock,
     handleAddAtEnd,
+    handleCopyMdCursorRef,
   ]);
 
   // ── 渲染 ────────────────────────────────────────────────────────────────────

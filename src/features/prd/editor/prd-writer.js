@@ -91,7 +91,7 @@ function isListLine(text) {
  * - image 前面緊跟的 text 末尾不含換行 → 它們原本是同一行
  * - image 後面緊跟的 text 不以列表前綴開頭 → 它們原本是同一行的後綴
  */
-function serializeCellContent(cell) {
+export function serializeCellContent(cell) {
   if (!cell) return '';
   const elements = Array.isArray(cell.elements) ? cell.elements
     : cell.element ? [cell.element]
@@ -116,10 +116,10 @@ function serializeCellContent(cell) {
 }
 
 /**
- * 把 splitMarkdownByInlineImages 拆散的碎片重組回邏輯行。
- * 只合併「原本是同一行的行內圖文混排」碎片，不合併 <br> 分段的獨立段落。
+ * 與 mergeInlineImageFragments 同源：每段帶 parts，便於計算各 element 在序列化格內的字元偏移。
+ * @returns {{ kind: 'block'|'text'|'list', parts: { idx: number, str: string }[] }[]}
  */
-function mergeInlineImageFragments(elements) {
+function mergeInlineImageFragmentParts(elements) {
   const merged = [];
   let i = 0;
 
@@ -128,45 +128,104 @@ function mergeInlineImageFragments(elements) {
     if (!el) { i++; continue; }
 
     if (el.type === 'mermaid') {
-      merged.push({ kind: 'block', text: `\`\`\`mermaid\n${el.code || ''}\n\`\`\`` });
+      merged.push({
+        kind: 'block',
+        parts: [{ idx: i, str: `\`\`\`mermaid\n${el.code || ''}\n\`\`\`` }],
+      });
       i++;
       continue;
     }
     if (el.type === 'mindmap') {
-      merged.push({ kind: 'block', text: el.code || '' });
+      merged.push({
+        kind: 'block',
+        parts: [{ idx: i, str: el.code || '' }],
+      });
       i++;
       continue;
     }
 
     if (el.type === 'image') {
-      let line = `![](${el.src})`;
+      const parts = [{ idx: i, str: `![](${el.src})` }];
       i++;
       while (i < elements.length && elements[i]?.type === 'text' && isInlineSuffix(elements[i].markdown)) {
-        line += elements[i].markdown;
+        parts.push({ idx: i, str: elements[i].markdown });
         i++;
       }
-      merged.push({ kind: 'text', text: line });
+      merged.push({ kind: 'text', parts });
       continue;
     }
 
     const md = el.markdown || '';
     if (!md) { i++; continue; }
 
-    let line = md;
+    const parts = [{ idx: i, str: md }];
     i++;
     while (i < elements.length && elements[i]?.type === 'image') {
-      line += `![](${elements[i].src})`;
+      parts.push({ idx: i, str: `![](${elements[i].src})` });
       i++;
       while (i < elements.length && elements[i]?.type === 'text' && isInlineSuffix(elements[i].markdown)) {
-        line += elements[i].markdown;
+        parts.push({ idx: i, str: elements[i].markdown });
         i++;
       }
     }
 
-    merged.push({ kind: isListLine(line) ? 'list' : 'text', text: line });
+    const line = parts.map((p) => p.str).join('');
+    merged.push({ kind: isListLine(line) ? 'list' : 'text', parts });
   }
 
   return merged;
+}
+
+/**
+ * 把 splitMarkdownByInlineImages 拆散的碎片重組回邏輯行。
+ * 只合併「原本是同一行的行內圖文混排」碎片，不合併 <br> 分段的獨立段落。
+ */
+function mergeInlineImageFragments(elements) {
+  return mergeInlineImageFragmentParts(elements).map((seg) => ({
+    kind: seg.kind,
+    text: seg.parts.map((p) => p.str).join(''),
+  }));
+}
+
+/**
+ * 表格儲存格序列化後字串中，每個 element 索引對應的起始字元偏移（與 serializeCellContent 一致）。
+ * @param {object} cell
+ * @returns {number[]}
+ */
+export function getCellElementCharStartsInSerializedCell(cell) {
+  const elements = Array.isArray(cell?.elements) ? cell.elements
+    : cell?.element ? [cell.element]
+      : [];
+
+  const n = elements.length;
+  if (n === 0) return [];
+  if (n === 1 && elements[0].type === 'text' && !elements[0].markdown) return [0];
+
+  const starts = new Array(n).fill(-1);
+  const merged = mergeInlineImageFragmentParts(elements);
+  let full = '';
+
+  for (let si = 0; si < merged.length; si += 1) {
+    if (si > 0) {
+      const prev = merged[si - 1];
+      const curr = merged[si];
+      const bothList = prev.kind === 'list' && curr.kind === 'list';
+      full += bothList ? '\n' : '\n\n';
+    }
+    const seg = merged[si];
+    const line = seg.parts.map((p) => p.str).join('');
+    let off = 0;
+    for (const p of seg.parts) {
+      starts[p.idx] = full.length + off;
+      off += p.str.length;
+    }
+    full += line;
+  }
+
+  for (let j = 0; j < n; j += 1) {
+    if (starts[j] < 0) starts[j] = full.length;
+  }
+  return starts;
 }
 
 function isInlineSuffix(text) {

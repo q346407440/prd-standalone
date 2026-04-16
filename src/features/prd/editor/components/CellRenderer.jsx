@@ -93,6 +93,7 @@ export function CellRenderer({
   mindmapMeta,
   onMindmapMetaChange,
   prdAssetCacheBust = 0,
+  onCopyMdCursorRef,
 }) {
   const elements = useMemo(
     () => cellElement?.elements
@@ -445,6 +446,16 @@ export function CellRenderer({
             >
               复制
             </button>
+            {onCopyMdCursorRef ? (
+              <button
+                type="button"
+                className="prd-action-btn prd-cell-element__action-btn"
+                title="复制 @文件:行号，供粘贴到 Cursor"
+                onClick={() => onCopyMdCursorRef({ blockId, cellPath: { ri, ci, idx } })}
+              >
+                复制MD行号
+              </button>
+            ) : null}
             <CellElementInsertButton
               label="上方插入"
               direction="above"

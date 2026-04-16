@@ -30,6 +30,9 @@ export const BACKUP_DOC_API = '/__prd__/backup-doc';
 export const TOC_OPEN_STORAGE_KEY = 'prd-editor:toc-open';
 
 export const DEFAULT_PRD_SLUG = 'doc-001';
+
+/** 生成 Cursor `@資料夾/pages/...` 引用時的前綴目錄名（與 package.json name、常見多根工作區習慣一致） */
+export const PRD_CURSOR_REF_REPO_FOLDER = 'prd-standalone';
 export const PRD_FILE_NAME_RULE_HINT = '支持中文、英文、数字及 ._-；禁止 \\ / : * ? " < > | 等路径字符；最长 80 字';
 
 export const PERSIST_DEBOUNCE_MS = 480;

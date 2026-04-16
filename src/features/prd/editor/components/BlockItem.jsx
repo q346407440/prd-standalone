@@ -29,6 +29,7 @@ export const BlockItem = memo(function BlockItem({
   onResetOrderedStartBlock,
   mermaidMeta, onMermaidMetaChange,
   mindmapMeta, onMindmapMetaChange,
+  onCopyMdCursorRef,
 }) {
   const [showInsertMenu, setShowInsertMenu] = useState(null);
   const suppressActionbarUntilLeaveRef = useRef(false);
@@ -229,6 +230,7 @@ export const BlockItem = memo(function BlockItem({
             mindmapMeta={mindmapMeta}
             onMindmapMetaChange={onMindmapMetaChange}
             prdAssetCacheBust={prdAssetCacheBust}
+            onCopyMdCursorRef={onCopyMdCursorRef}
           />
         );
       default:
@@ -289,6 +291,16 @@ export const BlockItem = memo(function BlockItem({
         >
           复制
         </button>
+        {onCopyMdCursorRef ? (
+          <button
+            type="button"
+            className="prd-action-btn prd-block-actionbar__btn"
+            title="复制 @文件:行号，供粘贴到 Cursor"
+            onClick={() => onCopyMdCursorRef({ blockId: block.id, cellPath: null })}
+          >
+            复制MD行号
+          </button>
+        ) : null}
         <button
           className="prd-action-btn prd-block-actionbar__btn"
           onClick={() => {
@@ -376,5 +388,6 @@ export const BlockItem = memo(function BlockItem({
   const prevMenu = prev.activeInsertMenuOwnerId === prev.block.id;
   const nextMenu = next.activeInsertMenuOwnerId === next.block.id;
   if (prevMenu !== nextMenu) return false;
+  if (prev.onCopyMdCursorRef !== next.onCopyMdCursorRef) return false;
   return true;
 });

@@ -68,6 +68,7 @@ export function TableBlock({
   mindmapMeta,
   onMindmapMetaChange,
   prdAssetCacheBust = 0,
+  onCopyMdCursorRef,
 }) {
   const { headers, rows } = block.content;
   const selectedCol = globalSelection?.blockId === block.id && globalSelection.type === 'table-col'
@@ -524,6 +525,7 @@ export function TableBlock({
                       mindmapMeta={mindmapMeta}
                       onMindmapMetaChange={onMindmapMetaChange}
                       prdAssetCacheBust={prdAssetCacheBust}
+                      onCopyMdCursorRef={onCopyMdCursorRef}
                     />
                   </td>
                   );
