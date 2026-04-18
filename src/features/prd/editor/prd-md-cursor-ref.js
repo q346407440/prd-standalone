@@ -14,14 +14,17 @@ const BLOCK_MARKER_RE = /^<!--\s*block:([\w-]+)(?:\s+(.*?))?\s*-->$/;
  * @param {object[]} blocks
  * @param {string} blockId
  * @param {{ ri: number, ci: number, idx: number } | null} cellPath 表格儲存格內元素；非表格傳 null
+ * @param {string | null | undefined} mdSource 可選：用於計算行號的完整 MD 正文。傳入時應與當前要對齊的檔案一致（例如已載入未改動的磁碟正文），避免僅依 `serializePrd(blocks)` 時與磁碟在空白行等處不一致導致行號偏移。
  * @returns {number | null}
  */
-export function computePrdMdCursorLineOneBased(blocks, blockId, cellPath = null) {
+export function computePrdMdCursorLineOneBased(blocks, blockId, cellPath = null, mdSource = null) {
   if (!blocks?.length) return null;
   const blockIndex = blocks.findIndex((b) => b.id === blockId);
   if (blockIndex < 0) return null;
 
-  const md = serializePrd(blocks);
+  const md = (mdSource != null && String(mdSource).length > 0)
+    ? String(mdSource)
+    : serializePrd(blocks);
   const lines = md.split('\n');
   const blockRanges = scanBlockContentLineRanges(lines);
   if (blockIndex >= blockRanges.length) return null;

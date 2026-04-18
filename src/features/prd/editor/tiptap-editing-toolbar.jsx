@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BsLink45Deg, BsTypeBold, BsTypeItalic } from 'react-icons/bs';
-import { MdFormatListNumbered } from 'react-icons/md';
+import { MdFormatListNumbered, MdFormatListNumberedRtl, MdNumbers } from 'react-icons/md';
 import { editorToMarkdown } from './tiptap-md-utils.js';
 import {
   alphaToNum,
@@ -302,7 +302,7 @@ export function ListPrefixMenu({ prefix, anchorRef, menuRef: externalMenuRef, on
             onClick={() => { onAction('continue'); onClose?.(); }}
           >
             <span className="prd-list-prefix-menu__icon">
-              <MdFormatListNumbered aria-hidden="true" style={{ transform: 'scaleX(-1)' }} />
+              <MdFormatListNumberedRtl aria-hidden="true" />
             </span>
             继续标题编号
           </button>
@@ -324,10 +324,8 @@ export function ListPrefixMenu({ prefix, anchorRef, menuRef: externalMenuRef, on
               setShowInput(true);
             }}
           >
-            <span className="prd-list-prefix-menu__icon prd-list-prefix-menu__icon--set">
-              <span>1</span>
-              <span style={{ fontSize: 9, lineHeight: 1 }}>2</span>
-              <span className="prd-list-prefix-menu__pencil">✏</span>
+            <span className="prd-list-prefix-menu__icon">
+              <MdNumbers aria-hidden="true" />
             </span>
             设置编号的值
           </button>

@@ -6,11 +6,16 @@ import {
   LIGHTBOX_ZOOM_PRESETS,
 } from '../prd-constants.js';
 
+/** 超过该位移视为拖拽平移，松手时不关闭（仅松手关闭「纯点击」） */
+const LIGHTBOX_DRAG_THRESHOLD_PX = 5;
+
 export function PrdLightbox({ imageSrc, htmlContent, onClose }) {
   const [scale, setScale] = useState(null);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const dragStartRef = useRef(null);
+  const pointerDownRef = useRef({ x: 0, y: 0 });
+  const dragMovedRef = useRef(false);
   const contentRef = useRef(null);
   const fitScaleRef = useRef(1);
 
@@ -64,6 +69,8 @@ export function PrdLightbox({ imageSrc, htmlContent, onClose }) {
       onClose();
       return;
     }
+    dragMovedRef.current = false;
+    pointerDownRef.current = { x: e.clientX, y: e.clientY };
     setDragging(true);
     dragStartRef.current = { x: e.clientX - translate.x, y: e.clientY - translate.y };
   }, [onClose, translate]);
@@ -72,12 +79,21 @@ export function PrdLightbox({ imageSrc, htmlContent, onClose }) {
     if (!dragging) return;
     const onMove = (e) => {
       if (!dragStartRef.current) return;
+      const dx = e.clientX - pointerDownRef.current.x;
+      const dy = e.clientY - pointerDownRef.current.y;
+      if (dx * dx + dy * dy > LIGHTBOX_DRAG_THRESHOLD_PX * LIGHTBOX_DRAG_THRESHOLD_PX) {
+        dragMovedRef.current = true;
+      }
       setTranslate({
         x: e.clientX - dragStartRef.current.x,
         y: e.clientY - dragStartRef.current.y,
       });
     };
     const onUp = () => {
+      if (!dragMovedRef.current) {
+        onClose();
+      }
+      dragMovedRef.current = false;
       setDragging(false);
       dragStartRef.current = null;
     };
@@ -87,7 +103,7 @@ export function PrdLightbox({ imageSrc, htmlContent, onClose }) {
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
     };
-  }, [dragging]);
+  }, [dragging, onClose]);
 
   const handleZoomIn = useCallback(() => {
     setScale((prev) => Math.min(LIGHTBOX_ZOOM_MAX, prev + LIGHTBOX_ZOOM_STEP));

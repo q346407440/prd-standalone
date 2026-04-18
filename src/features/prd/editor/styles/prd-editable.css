@@ -564,21 +564,6 @@
   flex-shrink: 0;
 }
 
-.prd-list-prefix-menu__icon--set {
-  font-size: 10px;
-  font-weight: 600;
-  gap: 0;
-  position: relative;
-}
-
-.prd-list-prefix-menu__pencil {
-  font-size: 9px;
-  position: absolute;
-  bottom: 0;
-  right: -2px;
-  color: #888;
-}
-
 /* 设置编号值的行内输入 */
 .prd-list-prefix-menu__input-row {
   display: flex;

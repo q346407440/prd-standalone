@@ -78,10 +78,18 @@ function getListTriggerCandidate(editor) {
   return markdownText.replace(/^\\([-*+])$/, '$1');
 }
 
+/**
+ * 將段落內 Fragment 序列化為 Markdown。
+ * 必須包成一層 doc → paragraph 再交給 serializer：若直接 serialize(fragment)，
+ * tiptap-markdown 會對子節點走 nodes.text，不經 renderInline，導致粗體/斜體等 mark 丟失。
+ */
 function serializeMarkdownFragment(editor, fragment) {
   const serializer = editor?.storage?.markdown?.serializer;
-  if (!serializer) return '';
-  return trimTrailingEmptyLines(serializer.serialize(fragment));
+  if (!serializer || !editor?.schema) return '';
+  if (!fragment || fragment.size === 0) return '';
+  const paragraph = editor.schema.nodes.paragraph.create(null, fragment);
+  const doc = editor.schema.topNodeType.create({}, paragraph);
+  return trimTrailingEmptyLines(serializer.serialize(doc));
 }
 
 function buildEnterPayload(editor, prefix) {
@@ -706,7 +714,6 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
           cellPath != null ? 'prd-editable-md--in-cell' : '',
           isPreviewSelected ? 'prd-editable-md--preview-selected' : '',
         ].filter(Boolean).join(' ')}
-        title="点击编辑"
         data-prd-no-block-select
         tabIndex={0}
         onMouseDown={(e) => {

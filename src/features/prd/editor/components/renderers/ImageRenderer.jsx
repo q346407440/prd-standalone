@@ -16,6 +16,8 @@ export function ImageRenderer({
   onDelete,
   isSelected,
   onSelect,
+  /** 用於與 globalSelection 對齊，避免 hover 未選中圖片時打開 block 級操作欄 */
+  selectionKey = 'block',
   initialWidthPx,
   onWidthChange,
   onEnter,
@@ -112,6 +114,7 @@ export function ImageRenderer({
           'prd-image-renderer',
           isSelected ? 'prd-image-renderer--selected' : '',
         ].filter(Boolean).join(' ')}
+        data-prd-img-sel={selectionKey}
         tabIndex={0}
         onMouseDown={(e) => {
           const currentTarget = e.currentTarget;

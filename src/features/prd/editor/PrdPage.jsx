@@ -933,18 +933,27 @@ export function PrdPage() {
 
   const handleDeleteConfirm = useCallback(() => {
     if (!deleteTarget) return;
-    clearAutoCreatedOrderedSeed(deleteTarget);
+    const removedId = deleteTarget;
+    clearAutoCreatedOrderedSeed(removedId);
     setBlocks((prev) => {
-      const idx = prev.findIndex((b) => b.id === deleteTarget);
+      const idx = prev.findIndex((b) => b.id === removedId);
       if (idx < 0) return prev;
-      let next = prev.filter((b) => b.id !== deleteTarget);
+      let next = prev.filter((b) => b.id !== removedId);
       const neighborIdx = Math.min(idx, next.length - 1);
       if (neighborIdx >= 0) next = maybeRenumberMainDocTextListAt(next, neighborIdx);
       return next;
     });
     setDeleteTarget(null);
+    setGlobalSelection((sel) => (sel?.blockId === removedId ? null : sel));
+    clearActionbarState();
+    clearFocusBlockId();
+    closeInsertMenu();
+    setTimeout(() => {
+      const ae = document.activeElement;
+      if (ae instanceof HTMLElement && ae !== document.body) ae.blur();
+    }, 0);
     schedulePersist();
-  }, [clearAutoCreatedOrderedSeed, deleteTarget, schedulePersist]);
+  }, [clearActionbarState, clearAutoCreatedOrderedSeed, clearFocusBlockId, closeInsertMenu, deleteTarget, schedulePersist]);
 
   // 在某 Block 後插入新 Block
   const handleInsertAfter = useCallback((afterId, type) => {
@@ -1032,21 +1041,26 @@ export function PrdPage() {
     schedulePersist();
   }, [schedulePersist]);
 
-  // Backspace 空 Block：刪除並聚焦上一個 block，然後重編號
+  // Backspace 空 Block：刪除並重編號（不自動聚焦上一個 block）
   const handleBackspaceEmpty = useCallback((id) => {
     clearAutoCreatedOrderedSeed(id);
     setBlocks((prev) => {
       const idx = prev.findIndex((b) => b.id === id);
       if (idx <= 0) return prev;
-      const prevBlock = prev[idx - 1];
-      setFocusBlockId(prevBlock.id);
       let next = prev.filter((b) => b.id !== id);
       const neighborIdx = Math.min(idx, next.length - 1);
       if (neighborIdx >= 0) next = maybeRenumberMainDocTextListAt(next, neighborIdx);
       return next;
     });
+    setGlobalSelection((sel) => (sel?.blockId === id ? null : sel));
+    clearActionbarState();
+    clearFocusBlockId();
+    setTimeout(() => {
+      const ae = document.activeElement;
+      if (ae instanceof HTMLElement && ae !== document.body) ae.blur();
+    }, 0);
     schedulePersist();
-  }, [clearAutoCreatedOrderedSeed, schedulePersist]);
+  }, [clearActionbarState, clearAutoCreatedOrderedSeed, clearFocusBlockId, schedulePersist]);
 
   const handleBackspaceMerge = useCallback((id, currentMd) => {
     let targetId = null;
@@ -1264,7 +1278,12 @@ export function PrdPage() {
       emitPrdToast('文档未就绪', { tone: 'warning' });
       return;
     }
-    const line = computePrdMdCursorLineOneBased(list, blockId, cellPath ?? null);
+    // 未保存改動時以序列化結果為準；與磁碟一致時用 lastSavedMd，避免表格格間空行等與 serialize 不一致導致 @行號 偏一行
+    const mdForLine =
+      hasPendingLocalChangesRef.current || persistRunningRef.current
+        ? serializePrd(list)
+        : lastSavedMdRef.current;
+    const line = computePrdMdCursorLineOneBased(list, blockId, cellPath ?? null, mdForLine);
     if (line == null || line < 1) {
       emitPrdToast('暂时无法计算该内容在 MD 中的行号', { tone: 'warning' });
       return;

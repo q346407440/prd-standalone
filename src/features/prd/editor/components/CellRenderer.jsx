@@ -328,12 +328,46 @@ export function CellRenderer({
       onUpdate({ elements: [{ type: 'text', markdown: '' }] });
       return;
     }
+    clearPendingElementActionOpen();
+    clearPendingElementActionClose();
     let next = elements.filter((_, i) => i !== idx);
     const neighborIdx = Math.min(idx, next.length - 1);
     if (neighborIdx >= 0) next = maybeRenumberCellElementsAt(next, neighborIdx);
     onUpdate({ elements: next });
-    setFocusIdx(Math.max(0, idx - 1));
-  }, [elements, onUpdate]);
+    /* 不自動聚焦上一段（與主文刪除 block 行為一致） */
+    if (setGlobalSelection && globalSelection?.blockId === blockId && globalSelection.cellPath != null
+      && globalSelection.cellPath.ri === ri && globalSelection.cellPath.ci === ci) {
+      const eidx = globalSelection.cellPath.idx;
+      if (eidx === idx) {
+        setGlobalSelection(null);
+      } else if (eidx > idx) {
+        setGlobalSelection({
+          ...globalSelection,
+          cellPath: { ...globalSelection.cellPath, idx: eidx - 1 },
+        });
+      }
+    }
+    setActiveElementActionIdx((curr) => {
+      if (curr == null) return null;
+      if (curr === idx) return null;
+      if (curr > idx) return curr - 1;
+      return curr;
+    });
+    setTimeout(() => {
+      const ae = document.activeElement;
+      if (ae instanceof HTMLElement && ae !== document.body) ae.blur();
+    }, 0);
+  }, [
+    blockId,
+    ci,
+    clearPendingElementActionClose,
+    clearPendingElementActionOpen,
+    elements,
+    globalSelection,
+    onUpdate,
+    ri,
+    setGlobalSelection,
+  ]);
 
   const mergeWithPrevElement = useCallback((idx, currentMd) => {
     if (idx <= 0) return;
@@ -409,6 +443,8 @@ export function CellRenderer({
           }}
           onMouseEnter={() => {
             if (element.type === 'text' || !element.type) return;
+            /* 圖片僅在點擊選中後顯示格內操作條，hover 不觸發（與 ImageRenderer 選中態一致） */
+            if (element.type === 'image') return;
             requestElementActionOpen(idx);
           }}
           onMouseLeave={() => {

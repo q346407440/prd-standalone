@@ -50,10 +50,25 @@ export const BlockItem = memo(function BlockItem({
     setShowInsertMenu(null);
   }, [activeInsertMenuOwnerId, insertMenuOwnerId]);
 
-  const openActionbar = () => {
+  const openActionbar = (event) => {
     if (selectionOnOtherBlock) return;
     if (suppressActionbarUntilLeaveRef.current) return;
     if (isTextBlock) return;
+    /* 表格等 block：游標從外側進入「未選中的圖片」時不打開底部操作欄，僅在圖片已選中時與選區聯動 */
+    const t = event?.target;
+    if (t && typeof t.closest === 'function') {
+      const imgRoot = t.closest('.prd-image-renderer[data-prd-img-sel]');
+      if (imgRoot) {
+        const hoveredKey = imgRoot.getAttribute('data-prd-img-sel');
+        const sel = globalSelection;
+        const selectedKey = sel?.type === 'image' && sel.blockId === block.id
+          ? (sel.cellPath != null
+            ? `${sel.cellPath.ri}-${sel.cellPath.ci}-${sel.cellPath.idx}`
+            : 'block')
+          : null;
+        if (selectedKey !== hoveredKey) return;
+      }
+    }
     requestActionbarOpen(block.id);
   };
 
@@ -248,7 +263,7 @@ export const BlockItem = memo(function BlockItem({
         'prd-block-item',
         (activeActionBlockId === block.id || showInsertMenu != null) ? 'prd-block-item--action-active' : '',
       ].filter(Boolean).join(' ')}
-      onMouseEnter={openActionbar}
+      onMouseEnter={(e) => openActionbar(e)}
       onMouseLeave={() => {
         suppressActionbarUntilLeaveRef.current = false;
         // 預覽→編輯 DOM 替換或移向 body 上的格式條時會誤觸 leave；編輯態下保持操作欄常駐

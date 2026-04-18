@@ -53,6 +53,8 @@ const BOARD_HEIGHT_MINDMAP = 520;
 const EMPTY_TEXT_PLACEHOLDER = ' ';
 
 const MAX_LINEAR_BLOCKS_PER_REQUEST = 50;
+// 飞书 docx「创建块」创建 TABLE 时，row_size / column_size 均不得超过 9，否则返回 1770001 invalid param
+const FEISHU_TABLE_CREATE_MAX_DIM = 9;
 const JOB_TTL_MS = 1000 * 60 * 60 * 6;
 const AUTH_STATE_TTL_MS = 1000 * 60 * 10;
 const ACCESS_TOKEN_SKEW_MS = 1000 * 60;
@@ -454,6 +456,36 @@ async function resolveImageSourceBuffer(src, state) {
   };
 }
 
+/**
+ * 从 PNG / JPEG / GIF buffer 读出像素宽高（用于按比例算 height）。
+ * 飞书 PATCH replace_image：若不显式传 width，会取「素材的原始像素宽」当 px，导致小图被压成微缩正方形。
+ */
+function getImageDimensionsFromBuffer(buffer) {
+  if (!buffer || buffer.length < 24) return null;
+  // PNG: 8 字节签名 + IHDR (length=13, type, width@16, height@20)
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+    return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  }
+  // GIF: logical screen width/height @ 6/8 (LE)
+  if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x38) {
+    return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
+  }
+  // JPEG: 扫 SOF0~SOF3 (FF C0~C3)
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let i = 2;
+    while (i < buffer.length - 8) {
+      if (buffer[i] !== 0xff) { i += 1; continue; }
+      const marker = buffer[i + 1];
+      const size = buffer.readUInt16BE(i + 2);
+      if (marker >= 0xc0 && marker <= 0xc3) {
+        return { width: buffer.readUInt16BE(i + 7), height: buffer.readUInt16BE(i + 5) };
+      }
+      i += 2 + size;
+    }
+  }
+  return null;
+}
+
 // ─── 增量同步：签名 & diff ─────────────────────────────────────────────────
 
 function blockSignature(block) {
@@ -783,11 +815,22 @@ function createDescendantTextNodes(markdown, preferredType = BLOCK_TYPE_TEXT) {
     for (const cid of node.children) childIds.add(cid);
   }
 
-  // 平铺输出（飞书 descendant API 需要平铺），标记顶层节点
-  return nodes.map((node) => {
+  // 平铺输出并标记顶层节点。
+  // 飞书 descendant API 要求按 BFS 层级顺序排列（同层节点连续、浅层在前、深层在后），
+  // 否则多层嵌套时（如 bullet→bullet 两层）会返回 1770001 invalid param。
+  // 参考官方示例：table → 所有 table_cell → 所有 cell 的 children。
+  const stamped = nodes.map((node, originalIndex) => {
     const rest = { ...node };
-    delete rest._indentLevel;
     if (childIds.has(rest.block_id)) rest._isChild = true;
+    rest._originalIndex = originalIndex;
+    return rest;
+  });
+  stamped.sort((a, b) => {
+    if (a._indentLevel !== b._indentLevel) return a._indentLevel - b._indentLevel;
+    return a._originalIndex - b._originalIndex;
+  });
+  return stamped.map((node) => {
+    const { _indentLevel: _il, _originalIndex: _oi, ...rest } = node;
     return rest;
   });
 }
@@ -1110,6 +1153,15 @@ async function docxBatchUpdate(state, accessToken, documentId, requests) {
   return payload.data || {};
 }
 
+async function docxGetBlock(state, accessToken, documentId, blockId) {
+  const url = new URL(`${FEISHU_DOCX_BASE_URL}/documents/${encodeURIComponent(documentId)}/blocks/${encodeURIComponent(blockId)}`);
+  url.searchParams.set('document_revision_id', '-1');
+  const payload = await state.docxLimiter(() => requestFeishuJson(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }));
+  return payload.data?.block || payload.data || {};
+}
+
 async function docxPatchBlock(state, accessToken, documentId, blockId, patchBody) {
   const url = new URL(`${FEISHU_DOCX_BASE_URL}/documents/${encodeURIComponent(documentId)}/blocks/${encodeURIComponent(blockId)}`);
   url.searchParams.set('document_revision_id', '-1');
@@ -1138,14 +1190,19 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
   if (rowCount <= 0 || columnCount <= 0) {
     throw new Error('表格缺少列定义，无法同步');
   }
+  if (columnCount > FEISHU_TABLE_CREATE_MAX_DIM) {
+    throw new Error(`飞书表格列数上限为 ${FEISHU_TABLE_CREATE_MAX_DIM}，当前为 ${columnCount}，请拆分 PRD 表格`);
+  }
 
   const colWidth = Math.floor(TABLE_PAGE_WIDTH_WIDER / columnCount);
   const columnWidthArray = Array.from({ length: columnCount }, () => colWidth);
+  // 飞书创建块时 row_size 最多 9；超过则先按 9 行建骨架，再用 patch:insert_table_row 逐行追加
+  const initialRowSize = Math.min(rowCount, FEISHU_TABLE_CREATE_MAX_DIM);
   const tableResult = await docxCreateChildren(state, accessToken, documentId, documentId, [{
     block_type: BLOCK_TYPE_TABLE,
     table: {
       property: {
-        row_size: rowCount,
+        row_size: initialRowSize,
         column_size: columnCount,
         column_width: columnWidthArray,
         header_row: true,
@@ -1153,8 +1210,27 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
     },
   }], insertIndex);
 
-  const tableBlock = (tableResult.children || []).find((item) => item.block_type === BLOCK_TYPE_TABLE);
-  const cellIds = Array.isArray(tableBlock?.children) ? tableBlock.children : [];
+  let tableBlock = (tableResult.children || []).find((item) => item.block_type === BLOCK_TYPE_TABLE);
+  if (!tableBlock?.block_id) {
+    throw new Error('创建表格失败：未返回 table block_id');
+  }
+
+  // 追加剩余行：每次 patch 末尾插入 1 行（row_index: -1）
+  const extraRows = rowCount - initialRowSize;
+  for (let i = 0; i < extraRows; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await docxPatchBlock(state, accessToken, documentId, tableBlock.block_id, {
+      insert_table_row: { row_index: -1 },
+    });
+  }
+
+  // 追加完成后重新读取 cell_ids（按 row-major 顺序，包含所有行 × 列的 cell）
+  let cellIds = Array.isArray(tableBlock?.children) ? tableBlock.children : [];
+  if (extraRows > 0) {
+    const refreshed = await docxGetBlock(state, accessToken, documentId, tableBlock.block_id);
+    tableBlock = refreshed || tableBlock;
+    cellIds = Array.isArray(tableBlock?.children) ? tableBlock.children : [];
+  }
 
   if (cellIds.length !== rowCount * columnCount) {
     throw new Error(`表格单元格数量不匹配：期望 ${rowCount * columnCount}，实际 ${cellIds.length}`);
@@ -1337,8 +1413,18 @@ async function uploadAndBindImage(state, accessToken, documentId, imageBlockId, 
   const fileToken = payload.data?.file_token;
   if (!fileToken) throw new Error(`图片上传失败：${src}`);
 
+  // 显式传 width / height：否则飞书会用素材原始像素宽当 px 显示，宽度异常的图（如 261px、2504px）会被压成微缩正方形
+  const dims = getImageDimensionsFromBuffer(resolved.buffer);
+  const targetWidth = TABLE_PAGE_WIDTH_WIDER;
+  const targetHeight = dims && dims.width > 0
+    ? Math.max(1, Math.round((targetWidth * dims.height) / dims.width))
+    : Math.max(1, Math.round(targetWidth * 0.75));
   await docxPatchBlock(state, accessToken, documentId, imageBlockId, {
-    replace_image: { token: fileToken },
+    replace_image: {
+      token: fileToken,
+      width: targetWidth,
+      height: targetHeight,
+    },
   });
   return fileToken;
 }

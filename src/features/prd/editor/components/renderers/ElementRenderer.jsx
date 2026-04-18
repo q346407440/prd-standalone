@@ -81,6 +81,9 @@ export const ElementRenderer = memo(function ElementRenderer({
   }
 
   if (element.type === 'image') {
+    const imageSelectionKey = cellPath != null
+      ? `${cellPath.ri}-${cellPath.ci}-${cellPath.idx}`
+      : 'block';
     return (
       <ImageRenderer
         element={element}
@@ -91,6 +94,7 @@ export const ElementRenderer = memo(function ElementRenderer({
         }}
         isSelected={isImageSelected}
         onSelect={() => setGlobalSelection?.({ type: 'image', blockId, cellPath })}
+        selectionKey={imageSelectionKey}
         initialWidthPx={imageMeta?.[element.src] ?? null}
         onWidthChange={(w) => onImageWidthChange?.(element.src, w)}
         onEnter={onEnter}
