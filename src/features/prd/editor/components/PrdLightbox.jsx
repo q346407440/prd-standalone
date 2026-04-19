@@ -18,6 +18,7 @@ export function PrdLightbox({ imageSrc, htmlContent, onClose }) {
   const dragMovedRef = useRef(false);
   const contentRef = useRef(null);
   const fitScaleRef = useRef(1);
+  const allowFitUpscale = !imageSrc && Boolean(htmlContent);
 
   useEffect(() => {
     const el = contentRef.current;
@@ -40,13 +41,17 @@ export function PrdLightbox({ imageSrc, htmlContent, onClose }) {
       const padY = 120;
       const viewW = window.innerWidth - padX * 2;
       const viewH = window.innerHeight - padY * 2;
-      const fit = Math.min(viewW / rect.width, viewH / rect.height, 1);
+      const fit = Math.min(
+        viewW / rect.width,
+        viewH / rect.height,
+        allowFitUpscale ? LIGHTBOX_ZOOM_MAX : 1,
+      );
       const rounded = Math.round(fit * 100) / 100;
       fitScaleRef.current = rounded;
       setScale(rounded);
     });
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [allowFitUpscale]);
 
   const handleWheel = useCallback((e) => {
     e.preventDefault();

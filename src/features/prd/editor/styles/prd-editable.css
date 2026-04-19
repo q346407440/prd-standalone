@@ -402,6 +402,27 @@
   border-bottom-color: #1677ff;
 }
 
+/* ─── 章节号锚点（如 **2.1.5** 自动识别成可点跳转） ───────────────────────── */
+
+/* 候选元素默认无任何视觉提示——保持普通加粗，避免误识别时的可点幻觉。
+   能 resolve 到目标的由 PrdPage 在 useLayoutEffect 中加上 .prd-chapter-link。 */
+strong[data-prd-chapter-candidate] {
+  /* 占位规则；不改默认外观。 */
+}
+
+strong.prd-chapter-link {
+  cursor: pointer;
+  border-bottom: 1px dashed rgba(22, 119, 255, 0.45);
+  transition: border-bottom-color 0.15s, background-color 0.15s;
+  padding-bottom: 1px;
+}
+
+strong.prd-chapter-link:hover {
+  border-bottom-style: solid;
+  border-bottom-color: #1677ff;
+  background-color: rgba(22, 119, 255, 0.06);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    Tiptap 富文本編輯器
    ═══════════════════════════════════════════════════════════════════════════ */

@@ -259,6 +259,7 @@ export const BlockItem = memo(function BlockItem({
         rootRef.current = node;
         registerBlockRef?.(block.id, node);
       }}
+      data-prd-block-id={block.id}
       className={[
         'prd-block-item',
         (activeActionBlockId === block.id || showInsertMenu != null) ? 'prd-block-item--action-active' : '',

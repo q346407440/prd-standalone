@@ -1,11 +1,32 @@
 import markdownit from 'markdown-it';
 import { parseListPrefix } from './prd-list-utils.js';
+import { extractStrongChapterRef } from './prd-chapter-anchor.js';
 
 const md = markdownit({ html: false, linkify: false, breaks: false });
 md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   const token = tokens[idx];
   const href = token.attrGet('href') || '';
   return `<a href="${href}" class="prd-md-link" target="_blank" rel="noreferrer noopener">`;
+};
+
+// 章节号锚点种子：把形如 `**2.1.5**` 的纯多段章节号加粗包裹在 strong 上加 data 属性。
+// 这里只「埋种子」，是否真正能跳由 React 层根据 chapterIndex 决定（见 PrdPage 里的扫描）。
+// 视觉默认零变化；命中目标时由 PrdPage 给元素加 .prd-chapter-link class 启用可点样式。
+md.renderer.rules.strong_open = (tokens, idx) => {
+  const next = tokens[idx + 1];
+  const close = tokens[idx + 2];
+  if (
+    next
+    && next.type === 'text'
+    && close
+    && close.type === 'strong_close'
+  ) {
+    const chapter = extractStrongChapterRef(next.content);
+    if (chapter) {
+      return `<strong data-prd-chapter-candidate="${chapter}">`;
+    }
+  }
+  return '<strong>';
 };
 md.renderer.rules.image = (tokens, idx) => {
   const token = tokens[idx];

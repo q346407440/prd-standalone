@@ -9,6 +9,7 @@ import './styles/prd-overview.css';
 import './styles/prd-page-edit.css';
 import { parsePrd } from './prd-parser';
 import { serializePrd } from './prd-writer';
+import { buildChapterIndex } from './prd-chapter-anchor.js';
 import {
   computePrdMdCursorLineOneBased,
   formatPrdCursorMdRef,
@@ -1213,6 +1214,95 @@ export function PrdPage() {
     node.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
   }, []);
 
+  // 章节号锚点：根据当前 blocks 即时建索引；blocks 变化（含 heading 文本编辑）自动重算。
+  const chapterIndex = useMemo(() => buildChapterIndex(blocks || []), [blocks]);
+
+  // 扫描非编辑态预览里的 `**2.1.5**` 候选 strong：能 resolve 到目标的挂上 prd-chapter-link
+  // class 启用可点样式；resolve 失败的清掉 class，保持普通加粗（按用户选定的兜底策略）。
+  // 注意：blocks 不变但 DOM 会变的场景必须覆盖——例如 paragraph 进入编辑态时 TiptapPreview 卸载、
+  // 退出编辑态时重新挂载的 strong 候选节点是「全新 DOM 节点」，没有 class；若只在 blocks 变化时
+  // 重扫，这些新节点会永远拿不到 prd-chapter-link，下划线与跳转就丢了。下方 MutationObserver
+  // 兜住这种 DOM 重挂载的情况。
+  const scanChapterCandidates = useCallback(() => {
+    const container = contentScrollRef.current;
+    if (!container) return;
+    const candidates = container.querySelectorAll('strong[data-prd-chapter-candidate]');
+    candidates.forEach((node) => {
+      const chapter = node.getAttribute('data-prd-chapter-candidate');
+      const ownerBlock = node.closest('[data-prd-block-id]');
+      const contextBlockId = ownerBlock?.getAttribute('data-prd-block-id') ?? null;
+      const targetBlockId = chapterIndex.resolve(chapter, contextBlockId);
+      if (targetBlockId) {
+        node.classList.add('prd-chapter-link');
+        node.setAttribute('data-prd-chapter-target', targetBlockId);
+      } else {
+        node.classList.remove('prd-chapter-link');
+        node.removeAttribute('data-prd-chapter-target');
+      }
+    });
+  }, [chapterIndex]);
+
+  // 用 useLayoutEffect 是为了在用户看到首屏前就完成可点状态判定，避免视觉抖动。
+  useLayoutEffect(() => {
+    scanChapterCandidates();
+  }, [blocks, scanChapterCandidates]);
+
+  // DOM 重挂载兜底：监听 contentScrollRef 容器内的 childList 变化（编辑态切换会卸载/重挂载
+  // TiptapPreview，从而插入全新的 strong[data-prd-chapter-candidate] 节点）。只观察 childList，
+  // 不观察 attributes——我们自己加 class 也是属性变化，避免触发死循环。
+  useEffect(() => {
+    const container = contentScrollRef.current;
+    if (!container || typeof MutationObserver === 'undefined') return undefined;
+    let scheduled = 0;
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = requestAnimationFrame(() => {
+        scheduled = 0;
+        scanChapterCandidates();
+      });
+    };
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.nodeType !== 1) continue;
+          if (
+            node.matches?.('strong[data-prd-chapter-candidate]')
+            || node.querySelector?.('strong[data-prd-chapter-candidate]')
+          ) {
+            schedule();
+            return;
+          }
+        }
+      }
+    });
+    observer.observe(container, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      if (scheduled) cancelAnimationFrame(scheduled);
+    };
+  }, [scanChapterCandidates]);
+
+  const handleContentScrollClick = useCallback((e) => {
+    const link = e.target.closest('strong.prd-chapter-link[data-prd-chapter-target]');
+    if (!link) return;
+    const targetBlockId = link.getAttribute('data-prd-chapter-target');
+    const node = targetBlockId ? blockRefs.current[targetBlockId] : null;
+    if (!node) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pendingTocTargetRef.current = {
+      id: targetBlockId,
+      expiresAt: (typeof performance !== 'undefined' ? performance.now() : Date.now()) + 1400,
+    };
+    setActiveTocId(targetBlockId);
+    node.scrollIntoView({ behavior: 'smooth', block: 'start', inline: 'nearest' });
+    recordPrdInteraction('chapter-anchor-jump', {
+      from: link.closest('[data-prd-block-id]')?.getAttribute('data-prd-block-id') ?? null,
+      to: targetBlockId,
+      chapter: link.getAttribute('data-prd-chapter-candidate') || '',
+    });
+  }, []);
+
   const handleExportStandalone = useCallback(async ({ currentTitle = '', archiveName = '' } = {}) => {
     if (!blocks?.length || isExporting) return;
     setIsExporting(true);
@@ -1560,10 +1650,17 @@ export function PrdPage() {
               ref={contentScrollRef}
               className="prd-page__content-scroll"
               onMouseDown={(e) => {
+                // 章节锚点链接：mouseDown 阶段先吞掉，避免触发段落 → 编辑态切换
+                if (e.target.closest('strong.prd-chapter-link[data-prd-chapter-target]')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
                 // 點擊 block 內容區域（有 data-prd-no-block-select）不清除
                 if (e.defaultPrevented || e.target.closest('[data-prd-no-block-select]')) return;
                 clearUiSelection();
               }}
+              onClick={handleContentScrollClick}
             >
               <BlockCanvas
                 blocks={blocks}
