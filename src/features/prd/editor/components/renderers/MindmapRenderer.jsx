@@ -75,7 +75,7 @@ export async function renderMindmapSvgForExport(code) {
   } catch (error) {
     return { svgHtml: '', error: String(error?.message || error) };
   } finally {
-    try { markmap?.destroy?.(); } catch (_) { /* noop */ }
+    try { markmap?.destroy?.(); } catch { /* noop */ }
     host?.remove();
   }
 }
@@ -106,12 +106,19 @@ export function MindmapRenderer({
   const viewMenuRef = useRef(null);
   const renderTaskRef = useRef(0);
 
+  const destroyMarkmap = useCallback(() => {
+    if (!markmapRef.current) return;
+    try { markmapRef.current.destroy?.(); } catch { /* noop */ }
+    markmapRef.current = null;
+  }, []);
+
   useEffect(() => { setLocalViewMode(viewMode); }, [viewMode]);
   useEffect(() => { setLocalWidthPx(widthPx); }, [widthPx]);
 
   useEffect(() => {
     if (localViewMode !== 'chart') {
       setRendering(false);
+      destroyMarkmap();
       return;
     }
     let currentCode = (code || '').trim();
@@ -128,10 +135,7 @@ export function MindmapRenderer({
       setSvgHtml('');
       setRenderError('思维导图代码为空');
       setRendering(false);
-      if (markmapRef.current) {
-        try { markmapRef.current.destroy?.(); } catch (_) { /* noop */ }
-        markmapRef.current = null;
-      }
+      destroyMarkmap();
       return;
     }
     let cancelled = false;
@@ -184,16 +188,13 @@ export function MindmapRenderer({
       }
     });
     return () => { cancelled = true; };
-  }, [code, localViewMode, onCodeChange]);
+  }, [code, localViewMode, onCodeChange, destroyMarkmap]);
 
   useEffect(() => {
     return () => {
-      if (markmapRef.current) {
-        try { markmapRef.current.destroy?.(); } catch (_) { /* noop */ }
-        markmapRef.current = null;
-      }
+      destroyMarkmap();
     };
-  }, []);
+  }, [destroyMarkmap]);
 
   useEffect(() => {
     if (!showViewMenu) return;
@@ -364,6 +365,7 @@ export function MindmapRenderer({
                 style={{
                   width: '100%',
                   minHeight: 200,
+                  pointerEvents: 'none',
                   visibility: svgHtml || rendering ? 'visible' : 'hidden',
                 }}
               />
