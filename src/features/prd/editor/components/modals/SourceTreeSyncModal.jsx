@@ -53,7 +53,7 @@ export function SourceTreeSyncModal({
         if (prev && prev.endsWith(handle.name)) return prev;
         return prev ? `${prev.replace(/\/+$/, '')}/${handle.name}` : handle.name;
       });
-      setTargetDirError('请补全为绝对路径（浏览器无法直接拿到目录的绝对路径）');
+      setTargetDirError('浏览器只能拿到目录名；请在 mac 的 Finder 中选中文件夹后按 Option + Command + C，复制完整路径并粘贴到这里');
     } catch (e) {
       if (e?.name === 'AbortError') return;
       setTargetDirError(e?.message || '选择目录失败');
@@ -149,13 +149,13 @@ export function SourceTreeSyncModal({
                 style={{ flex: '0 0 auto', whiteSpace: 'nowrap' }}
                 onClick={handlePickDirectory}
                 disabled={syncing}
-                title="浏览器只能取到目录名，选完后需要你把绝对路径补全"
+                title="浏览器只能取到目录名；如需完整路径，可在 Finder 里按 Option + Command + C 复制"
               >
                 选择目录
               </button>
             ) : null}
           </div>
-          <div className="prd-modal__hint">该目录必须是已 clone 的 git 仓库（或其父目录）。{supportsPicker ? '「选择目录」仅辅助回填目录名，仍需人工补全绝对路径前缀。' : ''}</div>
+          <div className="prd-modal__hint">该目录必须是已 clone 的 git 仓库（或其父目录）。{supportsPicker ? '「选择目录」只能辅助回填目录名；如需完整路径，可在 mac 的 Finder 中选中文件夹后按 Option + Command + C 复制路径，再粘贴到这里。' : ''}</div>
           {targetDirError ? <div className="prd-modal__error">{targetDirError}</div> : null}
         </div>
         <div className="prd-modal__field">
