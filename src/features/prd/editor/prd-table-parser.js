@@ -1,9 +1,9 @@
 import { splitMarkdownByInlineImages } from './prd-inline-image-split.js';
 import { parseListPrefix } from './prd-list-utils.js';
+import { createImageElement, parseMarkdownImage } from './prd-image-markdown.js';
 
 // ─── 常量 ────────────────────────────────────────────────────────────────────
 
-const PURE_IMAGE_RE = /^!\[([^\]]*)\]\(([^)]+)\)$/;
 const CELL_MERMAID_RE = /^:::mermaid:::([\s\S]*?):::end-mermaid:::$/;
 const CELL_MINDMAP_RE = /^:::mindmap:::([\s\S]*?):::end-mindmap:::$/;
 const BARE_LIST_PREFIX_RE = /^(\s*)([-*+]|\d+\.|[a-z]+\.)$/;
@@ -23,15 +23,15 @@ export function parseSingleElement(s) {
   const mindmapMatch = s.match(CELL_MINDMAP_RE);
   if (mindmapMatch) return { type: 'mindmap', code: mindmapMatch[1].trim() };
   const normalized = normalizeBareListPrefix(s);
-  const imgMatch = normalized.match(PURE_IMAGE_RE);
-  if (imgMatch) return { type: 'image', src: imgMatch[2].trim() };
+  const image = parseMarkdownImage(normalized);
+  if (image) return createImageElement(image.src, image.alt);
   /** 有序/無序列表行且正文僅一張行內圖：與飛書能力對齊，收斂為獨立 image 元素（不再保留列表前綴）。 */
   const listParsed = parseListPrefix(normalized.trimEnd());
   if (listParsed) {
     const bodyOnly = (listParsed.body || '').trim();
     if (bodyOnly) {
-      const bodyImg = bodyOnly.match(PURE_IMAGE_RE);
-      if (bodyImg) return { type: 'image', src: bodyImg[2].trim() };
+      const bodyImg = parseMarkdownImage(bodyOnly);
+      if (bodyImg) return createImageElement(bodyImg.src, bodyImg.alt);
     }
   }
   return { type: 'text', markdown: normalized };

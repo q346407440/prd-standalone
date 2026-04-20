@@ -161,7 +161,7 @@ function renderDiagramHtml({
   `;
 }
 
-function buildImageHtml(src, widthPx, assetPathMap, activeSlug = '') {
+function buildImageHtml(src, widthPx, assetPathMap, activeSlug = '', alt = 'PRD 图片') {
   if (!src) {
     return '<div class="prd-export-image__error">图片地址为空</div>';
   }
@@ -177,7 +177,7 @@ function buildImageHtml(src, widthPx, assetPathMap, activeSlug = '') {
         <img
           class="prd-image-renderer__img prd-export-zoomable-image"
           src="${escapeAttribute(previewSrc)}"
-          alt="PRD 图片"
+          alt="${escapeAttribute(alt || 'PRD 图片')}"
           draggable="false"
         />
       </div>
@@ -189,7 +189,7 @@ export async function buildElementHtml(element, context, diagramPlacement = null
   if (!element) return '';
   if (element.type === 'image') {
     const widthPx = context.imageMeta?.[element.src] ?? null;
-    return buildImageHtml(element.src, widthPx, context.assetPathMap, context.activeSlug);
+    return buildImageHtml(element.src, widthPx, context.assetPathMap, context.activeSlug, element.alt);
   }
   if (element.type === 'mermaid') {
     const placement = diagramPlacement && (diagramPlacement.kind === 'standalone' || diagramPlacement.kind === 'table')

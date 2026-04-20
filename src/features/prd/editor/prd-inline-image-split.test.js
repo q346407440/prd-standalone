@@ -11,25 +11,25 @@ describe('splitMarkdownByInlineImages', () => {
   });
 
   it('整段僅圖片為單一 image', () => {
-    expect(splitMarkdownByInlineImages('![](/prd/a.png)')).toEqual([
-      { type: 'image', src: '/prd/a.png' },
+    expect(splitMarkdownByInlineImages('![配图说明](/prd/a.png)')).toEqual([
+      { type: 'image', src: '/prd/a.png', alt: '配图说明' },
     ]);
   });
 
   it('前文 + 圖 + 後文', () => {
-    expect(splitMarkdownByInlineImages('前![](/x.png)後')).toEqual([
+    expect(splitMarkdownByInlineImages('前![图注](/x.png)後')).toEqual([
       { type: 'text', markdown: '前' },
-      { type: 'image', src: '/x.png' },
+      { type: 'image', src: '/x.png', alt: '图注' },
       { type: 'text', markdown: '後' },
     ]);
   });
 
   it('同段兩張圖依序拆分', () => {
-    expect(splitMarkdownByInlineImages('a![](/1.png)b![](/2.png)c')).toEqual([
+    expect(splitMarkdownByInlineImages('a![一号图](/1.png)b![二号图](/2.png)c')).toEqual([
       { type: 'text', markdown: 'a' },
-      { type: 'image', src: '/1.png' },
+      { type: 'image', src: '/1.png', alt: '一号图' },
       { type: 'text', markdown: 'b' },
-      { type: 'image', src: '/2.png' },
+      { type: 'image', src: '/2.png', alt: '二号图' },
       { type: 'text', markdown: 'c' },
     ]);
   });
@@ -61,10 +61,10 @@ describe('splitMarkdownByInlineImages', () => {
 
 describe('cellFromMarkdownString', () => {
   it('包成 elements 陣列', () => {
-    expect(cellFromMarkdownString('x![](/z.png)y')).toEqual({
+    expect(cellFromMarkdownString('x![说明](/z.png)y')).toEqual({
       elements: [
         { type: 'text', markdown: 'x' },
-        { type: 'image', src: '/z.png' },
+        { type: 'image', src: '/z.png', alt: '说明' },
         { type: 'text', markdown: 'y' },
       ],
     });

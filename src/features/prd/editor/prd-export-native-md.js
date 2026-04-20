@@ -11,6 +11,8 @@
  *    其中 mindmap 会从 PRD 内部缩进列表转换为 Mermaid 的 mindmap 语法。
  */
 
+import { serializeMarkdownImage } from './prd-image-markdown.js';
+
 const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.|[a-z]+\.)\s/;
 const FLOWCHART_WITH_BR_RE = /^\s*(?:flowchart|graph)\b/m;
 
@@ -46,7 +48,7 @@ function escapeCellInline(text) {
 function serializeCellElementForGfm(element) {
   if (!element) return '';
   if (element.type === 'mermaid' || element.type === 'mindmap') return '';
-  if (element.type === 'image') return `![](${element.src})`;
+  if (element.type === 'image') return serializeMarkdownImage(element.src, element.alt);
   return element.markdown || '';
 }
 
@@ -63,7 +65,7 @@ function mergeCellLinesForGfm(elements) {
     if (el.type === 'mermaid' || el.type === 'mindmap') { i++; continue; }
 
     if (el.type === 'image') {
-      const parts = [`![](${el.src})`];
+      const parts = [serializeCellElementForGfm(el)];
       i++;
       while (i < elements.length && elements[i]?.type === 'text' && isInlineSuffix(elements[i].markdown)) {
         parts.push(elements[i].markdown);
@@ -79,7 +81,7 @@ function mergeCellLinesForGfm(elements) {
     const parts = [md];
     i++;
     while (i < elements.length && elements[i]?.type === 'image') {
-      parts.push(`![](${elements[i].src})`);
+      parts.push(serializeCellElementForGfm(elements[i]));
       i++;
       while (i < elements.length && elements[i]?.type === 'text' && isInlineSuffix(elements[i].markdown)) {
         parts.push(elements[i].markdown);
@@ -137,7 +139,7 @@ function shouldQuoteFlowchartLabel(label) {
   const text = String(label || '').trim();
   if (!text) return false;
   if (/^["'`].*["'`]$/.test(text)) return false;
-  return /<br\s*\/?>/i.test(text) || /[^\x00-\x7F]/.test(text);
+  return /<br\s*\/?>/i.test(text) || /[^\x20-\x7E]/.test(text);
 }
 
 function escapeFlowchartLabel(label) {
@@ -157,7 +159,7 @@ function quoteFlowchartNodeLabels(line) {
       render: (prefix, nodeId, label) => `${prefix}${nodeId}["${escapeFlowchartLabel(label)}"]`,
     },
     {
-      pattern: /(^|[^A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*)\{([^\}\n]+)\}/g,
+      pattern: /(^|[^A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*)\{([^}\n]+)\}/g,
       render: (prefix, nodeId, label) => `${prefix}${nodeId}{"${escapeFlowchartLabel(label)}"}`,
     },
   ];
@@ -233,7 +235,7 @@ function serializeBlockToNativeMd(block) {
   }
   switch (type) {
     case 'paragraph': {
-      if (content?.type === 'image') return `![](${content.src})`;
+      if (content?.type === 'image') return serializeMarkdownImage(content.src, content.alt);
       return content?.markdown || '';
     }
     case 'divider':

@@ -188,7 +188,7 @@ export function ImageRenderer({
             <img
               ref={imgRef}
               src={imgSrc}
-              alt="图片"
+              alt={element.alt || '图片'}
               className="prd-image-renderer__img"
               style={{ ...imgStyle, ...(imgLoaded ? {} : { width: 0, height: 0, position: 'absolute', opacity: 0 }) }}
               draggable={false}

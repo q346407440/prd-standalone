@@ -5,7 +5,7 @@
  *
  * Block.content 為 Element：
  *   { type: 'text', markdown }
- *   { type: 'image', src }
+ *   { type: 'image', src, alt? }
  *   { type: 'divider' }
  *   { type: 'table', headers, rows: CellElement[][] }
  *   { type: 'mermaid', code }
@@ -14,11 +14,13 @@
  * CellElement：{ element: TextElement | ImageElement | MermaidElement | MindmapElement }
  */
 
+import { serializeMarkdownImage } from './prd-image-markdown.js';
+
 // ─── Element → 字串（GFM 舊格式，供離線匯出和飛書使用）──────────────────────
 
 function serializeOneElementGfm(element) {
   if (!element) return '';
-  if (element.type === 'image') return `![](${element.src})`;
+  if (element.type === 'image') return serializeMarkdownImage(element.src, element.alt);
   if (element.type === 'mermaid') return `:::mermaid:::${element.code || ''}:::end-mermaid:::`;
   if (element.type === 'mindmap') return `:::mindmap:::${element.code || ''}:::end-mindmap:::`;
   return element.markdown || '';
@@ -145,7 +147,7 @@ function mergeInlineImageFragmentParts(elements) {
     }
 
     if (el.type === 'image') {
-      const parts = [{ idx: i, str: `![](${el.src})` }];
+      const parts = [{ idx: i, str: serializeMarkdownImage(el.src, el.alt) }];
       i++;
       while (i < elements.length && elements[i]?.type === 'text' && isInlineSuffix(elements[i].markdown)) {
         parts.push({ idx: i, str: elements[i].markdown });
@@ -161,7 +163,7 @@ function mergeInlineImageFragmentParts(elements) {
     const parts = [{ idx: i, str: md }];
     i++;
     while (i < elements.length && elements[i]?.type === 'image') {
-      parts.push({ idx: i, str: `![](${elements[i].src})` });
+      parts.push({ idx: i, str: serializeMarkdownImage(elements[i].src, elements[i].alt) });
       i++;
       while (i < elements.length && elements[i]?.type === 'text' && isInlineSuffix(elements[i].markdown)) {
         parts.push({ idx: i, str: elements[i].markdown });
@@ -248,7 +250,7 @@ function serializeBlock(block) {
     case 'paragraph': {
       const parts = [`<!-- block:${type} -->`];
       if (content.type === 'image') {
-        parts.push(`![](${content.src})`);
+        parts.push(serializeMarkdownImage(content.src, content.alt));
       } else {
         parts.push(content.markdown || '');
       }
@@ -335,7 +337,7 @@ function serializeBlockAsGfm(block) {
   switch (type) {
     case 'paragraph': {
       if (content.type === 'image') {
-        parts.push(`![](${content.src})`);
+        parts.push(serializeMarkdownImage(content.src, content.alt));
       } else {
         parts.push(content.markdown || '');
       }

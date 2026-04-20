@@ -11,23 +11,23 @@
  * BlockType 及其 content（Element）：
  *   h1 / ... / h7     → { type: 'text', markdown: string }
  *   paragraph       → { type: 'text', markdown: string }
- *                      | { type: 'image', src: string }
+ *                      | { type: 'image', src: string, alt?: string }
  *   table           → { type: 'table', headers: string[], rows: CellElement[][] }
  *   divider         → { type: 'divider' }
  *   mermaid         → { type: 'mermaid', code: string }
  *   mindmap         → { type: 'mindmap', code: string }
  *
  * CellElement：
- *   { element: { type: 'text', markdown: string } | { type: 'image', src: string } | { type: 'mermaid', code: string } | { type: 'mindmap', code: string } }
+ *   { element: { type: 'text', markdown: string } | { type: 'image', src: string, alt?: string } | { type: 'mermaid', code: string } | { type: 'mindmap', code: string } }
  */
 
 import {
   parseGfmTable,
   parseCellFormatTable,
   isCellFormat,
-  parseTableBlockMeta,
 } from './prd-table-parser.js';
 import { migrateFromLegacy } from './prd-legacy-migration.js';
+import { createImageElement, parseMarkdownImage } from './prd-image-markdown.js';
 
 // ─── 常量 ────────────────────────────────────────────────────────────────────
 
@@ -42,7 +42,6 @@ const SECTION_MARKERS = {
   end: '<!-- section:end -->',
 };
 
-const PURE_IMAGE_RE = /^!\[([^\]]*)\]\(([^)]+)\)$/;
 const MERMAID_FENCE_RE = /^```mermaid\s*\n([\s\S]*?)```\s*$/;
 const BARE_LIST_PREFIX_RE = /^(\s*)([-*+]|\d+\.|[a-z]+\.)$/;
 
@@ -150,9 +149,9 @@ function parseBlockContent(type, raw, meta) {
   switch (type) {
     case 'paragraph': {
       const normalizedText = normalizeBareListPrefix(text);
-      const imgMatch = normalizedText.match(PURE_IMAGE_RE);
-      if (imgMatch) {
-        return { id: genId(), type: 'paragraph', content: { type: 'image', src: imgMatch[2] } };
+      const image = parseMarkdownImage(normalizedText);
+      if (image) {
+        return { id: genId(), type: 'paragraph', content: createImageElement(image.src, image.alt) };
       }
       return { id: genId(), type: 'paragraph', content: { type: 'text', markdown: normalizedText } };
     }

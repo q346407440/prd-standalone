@@ -9,6 +9,7 @@
  */
 
 import { parseListPrefix } from './prd-list-utils.js';
+import { createImageElement } from './prd-image-markdown.js';
 
 const INLINE_IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
@@ -19,7 +20,7 @@ function isIgnorableBetweenImages(s) {
 
 /**
  * @param {string} markdown
- * @returns {Array<{ type: 'text', markdown: string } | { type: 'image', src: string }>}
+ * @returns {Array<{ type: 'text', markdown: string } | { type: 'image', src: string, alt?: string }>}
  */
 export function splitMarkdownByInlineImages(markdown) {
   const s = String(markdown ?? '');
@@ -46,7 +47,7 @@ export function splitMarkdownByInlineImages(markdown) {
         out.push({ type: 'text', markdown: before });
       }
     }
-    out.push({ type: 'image', src: String(m[2] ?? '').trim() });
+    out.push(createImageElement(m[2], m[1]));
     lastIndex = m.index + m[0].length;
   }
   if (lastIndex < s.length) {
@@ -64,7 +65,7 @@ export function splitMarkdownByInlineImages(markdown) {
  * 與 parseCellElement 中行內圖拆分規則一致。
  *
  * @param {string} s
- * @returns {{ elements: Array<{ type: 'text', markdown: string } | { type: 'image', src: string }> }}
+ * @returns {{ elements: Array<{ type: 'text', markdown: string } | { type: 'image', src: string, alt?: string }> }}
  */
 export function cellFromMarkdownString(s) {
   return { elements: splitMarkdownByInlineImages(String(s ?? '')) };
