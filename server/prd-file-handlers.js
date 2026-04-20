@@ -534,6 +534,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
     /**
      * POST /__prd__/backup-doc?slug=doc-001
      * 将 pages/<slug>/ 镜像到 pages-backup/<slug>/s0|s1|s2（三槽轮替：优先补空槽，三槽都有后覆盖最旧）
+     * 只备三件套等文本文件，**跳过 assets/ 子目录**——素材是实体图，出错不会丢失，无需冗余备份占盘。
      */
     backupDoc(req, res) {
       try {
@@ -578,7 +579,15 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
           return res.end(JSON.stringify({ ok: false, error: 'backup slot path escape' }));
         }
         fs.rmSync(resolvedSlot, { recursive: true, force: true });
-        fs.cpSync(resolvedSrc, resolvedSlot, { recursive: true });
+        const assetsDirToSkip = path.join(resolvedSrc, 'assets');
+        fs.cpSync(resolvedSrc, resolvedSlot, {
+          recursive: true,
+          filter: (srcPath) => {
+            if (srcPath === assetsDirToSkip) return false;
+            if (srcPath.startsWith(assetsDirToSkip + path.sep)) return false;
+            return true;
+          },
+        });
         const nextAt = beforeMeta.slice(0, PRD_BACKUP_SLOTS.length);
         nextAt[slotIndex] = Date.now();
         prdWriteBackupRotateMeta(resolvedDestParent, nextAt);
