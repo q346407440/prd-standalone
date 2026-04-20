@@ -26,7 +26,7 @@ export async function fetchPrdMd(mdPath) {
   return res.text();
 }
 
-/** 将 pages/<slug>/ 镜像到 pages-backup/<slug>/s0|s1（双槽轮替覆写较旧槽） */
+/** 将 pages/<slug>/ 镜像到 pages-backup/<slug>/s0|s1|s2（三槽轮替覆写最旧槽） */
 export async function backupPrdDoc(slug) {
   const res = await fetch(`${BACKUP_DOC_API}${slugToApiSuffix(slug)}`, { method: 'POST' });
   const data = await res.json().catch(() => ({}));
@@ -36,7 +36,7 @@ export async function backupPrdDoc(slug) {
   return data;
 }
 
-/** GET：pages-backup/<slug>/ 根路径及 s0、s1 槽位（不触发拷贝） */
+/** GET：pages-backup/<slug>/ 根路径及 s0、s1、s2 槽位（不触发拷贝） */
 export async function fetchBackupDocDir(slug) {
   const res = await fetch(`${BACKUP_DOC_API}${slugToApiSuffix(slug)}`, { method: 'GET' });
   const data = await res.json().catch(() => ({}));

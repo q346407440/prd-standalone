@@ -345,7 +345,7 @@ export function PrdToolbar({
                   ? 'prd-toolbar__auto-backup prd-toolbar__auto-backup--paused'
                   : 'prd-toolbar__auto-backup'
             }
-            title="将 pages 下当前文档目录复制到 pages-backup 下该文档的 s0、s1 子文件夹；两槽均有内容时每 5 分钟覆盖较旧的一份"
+            title="将 pages 下当前文档目录复制到 pages-backup 下该文档的 s0、s1、s2 子文件夹；优先补空槽，三槽均有内容后每 5 分钟覆盖最旧的一份"
           >
             {autoBackupStatus.text}
           </span>

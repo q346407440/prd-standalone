@@ -54,7 +54,8 @@ export function BackupFolderPathModal({ slug, open, onClose }) {
           <div className="prd-modal__desc">
             同一文档在 <code className="prd-backup-path-modal__code">s0</code>、
             <code className="prd-backup-path-modal__code">s1</code>
-            两个文件夹中轮替保存：两槽都有内容后，每次定时备份会覆盖「较早写入」的那一栏，另一栏仍保留上一份快照。
+            、<code className="prd-backup-path-modal__code">s2</code>
+            三个文件夹中轮替保存：优先写入空槽；三槽都有内容后，每次定时备份会覆盖「较早写入」的那一栏，其余两栏仍保留更近的快照。
             {!backupExists && !loading && !error ? ' 当前尚未有任何槽位内容（未成功备份过或已删除）。' : null}
           </div>
         </div>
@@ -65,7 +66,7 @@ export function BackupFolderPathModal({ slug, open, onClose }) {
             <div className="prd-modal__error">{error}</div>
           ) : (
             <>
-              <div className="prd-backup-path-modal__section-title">备份根目录（内含 s0 / s1）</div>
+              <div className="prd-backup-path-modal__section-title">备份根目录（内含 s0 / s1 / s2）</div>
               <div className="prd-backup-path-modal__path-row">
                 <div className="prd-backup-path-modal__path" title={backupDir}>{backupDir}</div>
                 <button

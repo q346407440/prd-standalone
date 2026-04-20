@@ -25,8 +25,8 @@ function isSafeDocSlug(slug) {
   return typeof slug === 'string' && /^doc-\d+$/.test(slug);
 }
 
-/** 双槽轮替：pages-backup/<slug>/s0、s1，定时备份覆盖较旧槽；元数据 .backup-rotate.json */
-const PRD_BACKUP_SLOTS = ['s0', 's1'];
+/** 三槽轮替：pages-backup/<slug>/s0、s1、s2，定时备份覆盖最旧槽；元数据 .backup-rotate.json */
+const PRD_BACKUP_SLOTS = ['s0', 's1', 's2'];
 const PRD_BACKUP_ROTATE_META = '.backup-rotate.json';
 
 function prdBackupSlotDir(backupRootForSlug, index) {
@@ -54,35 +54,32 @@ function prdSafeDirMtimeMs(dir) {
 
 function prdReadBackupRotateMeta(backupRootForSlug) {
   const fp = path.join(backupRootForSlug, PRD_BACKUP_ROTATE_META);
-  let at0 = null;
-  let at1 = null;
+  const at = Array.from({ length: PRD_BACKUP_SLOTS.length }, () => null);
   try {
     if (fs.existsSync(fp)) {
       const j = JSON.parse(fs.readFileSync(fp, 'utf8'));
-      if (Array.isArray(j.at) && j.at.length >= 2) {
-        if (j.at[0]) {
-          const t = Date.parse(j.at[0]);
-          if (!Number.isNaN(t)) at0 = t;
-        }
-        if (j.at[1]) {
-          const t = Date.parse(j.at[1]);
-          if (!Number.isNaN(t)) at1 = t;
+      if (Array.isArray(j.at)) {
+        for (let i = 0; i < PRD_BACKUP_SLOTS.length; i += 1) {
+          if (j.at[i]) {
+            const t = Date.parse(j.at[i]);
+            if (!Number.isNaN(t)) at[i] = t;
+          }
         }
       }
     }
   } catch (_) { /* ignore */ }
-  const s0 = prdBackupSlotDir(backupRootForSlug, 0);
-  const s1 = prdBackupSlotDir(backupRootForSlug, 1);
-  if (at0 == null && prdBackupSlotHasContent(s0)) at0 = prdSafeDirMtimeMs(s0);
-  if (at1 == null && prdBackupSlotHasContent(s1)) at1 = prdSafeDirMtimeMs(s1);
-  return [at0, at1];
+  for (let i = 0; i < PRD_BACKUP_SLOTS.length; i += 1) {
+    const slotDir = prdBackupSlotDir(backupRootForSlug, i);
+    if (at[i] == null && prdBackupSlotHasContent(slotDir)) at[i] = prdSafeDirMtimeMs(slotDir);
+  }
+  return at;
 }
 
-function prdWriteBackupRotateMeta(backupRootForSlug, at0, at1) {
-  const iso = [
-    at0 == null || Number.isNaN(at0) ? null : new Date(at0).toISOString(),
-    at1 == null || Number.isNaN(at1) ? null : new Date(at1).toISOString(),
-  ];
+function prdWriteBackupRotateMeta(backupRootForSlug, atList) {
+  const iso = PRD_BACKUP_SLOTS.map((_, i) => {
+    const t = atList[i];
+    return t == null || Number.isNaN(t) ? null : new Date(t).toISOString();
+  });
   fs.mkdirSync(backupRootForSlug, { recursive: true });
   fs.writeFileSync(
     path.join(backupRootForSlug, PRD_BACKUP_ROTATE_META),
@@ -94,8 +91,7 @@ function prdWriteBackupRotateMeta(backupRootForSlug, at0, at1) {
 /** 旧版扁平目录（md 等在 pages-backup/<slug>/ 根下）迁入 s0 */
 function prdMigrateLegacyFlatBackup(backupRootForSlug) {
   if (!fs.existsSync(backupRootForSlug) || !fs.statSync(backupRootForSlug).isDirectory()) return;
-  if (prdBackupSlotHasContent(prdBackupSlotDir(backupRootForSlug, 0))
-      || prdBackupSlotHasContent(prdBackupSlotDir(backupRootForSlug, 1))) {
+  if (PRD_BACKUP_SLOTS.some((_, i) => prdBackupSlotHasContent(prdBackupSlotDir(backupRootForSlug, i)))) {
     return;
   }
   let entries;
@@ -107,8 +103,7 @@ function prdMigrateLegacyFlatBackup(backupRootForSlug) {
   const movable = entries.filter(
     (e) => e.name !== PRD_BACKUP_ROTATE_META
       && e.name !== '.DS_Store'
-      && e.name !== 's0'
-      && e.name !== 's1',
+      && !PRD_BACKUP_SLOTS.includes(e.name),
   );
   if (movable.length === 0) return;
   const s0 = prdBackupSlotDir(backupRootForSlug, 0);
@@ -119,26 +114,31 @@ function prdMigrateLegacyFlatBackup(backupRootForSlug) {
       path.join(s0, e.name),
     );
   }
-  prdWriteBackupRotateMeta(backupRootForSlug, Date.now(), null);
+  const nextAt = Array.from({ length: PRD_BACKUP_SLOTS.length }, () => null);
+  nextAt[0] = Date.now();
+  prdWriteBackupRotateMeta(backupRootForSlug, nextAt);
 }
 
 function prdPickBackupSlotIndex(backupRootForSlug) {
-  const s0 = prdBackupSlotDir(backupRootForSlug, 0);
-  const s1 = prdBackupSlotDir(backupRootForSlug, 1);
-  const ex0 = prdBackupSlotHasContent(s0);
-  const ex1 = prdBackupSlotHasContent(s1);
-  if (!ex0 && !ex1) return 0;
-  if (ex0 && !ex1) return 1;
-  if (!ex0 && ex1) return 0;
-  const [t0, t1] = prdReadBackupRotateMeta(backupRootForSlug);
-  const a = t0 ?? 0;
-  const b = t1 ?? 0;
-  return a <= b ? 0 : 1;
+  for (let i = 0; i < PRD_BACKUP_SLOTS.length; i += 1) {
+    if (!prdBackupSlotHasContent(prdBackupSlotDir(backupRootForSlug, i))) return i;
+  }
+  const at = prdReadBackupRotateMeta(backupRootForSlug);
+  let oldestIndex = 0;
+  let oldestAt = at[0] ?? 0;
+  for (let i = 1; i < PRD_BACKUP_SLOTS.length; i += 1) {
+    const currentAt = at[i] ?? 0;
+    if (currentAt < oldestAt) {
+      oldestAt = currentAt;
+      oldestIndex = i;
+    }
+  }
+  return oldestIndex;
 }
 
 function prdBuildBackupSlotsPayload(backupRootForSlug) {
   prdMigrateLegacyFlatBackup(backupRootForSlug);
-  return [0, 1].map((i) => {
+  return PRD_BACKUP_SLOTS.map((_, i) => {
     const p = prdBackupSlotDir(backupRootForSlug, i);
     return {
       index: i,
@@ -443,7 +443,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
 
     /**
      * POST /__prd__/backup-doc?slug=doc-001
-     * 将 pages/<slug>/ 镜像到 pages-backup/<slug>/s0|s1（双槽轮替：先填 s0 再 s1，两槽皆有则覆盖较旧）
+     * 将 pages/<slug>/ 镜像到 pages-backup/<slug>/s0|s1|s2（三槽轮替：优先补空槽，三槽都有后覆盖最旧）
      */
     backupDoc(req, res) {
       try {
@@ -489,9 +489,9 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
         }
         fs.rmSync(resolvedSlot, { recursive: true, force: true });
         fs.cpSync(resolvedSrc, resolvedSlot, { recursive: true });
-        const nextAt = [beforeMeta[0], beforeMeta[1]];
+        const nextAt = beforeMeta.slice(0, PRD_BACKUP_SLOTS.length);
         nextAt[slotIndex] = Date.now();
-        prdWriteBackupRotateMeta(resolvedDestParent, nextAt[0], nextAt[1]);
+        prdWriteBackupRotateMeta(resolvedDestParent, nextAt);
         const at = new Date();
         const slotsPayload = prdBuildBackupSlotsPayload(resolvedDestParent);
         res.statusCode = 200;
@@ -515,7 +515,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
 
     /**
      * GET /__prd__/backup-doc?slug=doc-001
-     * 返回 pages-backup/<slug>/ 根路径及 s0、s1 槽位信息（不执行拷贝）
+     * 返回 pages-backup/<slug>/ 根路径及 s0、s1、s2 槽位信息（不执行拷贝）
      */
     getBackupDocDir(req, res) {
       try {
