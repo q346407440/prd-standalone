@@ -7,6 +7,7 @@ import {
   FiChevronDown,
   FiDownload,
   FiFileText,
+  FiRefreshCw,
 } from 'react-icons/fi';
 import {
   PRD_FILE_NAME_RULE_HINT,
@@ -22,9 +23,12 @@ import {
   renameDoc,
   backupPrdDoc,
 } from '../prd-api.js';
-import { FeishuSyncEntry } from '../../../feishu-sync/index.jsx';
+import { FeishuSyncModal } from '../../../feishu-sync/index.jsx';
+import { useFeishuSyncController } from '../../../feishu-sync/use-feishu-sync-controller.js';
 import { ExportPackageModal } from './modals/ExportPackageModal.jsx';
 import { BackupFolderPathModal } from './modals/BackupFolderPathModal.jsx';
+import { SourceTreeSyncModal } from './modals/SourceTreeSyncModal.jsx';
+import { CombinedSyncModal } from './modals/CombinedSyncModal.jsx';
 
 export function PrdToolbar({
   activeSlug,
@@ -32,8 +36,10 @@ export function PrdToolbar({
   onSwitch,
   onExport,
   onExportNativeMd,
+  onSyncSourceTree,
   exporting = false,
   exportingNativeMd = false,
+  syncingSourceTree = false,
   autoBackupOff = false,
   onAutoBackupOffChange,
 }) {
@@ -59,6 +65,10 @@ export function PrdToolbar({
   const [exportMdPackageName, setExportMdPackageName] = useState('');
   const [exportMdPackageError, setExportMdPackageError] = useState('');
 
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [combinedSyncDialogOpen, setCombinedSyncDialogOpen] = useState(false);
+  const [feishuDialogOpen, setFeishuDialogOpen] = useState(false);
+
   const [switchingSlug, setSwitchingSlug] = useState(null);
 
   /** 本会话内已对某 slug 做过「首次选中立即备份」，再次切回该 slug 仅走定时器 */
@@ -77,6 +87,7 @@ export function PrdToolbar({
   const exportInputRef = useRef(null);
   const exportMdInputRef = useRef(null);
   const [panelStyle, setPanelStyle] = useState({});
+  const feishuSyncController = useFeishuSyncController({ blocks, activeSlug, activeTitle });
 
   function closePanel() {
     setSwitchPanelOpen(false);
@@ -112,6 +123,50 @@ export function PrdToolbar({
     if (exportingNativeMd) return;
     setExportMdDialogOpen(false);
     setExportMdPackageError('');
+  }
+
+  function openSyncDialog() {
+    setSyncDialogOpen(true);
+  }
+
+  function closeSyncDialog() {
+    if (syncingSourceTree) return;
+    setSyncDialogOpen(false);
+  }
+
+  function openCombinedSyncDialog() {
+    setCombinedSyncDialogOpen(true);
+  }
+
+  function closeCombinedSyncDialog() {
+    if (syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting) return;
+    setCombinedSyncDialogOpen(false);
+  }
+
+  function openFeishuDialog() {
+    setFeishuDialogOpen(true);
+  }
+
+  function closeFeishuDialog() {
+    if (feishuSyncController.isSyncing) return;
+    setFeishuDialogOpen(false);
+  }
+
+  async function handleSyncConfirm({
+    targetDir,
+    folderName,
+    mode,
+    commitMessage,
+  }) {
+    const result = await onSyncSourceTree?.({
+      currentTitle: activeTitle || activeSlug,
+      targetDir,
+      folderName,
+      mode,
+      commitMessage,
+    });
+    const isFailed = result === false || result?.ok === false;
+    if (!isFailed) setSyncDialogOpen(false);
   }
 
   useEffect(() => {
@@ -559,12 +614,6 @@ export function PrdToolbar({
         </div>
 
         <div className="prd-toolbar__divider" />
-        <FeishuSyncEntry
-          blocks={blocks}
-          activeSlug={activeSlug}
-          activeTitle={activeTitle}
-        />
-        <div className="prd-toolbar__divider" />
         <button
           className={`prd-toolbar__btn${exporting ? ' prd-toolbar__btn--active' : ''}`}
           title="导出可离线预览且包含源码的 ZIP 包"
@@ -582,6 +631,23 @@ export function PrdToolbar({
         >
           <FiFileText className="prd-toolbar__btn-icon" />
           <span>{exportingNativeMd ? '导出中…' : '导出原生 MD'}</span>
+        </button>
+        <button
+          className={`prd-toolbar__btn${
+            (syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting)
+              ? ' prd-toolbar__btn--active'
+              : ''
+          }`}
+          title="统一同步到飞书和 SourceTree"
+          onClick={openCombinedSyncDialog}
+          disabled={syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting}
+        >
+          <FiRefreshCw className="prd-toolbar__btn-icon" />
+          <span>
+            {syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting
+              ? '同步中…'
+              : '同步'}
+          </span>
         </button>
       </div>
       {backupPathModalOpen ? (
@@ -618,6 +684,35 @@ export function PrdToolbar({
           }}
           onCancel={closeExportMdDialog}
           onConfirm={handleExportNativeMdWithPackageName}
+        />
+      ) : null}
+      {combinedSyncDialogOpen ? (
+        <CombinedSyncModal
+          open={combinedSyncDialogOpen}
+          onCancel={closeCombinedSyncDialog}
+          currentTitle={activeTitle || activeSlug}
+          defaultFolderName={normalizeProjectLikeName(activeTitle || activeSlug || '')}
+          onSyncSourceTree={onSyncSourceTree}
+          syncingSourceTree={syncingSourceTree}
+          feishuController={feishuSyncController}
+          onOpenFeishuAdvanced={openFeishuDialog}
+          onOpenSourceTreeAdvanced={openSyncDialog}
+        />
+      ) : null}
+      {feishuDialogOpen ? (
+        <FeishuSyncModal
+          open={feishuDialogOpen}
+          onClose={closeFeishuDialog}
+          controller={feishuSyncController}
+        />
+      ) : null}
+      {syncDialogOpen ? (
+        <SourceTreeSyncModal
+          open={syncDialogOpen}
+          syncing={syncingSourceTree}
+          defaultFolderName={normalizeProjectLikeName(activeTitle || activeSlug || '')}
+          onCancel={closeSyncDialog}
+          onConfirm={handleSyncConfirm}
         />
       ) : null}
     </div>

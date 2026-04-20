@@ -1,6 +1,43 @@
 import { Buffer } from 'node:buffer';
+import { spawn } from 'node:child_process';
 import fs from 'fs';
 import path from 'path';
+
+/**
+ * 跑一条 git 命令，返回 { code, stdout, stderr }。
+ * 子进程继承父进程 env（含 SSH_AUTH_SOCK），让 ssh-agent 里的 key 可用。
+ */
+function runGit(args, cwd) {
+  return new Promise((resolve) => {
+    const child = spawn('git', args, { cwd, env: process.env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => { stdout += c.toString('utf8'); });
+    child.stderr.on('data', (c) => { stderr += c.toString('utf8'); });
+    child.on('error', (err) => resolve({ code: -1, stdout, stderr: stderr || String(err?.message || err) }));
+    child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
+  });
+}
+
+/** git add 一次命令行参数有长度限制，按批拆开执行 */
+async function gitAddPathsInBatches(cwd, absPaths, batchSize = 100) {
+  for (let i = 0; i < absPaths.length; i += batchSize) {
+    const slice = absPaths.slice(i, i + batchSize);
+    const result = await runGit(['add', '-A', '--', ...slice], cwd);
+    if (result.code !== 0) {
+      return { ok: false, stderr: result.stderr || result.stdout };
+    }
+  }
+  return { ok: true };
+}
+
+function toRepoRelativePath(repoRoot, absPath) {
+  return path.relative(repoRoot, absPath).split(path.sep).join('/');
+}
+
+function uniqueNonEmpty(items) {
+  return Array.from(new Set(items.filter(Boolean)));
+}
 import {
   readActiveDocSlug,
   findDocMdFile,
@@ -649,6 +686,307 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.end(JSON.stringify({ ok: false, error: String(e?.message || e) }));
       }
+    },
+
+    /**
+     * POST /__prd__/sync-native-md
+     * 把「导出原生 MD」的解压后内容镜像写入用户指定的本地 Git 工作区子目录。
+     * 入参（JSON）：
+     *   - targetDir: 绝对路径，工作区根目录（必须已存在且是目录）
+     *   - folderName: 子目录名（仅允许普通目录名，禁止路径穿越）
+     *   - entries: [{ relPath, contentBase64 }]（相对子目录的路径；.md 与 assets/ 文件都在这里）
+     * 镜像策略：写入/覆盖 entries 中的所有文件，并删除该子目录中不在 entries 中的历史文件，
+     * 触发 SourceTree 的新增（A）/ 修改（M）/ 删除（D）状态。
+     */
+    syncNativeMd(req, res) {
+      const chunks = [];
+      req.on('data', (c) => chunks.push(c));
+      req.on('end', async () => {
+        try {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          const payload = JSON.parse(raw);
+          const targetDir = typeof payload.targetDir === 'string' ? payload.targetDir.trim() : '';
+          const folderName = typeof payload.folderName === 'string' ? payload.folderName.trim() : '';
+          const entries = Array.isArray(payload.entries) ? payload.entries : null;
+          const mode = typeof payload.mode === 'string' ? payload.mode : 'files-only';
+          const commitMessage = typeof payload.commitMessage === 'string' ? payload.commitMessage.trim() : '';
+          const wantCommit = mode === 'commit' || mode === 'commit-and-push';
+          const wantPush = mode === 'commit-and-push';
+          if (wantCommit && !commitMessage) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            return res.end(JSON.stringify({ ok: false, error: 'commit 模式下 commitMessage 不能为空' }));
+          }
+
+          if (!targetDir || !path.isAbsolute(targetDir)) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            return res.end(JSON.stringify({ ok: false, error: '目标目录必须是绝对路径' }));
+          }
+          if (!folderName) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            return res.end(JSON.stringify({ ok: false, error: '子文件夹名称不能为空' }));
+          }
+          // 子目录名：禁止路径分隔、相对跳转与空白；只允许普通目录名
+          if (/[\\/]/.test(folderName) || folderName === '.' || folderName === '..' || /^\s|\s$/.test(folderName)) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            return res.end(JSON.stringify({ ok: false, error: '子文件夹名称非法' }));
+          }
+          if (!entries || entries.length === 0) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            return res.end(JSON.stringify({ ok: false, error: '没有可同步的文件' }));
+          }
+
+          const resolvedTarget = path.resolve(targetDir);
+          if (!fs.existsSync(resolvedTarget) || !fs.statSync(resolvedTarget).isDirectory()) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            return res.end(JSON.stringify({ ok: false, error: `目标目录不存在或不是目录：${resolvedTarget}` }));
+          }
+
+          const syncRoot = path.resolve(resolvedTarget, folderName);
+          if (!syncRoot.startsWith(resolvedTarget + path.sep) && syncRoot !== resolvedTarget) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            return res.end(JSON.stringify({ ok: false, error: '子文件夹路径穿越到目标目录之外' }));
+          }
+
+          // 收集本次期望写入的相对路径（POSIX 风格，便于比对），同时校验每项 relPath
+          const expectedRelSet = new Set();
+          const normalizedEntries = [];
+          for (const entry of entries) {
+            const relPath = typeof entry?.relPath === 'string' ? entry.relPath : '';
+            const contentBase64 = typeof entry?.contentBase64 === 'string' ? entry.contentBase64 : '';
+            if (!relPath) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              return res.end(JSON.stringify({ ok: false, error: '存在非法的文件条目（缺少 relPath）' }));
+            }
+            if (relPath.startsWith('/') || relPath.startsWith('\\') || relPath.includes('..')) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              return res.end(JSON.stringify({ ok: false, error: `非法相对路径：${relPath}` }));
+            }
+            const absPath = path.resolve(syncRoot, relPath);
+            if (!absPath.startsWith(syncRoot + path.sep) && absPath !== syncRoot) {
+              res.statusCode = 400;
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              return res.end(JSON.stringify({ ok: false, error: `路径穿越：${relPath}` }));
+            }
+            const posixRel = relPath.split(path.sep).join('/');
+            expectedRelSet.add(posixRel);
+            normalizedEntries.push({ relPath: posixRel, absPath, contentBase64 });
+          }
+
+          // 收集目标子目录下已有的所有文件（递归），以便镜像对齐（删除本次不再需要的文件）
+          const existingRelPaths = new Set();
+          if (fs.existsSync(syncRoot) && fs.statSync(syncRoot).isDirectory()) {
+            const walk = (dir) => {
+              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+                const full = path.join(dir, entry.name);
+                if (entry.isDirectory()) { walk(full); continue; }
+                if (!entry.isFile()) continue;
+                const rel = path.relative(syncRoot, full).split(path.sep).join('/');
+                existingRelPaths.add(rel);
+              }
+            };
+            walk(syncRoot);
+          } else {
+            fs.mkdirSync(syncRoot, { recursive: true });
+          }
+
+          // 写入/覆盖 entries
+          let writtenCount = 0;
+          for (const { absPath, contentBase64 } of normalizedEntries) {
+            fs.mkdirSync(path.dirname(absPath), { recursive: true });
+            const buf = Buffer.from(contentBase64 || '', 'base64');
+            fs.writeFileSync(absPath, buf);
+            writtenCount += 1;
+          }
+
+          // 删除旧文件（本次 entries 中不存在的）
+          const deletedPaths = [];
+          for (const rel of existingRelPaths) {
+            if (expectedRelSet.has(rel)) continue;
+            const absPath = path.resolve(syncRoot, rel);
+            if (!absPath.startsWith(syncRoot + path.sep)) continue;
+            try {
+              if (fs.existsSync(absPath)) fs.unlinkSync(absPath);
+              deletedPaths.push(rel);
+            } catch { /* ignore */ }
+          }
+
+          // 清理空目录（自底向上）
+          const removeEmptyDirs = (dir) => {
+            if (dir === syncRoot) return;
+            if (!fs.existsSync(dir)) return;
+            try {
+              const names = fs.readdirSync(dir);
+              if (names.length === 0) {
+                fs.rmdirSync(dir);
+                removeEmptyDirs(path.dirname(dir));
+              }
+            } catch { /* ignore */ }
+          };
+          for (const rel of deletedPaths) {
+            removeEmptyDirs(path.dirname(path.resolve(syncRoot, rel)));
+          }
+
+          const gitResult = { attempted: wantCommit, committed: false, pushed: false };
+
+          if (wantCommit) {
+            // 1) 校验 syncRoot 在 git 工作区里
+            const topLevel = await runGit(['rev-parse', '--show-toplevel'], syncRoot);
+            if (topLevel.code !== 0) {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              return res.end(JSON.stringify({
+                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                writtenCount, deletedCount: deletedPaths.length, deletedPaths,
+                git: {
+                  ...gitResult,
+                  error: `目标目录不是 git 工作区：${topLevel.stderr.trim() || '请先在 SourceTree 或命令行中 clone / init 该仓库'}`,
+                },
+              }));
+            }
+            const repoRoot = topLevel.stdout.trim();
+
+            // 2) 校验 git 身份
+            const uname = await runGit(['config', 'user.name'], repoRoot);
+            const uemail = await runGit(['config', 'user.email'], repoRoot);
+            if (!uname.stdout.trim() || !uemail.stdout.trim()) {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              return res.end(JSON.stringify({
+                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                writtenCount, deletedCount: deletedPaths.length, deletedPaths,
+                git: {
+                  ...gitResult,
+                  error: '尚未配置 git 身份，请先跑：git config --global user.name "你的名字" && git config --global user.email "you@example.com"',
+                },
+              }));
+            }
+
+            // 3) 只 add 本次写入/删除的具体路径（包含增/改/删）
+            const pathsToAdd = [
+              ...normalizedEntries.map((e) => e.absPath),
+              ...deletedPaths.map((rel) => path.resolve(syncRoot, rel)),
+            ];
+            const repoRelPaths = uniqueNonEmpty(pathsToAdd.map((p) => toRepoRelativePath(repoRoot, p)));
+
+            // 若仓库里本来就有其他已暂存改动，拒绝继续，避免把用户手工暂存的内容误提交进去。
+            const stagedBeforeRes = await runGit(['diff', '--cached', '--name-only'], repoRoot);
+            const stagedBeforePaths = uniqueNonEmpty(
+              (stagedBeforeRes.stdout || '').split('\n').map((s) => s.trim()),
+            );
+            const foreignStagedPaths = stagedBeforePaths.filter((p) => !repoRelPaths.includes(p));
+            if (foreignStagedPaths.length > 0) {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              return res.end(JSON.stringify({
+                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                writtenCount, deletedCount: deletedPaths.length, deletedPaths,
+                git: {
+                  ...gitResult,
+                  error: `仓库里已有其他暂存改动，已阻止自动 commit：${foreignStagedPaths.join(', ')}`,
+                },
+              }));
+            }
+
+            if (repoRelPaths.length) {
+              const addRes = await gitAddPathsInBatches(repoRoot, repoRelPaths);
+              if (!addRes.ok) {
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                return res.end(JSON.stringify({
+                  ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                  writtenCount, deletedCount: deletedPaths.length, deletedPaths,
+                  git: { ...gitResult, error: `git add 失败：${addRes.stderr}` },
+                }));
+              }
+            }
+
+            // 4) 检查本次涉及的路径到底有没有实质变更（避免空 commit 报错）
+            const diffRes = await runGit(
+              ['diff', '--cached', '--quiet', '--', ...repoRelPaths],
+              repoRoot,
+            );
+            const hasStagedChange = diffRes.code === 1;
+            if (!hasStagedChange) {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              return res.end(JSON.stringify({
+                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                writtenCount, deletedCount: deletedPaths.length, deletedPaths,
+                git: { ...gitResult, skipped: 'no-change', message: '文件与仓库完全一致，无需 commit' },
+              }));
+            }
+
+            // 5) commit
+            const commitRes = await runGit(['commit', '-m', commitMessage], repoRoot);
+            if (commitRes.code !== 0) {
+              res.statusCode = 200;
+              res.setHeader('Content-Type', 'application/json; charset=utf-8');
+              return res.end(JSON.stringify({
+                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                writtenCount, deletedCount: deletedPaths.length, deletedPaths,
+                git: { ...gitResult, error: `git commit 失败：${commitRes.stderr || commitRes.stdout}` },
+              }));
+            }
+            gitResult.committed = true;
+            const hashRes = await runGit(['rev-parse', '--short', 'HEAD'], repoRoot);
+            if (hashRes.code === 0) gitResult.commitHash = hashRes.stdout.trim();
+
+            // 6) push（可选）
+            if (wantPush) {
+              gitResult.attempted = 'commit-and-push';
+              const branchRes = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
+              const branch = branchRes.stdout.trim();
+              const upstreamRes = await runGit(
+                ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+                repoRoot,
+              );
+              const hasUpstream = upstreamRes.code === 0;
+              const pushArgs = hasUpstream ? ['push'] : ['push', '-u', 'origin', branch];
+              const pushRes = await runGit(pushArgs, repoRoot);
+              if (pushRes.code !== 0) {
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                return res.end(JSON.stringify({
+                  ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                  writtenCount, deletedCount: deletedPaths.length, deletedPaths,
+                  git: {
+                    ...gitResult,
+                    error: `commit 成功（${gitResult.commitHash || ''}），但 git push 失败：${pushRes.stderr || pushRes.stdout}。请到 SourceTree 里 pull / 解决冲突后重推。`,
+                  },
+                }));
+              }
+              gitResult.pushed = true;
+              gitResult.branch = branch;
+            }
+          }
+
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({
+            ok: true,
+            targetDir: resolvedTarget,
+            folderName,
+            syncRoot,
+            writtenCount,
+            deletedCount: deletedPaths.length,
+            deletedPaths,
+            git: gitResult,
+          }));
+        } catch (e) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: false, error: String(e?.message || e) }));
+        }
+      });
     },
 
     /** GET /pages/:slug/*.md → 读取任意 slug 的 PRD 正文 */

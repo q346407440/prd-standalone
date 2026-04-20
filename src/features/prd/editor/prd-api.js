@@ -131,6 +131,27 @@ export async function deletePrdImage(urlPath, slug) {
   if (!res.ok || !data.ok) throw new Error(data.error || 'delete image failed');
 }
 
+/**
+ * 把「原生 MD 导出」的文件树镜像写入用户指定的本地 Git 工作区子目录。
+ * entries 里每个 item 已是 `{ relPath, contentBase64 }`。
+ */
+export async function syncNativeMdToDirectory({
+  targetDir,
+  folderName,
+  entries,
+  mode = 'files-only',
+  commitMessage = '',
+}) {
+  const res = await fetch('/__prd__/sync-native-md', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetDir, folderName, entries, mode, commitMessage }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok) throw new Error(data.error || `sync failed: ${res.status}`);
+  return data;
+}
+
 export async function fetchActiveDoc() {
   const res = await fetch(`${ACTIVE_DOC_API}?t=${Date.now()}`);
   if (!res.ok) return { slug: DEFAULT_PRD_SLUG, mdPath: `/pages/${DEFAULT_PRD_SLUG}/prd.md` };

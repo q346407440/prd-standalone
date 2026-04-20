@@ -20,10 +20,27 @@
   gap: 20px;
   min-width: 300px;
   max-width: 420px;
+  max-height: calc(100vh - 48px);
 }
 
 .prd-modal--form {
   min-width: 420px;
+}
+
+.prd-modal--wide {
+  width: min(720px, calc(100vw - 48px));
+  max-width: min(720px, calc(100vw - 48px));
+}
+
+.prd-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -12px;
+  padding: 0 12px;
 }
 
 .prd-modal__header {
@@ -45,10 +62,131 @@
   color: #64748b;
 }
 
+.prd-modal__link {
+  color: #1677ff;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.prd-modal__link:hover {
+  color: #0958d9;
+  text-decoration: underline;
+}
+
 .prd-modal__field {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.prd-modal__section-head,
+.prd-modal__status-line,
+.prd-modal__section-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.prd-modal__section-subhead {
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: #334155;
+}
+
+.prd-modal__section-subhead .prd-modal__link {
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.prd-modal__section-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.prd-modal__section-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.prd-modal__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  line-height: 1.4;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.prd-modal__check input {
+  margin: 0;
+}
+
+.prd-modal__check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prd-modal__check-icon {
+  width: 15px;
+  height: 15px;
+  color: #1677ff;
+}
+
+.prd-modal__pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 500;
+}
+
+.prd-modal__pill--success {
+  background: #e7f8ee;
+  color: #15803d;
+}
+
+.prd-modal__link-btn {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #1677ff;
+  cursor: pointer;
+}
+
+.prd-modal__link-btn:hover {
+  color: #0958d9;
+}
+
+.prd-modal__link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.prd-modal__status-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #334155;
 }
 
 .prd-modal__label {
@@ -81,6 +219,84 @@
   color: #b0bac8;
 }
 
+.prd-modal__textarea {
+  all: unset;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 66px;
+  padding: 10px 12px;
+  border: 1.5px solid #c7d5e8;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #1f2937;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+.prd-modal__textarea:focus {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.1);
+}
+
+.prd-modal__textarea::placeholder {
+  color: #b0bac8;
+}
+
+.prd-modal__choice-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.prd-modal__choice {
+  all: unset;
+  box-sizing: border-box;
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1.5px solid #c7d5e8;
+  border-radius: 8px;
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s, color 0.15s;
+}
+
+.prd-modal__choice:hover {
+  border-color: #93c5fd;
+  background: #f8fbff;
+}
+
+.prd-modal__choice--active {
+  border-color: #1677ff;
+  background: #eff6ff;
+  color: #0f172a;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.08);
+}
+
+.prd-modal__choice:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.prd-modal__choice-title {
+  display: block;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
+.prd-modal__choice-desc {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #64748b;
+}
+
 .prd-modal__hint {
   font-size: 12px;
   line-height: 1.5;
@@ -91,6 +307,56 @@
   font-size: 12px;
   line-height: 1.5;
   color: #dc2626;
+}
+
+.prd-modal__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.prd-modal__progress-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: #475569;
+}
+
+.prd-modal__progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.prd-modal__progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #60a5fa 0%, #1677ff 100%);
+  transition: width 0.25s ease;
+}
+
+.prd-modal__progress-bar--success {
+  background: linear-gradient(90deg, #4ade80 0%, #16a34a 100%);
+}
+
+.prd-modal__progress-bar--error {
+  background: linear-gradient(90deg, #f87171 0%, #dc2626 100%);
+}
+
+.prd-modal__progress-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.prd-modal__progress-text--error {
+  color: #b91c1c;
 }
 
 .prd-modal__text {

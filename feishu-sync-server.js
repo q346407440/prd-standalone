@@ -561,6 +561,27 @@ function snapshotFilePath(state) {
   return path.join(state.localDir, 'feishu-sync-snapshot.json');
 }
 
+function normalizeSnapshotSourceIdentity(sourceSlug, sourceTitle) {
+  return {
+    sourceSlug: String(sourceSlug || '').trim(),
+    sourceTitle: String(sourceTitle || '').trim(),
+  };
+}
+
+function formatSnapshotSourceLabel(snapshotLike) {
+  const source = normalizeSnapshotSourceIdentity(snapshotLike?.sourceSlug, snapshotLike?.sourceTitle);
+  return source.sourceTitle || source.sourceSlug || '';
+}
+
+function isSameSnapshotSource(snapshot, sourceSlug, sourceTitle) {
+  const current = normalizeSnapshotSourceIdentity(sourceSlug, sourceTitle);
+  const saved = normalizeSnapshotSourceIdentity(snapshot?.sourceSlug, snapshot?.sourceTitle);
+  if (!saved.sourceSlug && !saved.sourceTitle) return false;
+  if (saved.sourceSlug && current.sourceSlug) return saved.sourceSlug === current.sourceSlug;
+  if (saved.sourceTitle && current.sourceTitle) return saved.sourceTitle === current.sourceTitle;
+  return false;
+}
+
 function loadSnapshot(state, documentId) {
   const data = readJsonFile(snapshotFilePath(state), null);
   if (!data || data.documentId !== documentId) return null;
@@ -1636,58 +1657,78 @@ async function runSyncJob(state, job) {
 
   const newSignatures = computeBlockSignatures(blocks);
   const snapshot = loadSnapshot(state, resolved.documentId);
+  const sourceIdentity = normalizeSnapshotSourceIdentity(sourceSlug, sourceTitle);
+  const currentSourceLabel = formatSnapshotSourceLabel(sourceIdentity) || '当前 PRD';
 
   let syncMode = 'full';
   let diff = null;
+  let fullSyncReason = '';
+  let resetReason = '';
 
   if (snapshot && Array.isArray(snapshot.signatures)) {
-    updateJob(job, {
-      phase: 'diffing',
-      percent: 8,
-      message: '正在对比本地快照差异',
-    });
-
-    diff = diffSignatures(snapshot.signatures, newSignatures);
-    const hasLocalChanges = diff.oldStart < diff.oldEnd || diff.newStart < diff.newEnd;
-
-    updateJob(job, {
-      phase: 'verifying-snapshot',
-      percent: 12,
-      message: '正在回读飞书文档校验快照',
-    });
-    const liveBlockIds = await fetchRootBlockIds(state, accessToken, resolved.documentId);
-    const snapshotIds = snapshot.feishuRootBlockIds || [];
-    const feishuUnchanged = liveBlockIds.length === snapshotIds.length
-      && liveBlockIds.every((id, i) => id === snapshotIds[i]);
-
-    if (!hasLocalChanges && feishuUnchanged) {
+    if (!isSameSnapshotSource(snapshot, sourceSlug, sourceTitle)) {
+      const previousSourceLabel = formatSnapshotSourceLabel(snapshot);
+      if (previousSourceLabel) {
+        fullSyncReason = `检测到目标文档上次绑定来源为「${previousSourceLabel}」，本次来源为「${currentSourceLabel}」，将执行全量覆盖`;
+        resetReason = 'source-changed';
+      } else {
+        fullSyncReason = '检测到目标文档已有旧同步快照，但缺少来源标识，本次将执行全量覆盖';
+        resetReason = 'snapshot-source-missing';
+      }
       updateJob(job, {
-        status: 'succeeded',
-        phase: 'completed',
-        percent: 100,
-        message: '无变更，跳过同步',
-        result: {
-          documentId: resolved.documentId,
-          documentTitle: resolved.document?.title || '',
-          sourceSlug,
-          sourceTitle,
-          blockCount: 0,
-          targetUrl: docUrl,
-          incremental: true,
-          changedBlocks: 0,
-        },
+        phase: 'validating',
+        percent: 10,
+        message: fullSyncReason,
       });
-      return;
-    }
-
-    if (!hasLocalChanges && !feishuUnchanged) {
-      syncMode = 'full';
-      diff = null;
-    } else if (feishuUnchanged) {
-      syncMode = 'incremental';
     } else {
-      syncMode = 'full';
-      diff = null;
+      updateJob(job, {
+        phase: 'diffing',
+        percent: 8,
+        message: '正在对比本地快照差异',
+      });
+
+      diff = diffSignatures(snapshot.signatures, newSignatures);
+      const hasLocalChanges = diff.oldStart < diff.oldEnd || diff.newStart < diff.newEnd;
+
+      updateJob(job, {
+        phase: 'verifying-snapshot',
+        percent: 12,
+        message: '正在回读飞书文档校验快照',
+      });
+      const liveBlockIds = await fetchRootBlockIds(state, accessToken, resolved.documentId);
+      const snapshotIds = snapshot.feishuRootBlockIds || [];
+      const feishuUnchanged = liveBlockIds.length === snapshotIds.length
+        && liveBlockIds.every((id, i) => id === snapshotIds[i]);
+
+      if (!hasLocalChanges && feishuUnchanged) {
+        updateJob(job, {
+          status: 'succeeded',
+          phase: 'completed',
+          percent: 100,
+          message: '无变更，跳过同步',
+          result: {
+            documentId: resolved.documentId,
+            documentTitle: resolved.document?.title || '',
+            sourceSlug,
+            sourceTitle,
+            blockCount: 0,
+            targetUrl: docUrl,
+            incremental: true,
+            changedBlocks: 0,
+          },
+        });
+        return;
+      }
+
+      if (!hasLocalChanges && !feishuUnchanged) {
+        syncMode = 'full';
+        diff = null;
+      } else if (feishuUnchanged) {
+        syncMode = 'incremental';
+      } else {
+        syncMode = 'full';
+        diff = null;
+      }
     }
   }
 
@@ -1695,7 +1736,7 @@ async function runSyncJob(state, job) {
     updateJob(job, {
       phase: 'clearing-document',
       percent: 15,
-      message: '正在清空目标文档旧内容（全量同步）',
+      message: fullSyncReason || '正在清空目标文档旧内容（全量同步）',
     });
     await clearDocumentRootChildren(state, accessToken, resolved.documentId);
 
@@ -1720,6 +1761,8 @@ async function runSyncJob(state, job) {
     saveSnapshot(state, {
       documentId: resolved.documentId,
       docUrl,
+      sourceSlug: sourceIdentity.sourceSlug,
+      sourceTitle: sourceIdentity.sourceTitle,
       signatures: newSignatures,
       feishuRootBlockIds: createdIds,
       syncedAt: nowIso(),
@@ -1729,7 +1772,9 @@ async function runSyncJob(state, job) {
       status: 'succeeded',
       phase: 'completed',
       percent: 100,
-      message: '全量同步完成',
+      message: resetReason
+        ? '检测到同步来源已切换，已执行全量覆盖同步'
+        : '全量同步完成',
       result: {
         documentId: resolved.documentId,
         documentTitle: resolved.document?.title || '',
@@ -1738,6 +1783,8 @@ async function runSyncJob(state, job) {
         blockCount: Array.isArray(blocks) ? blocks.length : 0,
         targetUrl: docUrl,
         incremental: false,
+        resetReason,
+        fullSyncReason,
       },
     });
     return;
@@ -1796,6 +1843,8 @@ async function runSyncJob(state, job) {
   saveSnapshot(state, {
     documentId: resolved.documentId,
     docUrl,
+    sourceSlug: sourceIdentity.sourceSlug,
+    sourceTitle: sourceIdentity.sourceTitle,
     signatures: newSignatures,
     feishuRootBlockIds: newFeishuBlockIds,
     syncedAt: nowIso(),

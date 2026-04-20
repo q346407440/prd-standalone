@@ -7,10 +7,12 @@
  * 3. 表格 cell 内的 mermaid / mindmap 不能放进原生 GFM table，
  *    抽到该 table 之后，按行优先（左到右、上到下）顺序排列。
  *    cell 内若同时有图片或文字（非 mermaid/mindmap），按 PRD 原写法保留在 cell 中。
- * 4. 顶层 mermaid 输出 ```mermaid 围栏；顶层 mindmap 输出原始缩进列表（与 Cursor MD 预览一致）。
+ * 4. 顶层 mermaid / mindmap 统一输出 ```mermaid 围栏；
+ *    其中 mindmap 会从 PRD 内部缩进列表转换为 Mermaid 的 mindmap 语法。
  */
 
 const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.|[a-z]+\.)\s/;
+const FLOWCHART_WITH_BR_RE = /^\s*(?:flowchart|graph)\b/m;
 
 /**
  * 把所有 PRD 图片路径规范化为 `./assets/...`，让导出的 MD 在普通编辑器
@@ -123,12 +125,79 @@ function collectCellDiagrams(cell) {
 function diagramToNativeMd(diagram) {
   if (!diagram) return '';
   if (diagram.type === 'mermaid') {
-    return ['```mermaid', (diagram.code || '').replace(/\s+$/, ''), '```'].join('\n');
+    return ['```mermaid', normalizeMermaidCodeForNativeMd(diagram.code || ''), '```'].join('\n');
   }
   if (diagram.type === 'mindmap') {
-    return (diagram.code || '').replace(/\s+$/, '');
+    return ['```mermaid', serializeMindmapAsMermaid(diagram.code || ''), '```'].join('\n');
   }
   return '';
+}
+
+function shouldQuoteFlowchartLabel(label) {
+  const text = String(label || '').trim();
+  if (!text) return false;
+  if (/^["'`].*["'`]$/.test(text)) return false;
+  return /<br\s*\/?>/i.test(text) || /[^\x00-\x7F]/.test(text);
+}
+
+function escapeFlowchartLabel(label) {
+  return String(label || '')
+    .replace(/<br\s*\/?>/gi, '<br>')
+    .replace(/"/g, '&quot;');
+}
+
+function quoteFlowchartNodeLabels(line) {
+  const replacers = [
+    {
+      pattern: /(^|[^A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*)\(\[([^\]\n]+)\]\)/g,
+      render: (prefix, nodeId, label) => `${prefix}${nodeId}(["${escapeFlowchartLabel(label)}"])`,
+    },
+    {
+      pattern: /(^|[^A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*)\[([^\]\n]+)\]/g,
+      render: (prefix, nodeId, label) => `${prefix}${nodeId}["${escapeFlowchartLabel(label)}"]`,
+    },
+    {
+      pattern: /(^|[^A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*)\{([^\}\n]+)\}/g,
+      render: (prefix, nodeId, label) => `${prefix}${nodeId}{"${escapeFlowchartLabel(label)}"}`,
+    },
+  ];
+
+  return replacers.reduce((currentLine, { pattern, render }) => currentLine.replace(pattern, (match, prefix, nodeId, label) => {
+    if (!shouldQuoteFlowchartLabel(label)) return match;
+    return render(prefix, nodeId, label);
+  }), line);
+}
+
+function serializeMindmapAsMermaid(code) {
+  const raw = String(code || '').replace(/\s+$/, '');
+  if (!raw) return 'mindmap';
+  if (/^\s*mindmap\b/.test(raw)) return raw;
+
+  const lines = raw
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim() !== '');
+
+  const body = lines.map((line) => {
+    const match = line.match(/^(\s*)[-*+]\s+(.+)$/);
+    if (!match) return `  ${line.trim()}`;
+    const indentLevel = Math.floor(match[1].length / 2) + 1;
+    return `${'  '.repeat(indentLevel)}${match[2].trim()}`;
+  });
+
+  return ['mindmap', ...body].join('\n');
+}
+
+function normalizeMermaidCodeForNativeMd(code) {
+  const normalized = String(code || '').replace(/<br\s*\/?>/gi, '<br>');
+  if (!FLOWCHART_WITH_BR_RE.test(normalized)) {
+    return normalized.replace(/\s+$/, '');
+  }
+  return normalized
+    .split('\n')
+    .map((line) => quoteFlowchartNodeLabels(line))
+    .join('\n')
+    .replace(/\s+$/, '');
 }
 
 function serializeNativeTable(headers, rows) {
@@ -170,9 +239,9 @@ function serializeBlockToNativeMd(block) {
     case 'divider':
       return '---';
     case 'mermaid':
-      return ['```mermaid', (content?.code || '').replace(/\s+$/, ''), '```'].join('\n');
+      return ['```mermaid', normalizeMermaidCodeForNativeMd(content?.code || ''), '```'].join('\n');
     case 'mindmap':
-      return (content?.code || '').replace(/\s+$/, '');
+      return ['```mermaid', serializeMindmapAsMermaid(content?.code || ''), '```'].join('\n');
     case 'table': {
       const headers = content?.headers || [];
       const rows = content?.rows || [];

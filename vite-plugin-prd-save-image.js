@@ -24,6 +24,7 @@ const API_SWITCH_DOC = '/__prd__/switch-doc';
 const API_ACTIVE_DOC = '/__prd__/active-doc';
 const API_RENAME_DOC = '/__prd__/rename-doc';
 const API_BACKUP_DOC = '/__prd__/backup-doc';
+const API_SYNC_NATIVE_MD = '/__prd__/sync-native-md';
 
 const PRD_PAGES_DIR = path.join(__dirname, 'pages');
 const PRD_ACTIVE_FILE = path.join(__dirname, 'pages', '.active-doc.json');
@@ -71,6 +72,10 @@ function attachMiddleware(server, liveSync, docHandlers, fileHandlers) {
     }
     if (pathOnly === API_BACKUP_DOC && req.method === 'GET') {
       fileHandlers.getBackupDocDir(req, res);
+      return;
+    }
+    if (pathOnly === API_SYNC_NATIVE_MD && req.method === 'POST') {
+      fileHandlers.syncNativeMd(req, res);
       return;
     }
 

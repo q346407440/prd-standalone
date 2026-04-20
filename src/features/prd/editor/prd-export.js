@@ -239,17 +239,12 @@ function toNativeMdAssetPath(url, activeSlug) {
 }
 
 /**
- * 构建「原生 Markdown」导出包：包含一份去掉 block 标记、表格转 GFM 的 .md 文件，
- * 以及该文档实际引用到的所有图片（统一拍平到 assets/ 目录，与正文里
- * 规范化后的 `./assets/<file>` 相对路径对齐）。
+ * 抽出「原生 Markdown」导出包的文件树产物：.md 文本 + 拍平到 assets/ 的图片 Blob 列表。
+ * 用于：
+ *   - 导出原生 MD（打 zip）
+ *   - 同步 SourceTree（把解压后的文件树直接镜像到本地目录）
  */
-export async function buildNativeMdPrdExport({
-  title,
-  archiveName,
-  blocks,
-  activeSlug,
-  mdPath,
-}) {
+export async function buildNativeMdFileTree({ title, blocks, activeSlug, mdPath }) {
   const docTitle = extractDocTitle(blocks, title);
   const exportSlug = activeSlug || 'doc-001';
   const exportBaseName =
@@ -262,23 +257,50 @@ export async function buildNativeMdPrdExport({
     { activeSlug: exportSlug },
     originalMd, blocks,
   );
-  const archiveFileName = toZipFileName(archiveName || docTitle, `${exportBaseName}-md`);
-
-  const zip = new JSZip();
   const assetBlobCache = new Map();
-  zip.file(mdFileName, nativeMdText);
+  const assets = [];
   for (const assetUrl of assetUrls) {
     const exportPath = toNativeMdAssetPath(assetUrl, exportSlug);
     if (!exportPath) continue;
     const blob = await fetchAssetBlob(assetUrl, assetBlobCache, exportSlug);
+    assets.push({ exportPath, blob });
+  }
+  return {
+    docTitle,
+    exportSlug,
+    exportBaseName,
+    mdFileName,
+    nativeMdText,
+    assets,
+  };
+}
+
+/**
+ * 构建「原生 Markdown」导出包：包含一份去掉 block 标记、表格转 GFM 的 .md 文件，
+ * 以及该文档实际引用到的所有图片（统一拍平到 assets/ 目录，与正文里
+ * 规范化后的 `./assets/<file>` 相对路径对齐）。
+ */
+export async function buildNativeMdPrdExport({
+  title,
+  archiveName,
+  blocks,
+  activeSlug,
+  mdPath,
+}) {
+  const tree = await buildNativeMdFileTree({ title, blocks, activeSlug, mdPath });
+  const archiveFileName = toZipFileName(archiveName || tree.docTitle, `${tree.exportBaseName}-md`);
+
+  const zip = new JSZip();
+  zip.file(tree.mdFileName, tree.nativeMdText);
+  for (const { exportPath, blob } of tree.assets) {
     zip.file(exportPath, blob);
   }
 
   const blob = await zip.generateAsync({ type: 'blob' });
   return {
     fileName: archiveFileName,
-    title: docTitle,
-    mdFileName,
+    title: tree.docTitle,
+    mdFileName: tree.mdFileName,
     blob,
   };
 }
