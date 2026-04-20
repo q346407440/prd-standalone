@@ -1,4 +1,5 @@
 import fs from 'fs';
+import path from 'path';
 import { readActiveDocSlug, findDocMdFile, mdFileToAnnotationsPath } from './prd-doc-handlers.js';
 
 export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
@@ -8,6 +9,8 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
   let started = false;
   let publicPrdWatcher = null;
   let publicPrdDebounce = null;
+  let docAssetsWatcher = null;
+  let docAssetsDebounce = null;
 
   function broadcast(event) {
     const payload = `event: ${event.type}\ndata: ${JSON.stringify({
@@ -66,6 +69,39 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
     }
   }
 
+  function teardownDocAssetsWatch() {
+    if (docAssetsDebounce) {
+      clearTimeout(docAssetsDebounce);
+      docAssetsDebounce = null;
+    }
+    if (docAssetsWatcher) {
+      try { docAssetsWatcher.close(); } catch {}
+      docAssetsWatcher = null;
+    }
+    docAssetsWatchedDir = null;
+  }
+
+  function setupDocAssetsWatch(slug) {
+    teardownDocAssetsWatch();
+    if (!slug) return;
+    const dir = path.join(pagesDir, slug, 'assets');
+    if (!fs.existsSync(dir)) return; // 资产目录可能尚未生成，等首次写入时由下次 rewatch 触发
+    try {
+      docAssetsWatcher = fs.watch(dir, (eventType, filename) => {
+        if (!filename) return;
+        const lower = filename.toLowerCase();
+        if (!/\.(png|jpe?g|webp|gif|svg)$/.test(lower)) return;
+        if (docAssetsDebounce) clearTimeout(docAssetsDebounce);
+        docAssetsDebounce = setTimeout(() => {
+          docAssetsDebounce = null;
+          broadcastPrdSidecarChanged();
+        }, 120);
+      });
+    } catch {
+      docAssetsWatcher = null;
+    }
+  }
+
   function rewatchActiveDoc() {
     for (const [fp, listener] of watchedFiles) {
       fs.unwatchFile(fp, listener);
@@ -80,6 +116,7 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
         watchFile(annotFile, { type: 'prd-sidecar-changed' });
       }
     }
+    setupDocAssetsWatch(slug);
   }
 
   return {
@@ -102,6 +139,7 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
         try { publicPrdWatcher.close(); } catch {}
         publicPrdWatcher = null;
       }
+      teardownDocAssetsWatch();
       for (const client of clients) {
         try { client.end(); } catch {}
       }

@@ -155,9 +155,67 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
   const publicPrdDir = path.join(rootDir, 'public', 'prd');
   const pagesBackupRoot = path.join(rootDir, 'pages-backup');
 
+  /** 解析 doc 资产目录，对 slug 做安全校验 */
+  function docAssetsDir(slug) {
+    if (!isSafeDocSlug(slug)) return null;
+    const dir = path.join(pagesDir, slug, 'assets');
+    const resolvedDir = path.resolve(dir);
+    const resolvedPages = path.resolve(pagesDir);
+    if (!resolvedDir.startsWith(resolvedPages + path.sep)) return null;
+    return resolvedDir;
+  }
+
+  /**
+   * 把客户端传来的图片路径解析为磁盘路径。
+   * 兼容三种格式：
+   *   1) /pages/<slug>/assets/<file>      新格式（浏览器加载用的 URL）
+   *   2) ./assets/<file>                  新格式（MD 源里写的相对路径）
+   *   3) /prd/<file>                      旧格式（迁移期兼容）
+   */
+  function resolveImagePathOnDisk(urlPath, slug) {
+    if (typeof urlPath !== 'string') return null;
+    const cleaned = urlPath.split('?')[0].split('#')[0];
+
+    const pagesMatch = cleaned.match(/^\/pages\/(doc-\d+)\/assets\/([^/]+)$/);
+    if (pagesMatch) {
+      const [, pathSlug, base] = pagesMatch;
+      const safe = safeImageFilename(base);
+      if (!safe) return null;
+      const dir = docAssetsDir(pathSlug);
+      if (!dir) return null;
+      return { kind: 'doc', slug: pathSlug, dir, file: safe };
+    }
+
+    if (cleaned.startsWith('./assets/') || cleaned.startsWith('assets/')) {
+      const base = cleaned.replace(/^\.?\//, '').slice('assets/'.length);
+      const safe = safeImageFilename(base);
+      if (!safe) return null;
+      const dir = docAssetsDir(slug);
+      if (!dir) return null;
+      return { kind: 'doc', slug, dir, file: safe };
+    }
+
+    if (cleaned.startsWith('/prd/') && !cleaned.startsWith('/prd/annotations/')) {
+      const base = cleaned.slice('/prd/'.length);
+      const safe = safeImageFilename(base);
+      if (!safe) return null;
+      return { kind: 'legacy', slug: null, dir: publicPrdDir, file: safe };
+    }
+
+    return null;
+  }
+
   return {
-    /** POST /__prd__/save-image */
+    /** POST /__prd__/save-image?slug=doc-001 — 写到 pages/<slug>/assets/，返回 ./assets/<file> */
     saveImage(req, res) {
+      const urlObj = new URL(req.url, 'http://localhost');
+      const slug = urlObj.searchParams.get('slug') || readActiveDocSlug(pagesDir, activeFile);
+      const assetsDir = docAssetsDir(slug);
+      if (!assetsDir) {
+        res.statusCode = 400;
+        res.setHeader('Content-Type', 'application/json');
+        return res.end(JSON.stringify({ ok: false, error: `invalid slug: ${slug}` }));
+      }
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {
@@ -173,7 +231,6 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
             res.end(JSON.stringify({ ok: false, error: 'invalid request' }));
             return;
           }
-          fs.mkdirSync(publicPrdDir, { recursive: true });
           const buf = Buffer.from(dataBase64, 'base64');
           if (buf.length > 25 * 1024 * 1024) {
             res.statusCode = 413;
@@ -181,11 +238,14 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
             res.end(JSON.stringify({ ok: false, error: 'file too large' }));
             return;
           }
-          fs.writeFileSync(path.join(publicPrdDir, safe), buf);
+          fs.mkdirSync(assetsDir, { recursive: true });
+          fs.writeFileSync(path.join(assetsDir, safe), buf);
+          // MD 里写相对路径；URL 是浏览器加载用的（与 Vite 中间件路由一致）
+          const mdPath = `./assets/${safe}`;
+          const url = `/pages/${slug}/assets/${safe}`;
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json');
-          const url = `/prd/${safe}`;
-          res.end(JSON.stringify({ ok: true, url, path: url }));
+          res.end(JSON.stringify({ ok: true, url, path: mdPath, slug }));
         } catch (e) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
@@ -194,8 +254,13 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
       });
     },
 
-    /** POST /__prd__/delete-image */
+    /**
+     * POST /__prd__/delete-image?slug=doc-001
+     * 兼容三种 path 格式：./assets/x、/pages/<slug>/assets/x、/prd/x（迁移期）
+     */
     deleteImage(req, res) {
+      const urlObj = new URL(req.url, 'http://localhost');
+      const slug = urlObj.searchParams.get('slug') || readActiveDocSlug(pagesDir, activeFile);
       const chunks = [];
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {
@@ -203,23 +268,16 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
           const raw = Buffer.concat(chunks).toString('utf8');
           const json = JSON.parse(raw);
           const urlPath = json.path || json.url;
-          if (typeof urlPath !== 'string' || !urlPath.startsWith('/prd/')) {
+          const resolved = resolveImagePathOnDisk(urlPath, slug);
+          if (!resolved) {
             res.statusCode = 400;
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify({ ok: false, error: 'invalid path' }));
             return;
           }
-          const base = path.basename(urlPath);
-          const safe = safeImageFilename(base);
-          if (!safe || `/prd/${safe}` !== urlPath.split('?')[0]) {
-            res.statusCode = 400;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ ok: false, error: 'invalid filename' }));
-            return;
-          }
-          const fullPath = path.join(publicPrdDir, safe);
+          const fullPath = path.join(resolved.dir, resolved.file);
           const resolvedFull = path.resolve(fullPath);
-          const resolvedRoot = path.resolve(publicPrdDir);
+          const resolvedRoot = path.resolve(resolved.dir);
           if (!resolvedFull.startsWith(resolvedRoot + path.sep) && resolvedFull !== resolvedRoot) {
             res.statusCode = 400;
             res.setHeader('Content-Type', 'application/json');
@@ -229,13 +287,45 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
           if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ ok: true }));
+          res.end(JSON.stringify({ ok: true, kind: resolved.kind }));
         } catch (e) {
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ ok: false, error: String(e?.message || e) }));
         }
       });
+    },
+
+    /** GET /pages/:slug/assets/:file — 服务 doc 自带的图片（colocated） */
+    readDocAsset(req, res, slug, fileName) {
+      const safe = safeImageFilename(fileName);
+      const assetsDir = docAssetsDir(slug);
+      if (!safe || !assetsDir) {
+        res.statusCode = 404;
+        return res.end('not found');
+      }
+      const fullPath = path.join(assetsDir, safe);
+      const resolvedFull = path.resolve(fullPath);
+      const resolvedRoot = path.resolve(assetsDir);
+      if (!resolvedFull.startsWith(resolvedRoot + path.sep)) {
+        res.statusCode = 400;
+        return res.end('path escape');
+      }
+      if (!fs.existsSync(resolvedFull) || !fs.statSync(resolvedFull).isFile()) {
+        res.statusCode = 404;
+        return res.end('not found');
+      }
+      const ext = path.extname(safe).toLowerCase();
+      const mime = ext === '.png' ? 'image/png'
+        : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+        : ext === '.gif' ? 'image/gif'
+        : ext === '.webp' ? 'image/webp'
+        : ext === '.svg' ? 'image/svg+xml'
+        : 'application/octet-stream';
+      res.statusCode = 200;
+      res.setHeader('Content-Type', mime);
+      res.setHeader('Cache-Control', 'no-store');
+      fs.createReadStream(resolvedFull).pipe(res);
     },
 
     /** POST /__prd__/save-md?slug=xxx */

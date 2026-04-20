@@ -9,6 +9,8 @@ import { Markdown } from 'tiptap-markdown';
 import { editorToMarkdown } from './tiptap-md-utils.js';
 import { getTextOffsetFromPoint } from './prd-text-editing.js';
 import { emitPrdToast } from './prd-toast.js';
+import { uploadPastedImage } from './prd-api.js';
+import { useActiveSlug } from './active-slug-context.jsx';
 import { renderParagraphMarkdownPreviewToHtml } from './tiptap-markdown-preview.js';
 import { SelectionToolbar, ListPrefixMenu } from './tiptap-editing-toolbar.jsx';
 import {
@@ -129,35 +131,6 @@ function getImageFromPaste(e) {
   const items = Array.from(e.clipboardData?.items || []);
   const imgItem = items.find((it) => it.kind === 'file' && it.type.startsWith('image/'));
   return imgItem ? imgItem.getAsFile() : null;
-}
-
-async function uploadPastedImage(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target.result;
-      const base64 = dataUrl.split(',')[1];
-      const ext = file.type === 'image/png' ? 'png'
-        : file.type === 'image/gif' ? 'gif'
-          : file.type === 'image/webp' ? 'webp'
-            : 'jpg';
-      const fileName = `paste-${Date.now()}.${ext}`;
-      try {
-        const res = await fetch('/__prd__/save-image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fileName, base64 }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          emitPrdToast('图片粘贴成功');
-          resolve(data.path);
-        }
-        else reject(new Error(data.error));
-      } catch (err) { reject(err); }
-    };
-    reader.readAsDataURL(file);
-  });
 }
 
 // ─── Tiptap extensions ────────────────────────────────────────────────────
@@ -291,6 +264,9 @@ function TiptapEditingSurface({
   const editorContainerRef = useRef(null);
   const toolbarPanelRef = useRef(null);
   const extensions = useMemo(() => makeEditableExtensions(placeholder), [placeholder]);
+  const activeSlug = useActiveSlug();
+  const activeSlugRef = useRef(activeSlug);
+  useEffect(() => { activeSlugRef.current = activeSlug; }, [activeSlug]);
 
   const finishEditing = useCallback(() => {
     onClose?.();
@@ -310,7 +286,7 @@ function TiptapEditingSurface({
         event.preventDefault();
         (async () => {
           try {
-            const imgPath = await uploadPastedImage(file);
+            const imgPath = await uploadPastedImage(file, activeSlugRef.current);
             const ed = editorRef.current;
             const currentMd = ed ? editorToMarkdown(ed) : '';
             const cbs = callbacksRef.current;
@@ -677,13 +653,17 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
     setEditing(false);
   }, []);
 
+  const previewActiveSlug = useActiveSlug();
+  const previewActiveSlugRef = useRef(previewActiveSlug);
+  useEffect(() => { previewActiveSlugRef.current = previewActiveSlug; }, [previewActiveSlug]);
+
   const handlePreviewPaste = useCallback((e) => {
     const file = getImageFromPaste(e);
     if (!file) return;
     e.preventDefault();
     (async () => {
       try {
-        const imgPath = await uploadPastedImage(file);
+        const imgPath = await uploadPastedImage(file, previewActiveSlugRef.current);
         const hasContent = !!valueRef.current?.trim();
         if (hasContent) {
           onPasteImageAsBlock?.(imgPath);

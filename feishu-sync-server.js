@@ -91,6 +91,10 @@ function createServerState({ rootDir, publicDir }) {
   return {
     rootDir,
     publicDir,
+    pagesDir: path.join(rootDir, 'pages'),
+    // 当前正在执行的同步任务对应的 doc slug（用于把 ./assets/X 解析到 pages/<slug>/assets/X）。
+    // 单用户 dev 工具，不考虑多 job 并发跨 slug 抢占 state 的极端场景。
+    currentSyncSlug: '',
     localDir,
     authFilePath: path.join(localDir, 'feishu-auth.json'),
     imageCacheFilePath: path.join(localDir, 'feishu-image-cache.json'),
@@ -422,6 +426,32 @@ function detectMimeType(filePath) {
   return 'application/octet-stream';
 }
 
+/**
+ * 把图片 src 解析为本地磁盘路径 buffer。支持三种 PRD 路径形式：
+ *   - /prd/X.png                        → publicDir/prd/X.png（迁移期遗留）
+ *   - /pages/<slug>/assets/X.png        → pagesDir/<slug>/assets/X.png（colocated）
+ *   - ./assets/X.png（或 assets/X.png） → pagesDir/<currentSlug>/assets/X.png
+ * 以及 data: / http(s): URL。
+ */
+function resolveLocalImageAbsolutePath(src, state) {
+  // /pages/<slug>/assets/<file>
+  const docMatch = src.match(/^\/pages\/(doc-\d+)\/assets\/([^/?#]+)$/);
+  if (docMatch) {
+    return path.join(state.pagesDir, docMatch[1], 'assets', docMatch[2]);
+  }
+  // ./assets/<file> 或 assets/<file>（相对路径，需要 currentSyncSlug 上下文）
+  const relAssetMatch = src.match(/^\.?\/?assets\/([^/?#]+)$/);
+  if (relAssetMatch) {
+    if (!state.currentSyncSlug) {
+      throw new Error(`无法解析相对图片路径（缺少 slug 上下文）：${src}`);
+    }
+    return path.join(state.pagesDir, state.currentSyncSlug, 'assets', relAssetMatch[1]);
+  }
+  // /prd/<file> 或其它 publicDir 下绝对路径（兼容旧路径）
+  const relative = src.startsWith('/') ? src.slice(1) : src;
+  return path.join(state.publicDir, relative);
+}
+
 async function resolveImageSourceBuffer(src, state) {
   if (!src) throw new Error('图片路径为空');
   if (/^data:/i.test(src)) {
@@ -444,8 +474,7 @@ async function resolveImageSourceBuffer(src, state) {
       mimeType: response.headers.get('content-type') || 'application/octet-stream',
     };
   }
-  const relative = src.startsWith('/') ? src.slice(1) : src;
-  const absolutePath = path.join(state.publicDir, relative);
+  const absolutePath = resolveLocalImageAbsolutePath(src, state);
   if (!fs.existsSync(absolutePath)) {
     throw new Error(`本地图片不存在：${src}`);
   }
@@ -1594,6 +1623,8 @@ async function runSyncJob(state, job) {
   const auth = await ensureValidAccessToken(state, config);
   const accessToken = auth.accessToken;
   const { docUrl, blocks, sourceSlug, sourceTitle } = job.payload;
+  // 把当前 job 对应的 doc slug 挂到 state，让 resolveImageSourceBuffer 能解析 ./assets/X 相对路径。
+  state.currentSyncSlug = String(sourceSlug || '').replace(/[^a-z0-9_-]/gi, '');
   const resolved = await resolveDocumentFromUrl(accessToken, docUrl);
 
   updateJob(job, {
@@ -1905,8 +1936,7 @@ export function createFeishuSyncApi({ rootDir, publicDir }) {
           // 如果前端没传 blocks，尝试根据 slug 从本地 md 文件自动解析
           if (!blocks && body?.slug) {
             const slug = String(body.slug).replace(/[^a-z0-9_-]/gi, '');
-            const pagesDir = path.join(state.rootDir, 'pages');
-            const slugDir = path.join(pagesDir, slug);
+            const slugDir = path.join(state.pagesDir, slug);
             if (fs.existsSync(slugDir)) {
               const mdFiles = fs.readdirSync(slugDir).filter(f => f.endsWith('.md'));
               if (mdFiles.length > 0) {
@@ -1927,7 +1957,7 @@ export function createFeishuSyncApi({ rootDir, publicDir }) {
           const job = createJob(state, {
             docUrl,
             blocks,
-            sourceSlug: String(body?.sourceSlug || ''),
+            sourceSlug: String(body?.sourceSlug || body?.slug || ''),
             sourceTitle: String(body?.sourceTitle || ''),
           });
           void runSyncJob(state, job).catch((error) => {

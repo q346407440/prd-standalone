@@ -120,8 +120,9 @@ export async function deleteAnnotationAsset(urlPath) {
   if (!res.ok || !data.ok) throw new Error(data.error || 'delete annotation asset failed');
 }
 
-export async function deletePrdImage(urlPath) {
-  const res = await fetch(DELETE_IMAGE_API, {
+export async function deletePrdImage(urlPath, slug) {
+  const url = slug ? `${DELETE_IMAGE_API}${slugToApiSuffix(slug)}` : DELETE_IMAGE_API;
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: urlPath }),
@@ -173,7 +174,12 @@ export async function renameDoc(slug, newName) {
   return res.json();
 }
 
-export async function uploadPastedImage(file) {
+/**
+ * 粘贴图片：写到 pages/<slug>/assets/，返回 ./assets/<file>（要插入 MD 的相对路径）。
+ * slug 必填——决定写到哪个 doc 自带的资产目录。
+ */
+export async function uploadPastedImage(file, slug) {
+  if (!slug) throw new Error('uploadPastedImage: slug is required');
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = async (e) => {
@@ -185,7 +191,7 @@ export async function uploadPastedImage(file) {
             : 'jpg';
       const fileName = `paste-${Date.now()}.${ext}`;
       try {
-        const res = await fetch('/__prd__/save-image', {
+        const res = await fetch(`/__prd__/save-image${slugToApiSuffix(slug)}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ fileName, base64 }),

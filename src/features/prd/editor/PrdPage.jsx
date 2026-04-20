@@ -17,6 +17,7 @@ import {
 import { emitPrdToast, PRD_TOAST_EVENT } from './prd-toast.js';
 import {
   buildStandalonePrdExport,
+  buildNativeMdPrdExport,
   downloadStandalonePrdExport,
   saveStandalonePrdExportToDirectory,
 } from './prd-export.js';
@@ -63,6 +64,7 @@ import {
   diffRemovedPrdPaths,
   isNodeHovered,
 } from './prd-utils.js';
+import { ActiveSlugProvider } from './active-slug-context.jsx';
 import {
   fetchPrdMd,
   savePrdMd,
@@ -157,6 +159,7 @@ export function PrdPage() {
   });
   const [activeTocId, setActiveTocId] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingNativeMd, setIsExportingNativeMd] = useState(false);
   /** 按 slug 关闭自动备份（仅内存；刷新页面后清空，全部恢复为开启） */
   const [autoBackupOffBySlug, setAutoBackupOffBySlug] = useState({});
   /** 外部更新 annotations 或 public/prd 图片时递增，用于 /<prd>/ 图 URL 缓存穿透 */
@@ -688,7 +691,7 @@ export function PrdPage() {
           }
           const removed = diffRemovedPrdPaths(lastSavedMdRef.current, newMd);
           for (const p of removed) {
-            await deletePrdImage(p).catch(() => {});
+            await deletePrdImage(p, activeSlugRef.current).catch(() => {});
           }
           await savePrdMd(newMd, activeSlugRef.current);
           lastSavedMdRef.current = newMd;
@@ -1359,6 +1362,56 @@ export function PrdPage() {
     }
   }, [annotationsDoc, blocks, imageMeta, isExporting, mermaidMeta, mindmapMeta]);
 
+  const handleExportNativeMd = useCallback(async ({ currentTitle = '', archiveName = '' } = {}) => {
+    if (!blocks?.length || isExportingNativeMd) return;
+    setIsExportingNativeMd(true);
+    emitPrdToast('正在导出原生 MD…', {
+      id: 'prd-export-native-md',
+      tone: 'warning',
+      duration: null,
+    });
+    try {
+      const exported = await buildNativeMdPrdExport({
+        title: currentTitle || activeSlugRef.current,
+        archiveName,
+        blocks,
+        activeSlug: activeSlugRef.current,
+        mdPath: activeMdPathRef.current,
+      });
+      if (typeof window.showSaveFilePicker === 'function') {
+        await saveStandalonePrdExportToDirectory(exported);
+        emitPrdToast(`导出成功：${exported.fileName}`, {
+          id: 'prd-export-native-md',
+          tone: 'success',
+          duration: 2400,
+        });
+      } else {
+        downloadStandalonePrdExport(exported);
+        emitPrdToast('当前浏览器不支持保存对话框，已改为直接下载 ZIP 包', {
+          id: 'prd-export-native-md',
+          tone: 'warning',
+          duration: 3200,
+        });
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        emitPrdToast('已取消导出', {
+          id: 'prd-export-native-md',
+          tone: 'warning',
+          duration: 1800,
+        });
+      } else {
+        emitPrdToast(`导出失败：${error?.message || error}`, {
+          id: 'prd-export-native-md',
+          tone: 'error',
+          duration: 3600,
+        });
+      }
+    } finally {
+      setIsExportingNativeMd(false);
+    }
+  }, [blocks, isExportingNativeMd]);
+
   const COPY_MD_CURSOR_TOAST =
     '已复制当前位置的 MD 行号（@文件:行号）。在 Cursor 输入框粘贴后即可引用该处并提问。';
 
@@ -1524,6 +1577,7 @@ export function PrdPage() {
 
   if (loadErr) {
     return (
+      <ActiveSlugProvider value={activeSlug}>
       <div className="prd-page">
         <ToastViewport toasts={toasts} />
         <div className="prd-page__layout">
@@ -1532,6 +1586,7 @@ export function PrdPage() {
               activeSlug={activeSlug}
               blocks={null}
               exporting={false}
+              exportingNativeMd={false}
               autoBackupOff={!!autoBackupOffBySlug[activeSlug]}
               onAutoBackupOffChange={(off) => {
                 setAutoBackupOffBySlug((prev) => {
@@ -1542,6 +1597,7 @@ export function PrdPage() {
                 });
               }}
               onExport={() => {}}
+              onExportNativeMd={() => {}}
               onSwitch={(slug) => {
                 activeSlugRef.current = slug;
                 setActiveSlug(slug);
@@ -1564,20 +1620,24 @@ export function PrdPage() {
           </div>
         </div>
       </div>
+      </ActiveSlugProvider>
     );
   }
 
   if (!blocks) {
     return (
+      <ActiveSlugProvider value={activeSlug}>
       <div className="prd-page">
         <div className="prd-page__loading">加载中…</div>
       </div>
+      </ActiveSlugProvider>
     );
   }
 
   const deleteBlock = blocks.find((b) => b.id === deleteTarget);
 
   return (
+    <ActiveSlugProvider value={activeSlug}>
     <div className="prd-page">
         <ToastViewport toasts={toasts} />
 
@@ -1604,6 +1664,7 @@ export function PrdPage() {
               activeSlug={activeSlug}
               blocks={blocks}
               exporting={isExporting}
+              exportingNativeMd={isExportingNativeMd}
               autoBackupOff={!!autoBackupOffBySlug[activeSlug]}
               onAutoBackupOffChange={(off) => {
                 setAutoBackupOffBySlug((prev) => {
@@ -1614,6 +1675,7 @@ export function PrdPage() {
                 });
               }}
               onExport={handleExportStandalone}
+              onExportNativeMd={handleExportNativeMd}
               onSwitch={(slug) => {
                 activeSlugRef.current = slug;
                 setActiveSlug(slug);
@@ -1694,5 +1756,6 @@ export function PrdPage() {
           </Suspense>
         )}
       </div>
+    </ActiveSlugProvider>
   );
 }

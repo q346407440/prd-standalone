@@ -8,7 +8,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "migrate-assets": "node scripts/migrate-assets-to-doc-folders.mjs"
   },
   "dependencies": {
     "@tiptap/extension-image": "^3.22.3",

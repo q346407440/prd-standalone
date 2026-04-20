@@ -38,12 +38,26 @@ export function genId() {
   return `blk-${Date.now()}-${++_idSeq}`;
 }
 
+/**
+ * 从 MD/任意文本中提取 PRD 图片路径，覆盖三种格式：
+ *   1) ./assets/<file>                 doc 自带（colocated，写在 MD 源里）
+ *   2) /pages/<slug>/assets/<file>     doc 自带（浏览器加载用的 URL 形式）
+ *   3) /prd/<file>                     旧的全局公共目录（兼容期保留）
+ *
+ * 返回 Set<string>，值是文本中**字面**出现的形式，便于做去重 / diff，
+ * 也便于把同一个 path 直接传给后端（后端会判别三种格式）。
+ */
 export function extractPrdImagePaths(text) {
   const set = new Set();
   if (!text || typeof text !== 'string') return set;
-  const re = /\/prd\/[a-zA-Z0-9_.-]+\.(?:png|jpe?g|gif|webp)/gi;
+  const re = /(?:\/prd\/[a-zA-Z0-9_.-]+|\/pages\/doc-\d+\/assets\/[a-zA-Z0-9_.-]+|(?:^|[^\w./])\.\/assets\/[a-zA-Z0-9_.-]+)\.(?:png|jpe?g|gif|webp|svg|bmp)/gi;
   let m;
-  while ((m = re.exec(text)) !== null) set.add(m[0]);
+  while ((m = re.exec(text)) !== null) {
+    // 上面 ./assets 的 lookbehind 用了非捕获前缀，这里规整成纯路径字符串
+    const raw = m[0];
+    const idx = raw.indexOf('./assets/');
+    set.add(idx > 0 ? raw.slice(idx) : raw);
+  }
   return set;
 }
 
@@ -51,6 +65,12 @@ export function diffRemovedPrdPaths(oldMd, newMd) {
   const oldSet = extractPrdImagePaths(oldMd);
   const newSet = extractPrdImagePaths(newMd);
   return [...oldSet].filter((p) => !newSet.has(p));
+}
+
+/** 判断一段路径是否属于 PRD 图片（任一兼容格式） */
+export function isPrdImagePath(s) {
+  if (typeof s !== 'string') return false;
+  return /^(?:\/prd\/|\/pages\/doc-\d+\/assets\/|\.\/assets\/)[a-zA-Z0-9_.-]+\.(?:png|jpe?g|gif|webp|svg|bmp)$/i.test(s);
 }
 
 export function cloneSerializable(value) {

@@ -6,6 +6,7 @@ import {
   FiEdit2,
   FiChevronDown,
   FiDownload,
+  FiFileText,
 } from 'react-icons/fi';
 import {
   PRD_FILE_NAME_RULE_HINT,
@@ -30,7 +31,9 @@ export function PrdToolbar({
   blocks,
   onSwitch,
   onExport,
+  onExportNativeMd,
   exporting = false,
+  exportingNativeMd = false,
   autoBackupOff = false,
   onAutoBackupOffChange,
 }) {
@@ -52,6 +55,10 @@ export function PrdToolbar({
   const [exportPackageName, setExportPackageName] = useState('');
   const [exportPackageError, setExportPackageError] = useState('');
 
+  const [exportMdDialogOpen, setExportMdDialogOpen] = useState(false);
+  const [exportMdPackageName, setExportMdPackageName] = useState('');
+  const [exportMdPackageError, setExportMdPackageError] = useState('');
+
   const [switchingSlug, setSwitchingSlug] = useState(null);
 
   /** 本会话内已对某 slug 做过「首次选中立即备份」，再次切回该 slug 仅走定时器 */
@@ -68,6 +75,7 @@ export function PrdToolbar({
   const newDocInputRef = useRef(null);
   const renameInputRef = useRef(null);
   const exportInputRef = useRef(null);
+  const exportMdInputRef = useRef(null);
   const [panelStyle, setPanelStyle] = useState({});
 
   function closePanel() {
@@ -92,6 +100,18 @@ export function PrdToolbar({
     if (exporting) return;
     setExportDialogOpen(false);
     setExportPackageError('');
+  }
+
+  function openExportMdDialog() {
+    setExportMdPackageName(getDefaultExportPackageName());
+    setExportMdPackageError('');
+    setExportMdDialogOpen(true);
+  }
+
+  function closeExportMdDialog() {
+    if (exportingNativeMd) return;
+    setExportMdDialogOpen(false);
+    setExportMdPackageError('');
   }
 
   useEffect(() => {
@@ -225,6 +245,15 @@ export function PrdToolbar({
   }, [exportDialogOpen]);
 
   useEffect(() => {
+    if (exportMdDialogOpen) {
+      setTimeout(() => {
+        exportMdInputRef.current?.focus();
+        exportMdInputRef.current?.select();
+      }, 30);
+    }
+  }, [exportMdDialogOpen]);
+
+  useEffect(() => {
     if (!switchPanelOpen) return;
     function handleClickOutside(e) {
       if (
@@ -316,6 +345,20 @@ export function PrdToolbar({
       archiveName,
     });
     setExportDialogOpen(false);
+  }
+
+  async function handleExportNativeMdWithPackageName() {
+    const archiveName = normalizeProjectLikeName(exportMdPackageName);
+    if (!archiveName) {
+      setExportMdPackageError('请输入合法文件名');
+      return;
+    }
+    setExportMdPackageError('');
+    await onExportNativeMd?.({
+      currentTitle: activeTitle || activeSlug,
+      archiveName,
+    });
+    setExportMdDialogOpen(false);
   }
 
   return (
@@ -531,6 +574,15 @@ export function PrdToolbar({
           <FiDownload className="prd-toolbar__btn-icon" />
           <span>{exporting ? '导出中…' : '导出离线包'}</span>
         </button>
+        <button
+          className={`prd-toolbar__btn${exportingNativeMd ? ' prd-toolbar__btn--active' : ''}`}
+          title="导出原生 Markdown：去掉 block 标记、表格转 GFM、图片随包"
+          onClick={openExportMdDialog}
+          disabled={exportingNativeMd}
+        >
+          <FiFileText className="prd-toolbar__btn-icon" />
+          <span>{exportingNativeMd ? '导出中…' : '导出原生 MD'}</span>
+        </button>
       </div>
       {backupPathModalOpen ? (
         <BackupFolderPathModal
@@ -551,6 +603,20 @@ export function PrdToolbar({
           }}
           onCancel={closeExportDialog}
           onConfirm={handleExportWithPackageName}
+        />
+      ) : null}
+      {exportMdDialogOpen ? (
+        <ExportPackageModal
+          value={exportMdPackageName}
+          error={exportMdPackageError}
+          exporting={exportingNativeMd}
+          inputRef={exportMdInputRef}
+          onChange={(value) => {
+            setExportMdPackageName(normalizeProjectLikeName(value));
+            setExportMdPackageError('');
+          }}
+          onCancel={closeExportMdDialog}
+          onConfirm={handleExportNativeMdWithPackageName}
         />
       ) : null}
     </div>

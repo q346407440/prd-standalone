@@ -30,22 +30,43 @@ export function escapeAttribute(value) {
   return escapeHtml(value).replace(/`/g, '&#96;');
 }
 
-export function normalizeAssetUrl(url) {
+/**
+ * 把 MD 源里的图片路径规范化成「dev server 可 GET 的 URL」。
+ * 支持三种入参格式：
+ *   1) ./assets/<file>                  + activeSlug → /pages/<activeSlug>/assets/<file>
+ *   2) /pages/doc-XXX/assets/<file>     原样（去掉 query）
+ *   3) /prd/<file>                      原样（去掉 query）
+ * 其它形如 http://、data:、空串等返回 ''。
+ */
+export function normalizeAssetUrl(url, activeSlug = '') {
   if (typeof url !== 'string') return '';
-  const trimmed = url.trim();
-  if (!trimmed.startsWith('/')) return '';
-  return trimmed.split('?')[0];
+  const cleaned = url.trim().split('?')[0].split('#')[0];
+  if (!cleaned) return '';
+  if (cleaned.startsWith('./assets/') || cleaned.startsWith('assets/')) {
+    if (!activeSlug) return '';
+    const tail = cleaned.replace(/^\.?\//, '').slice('assets/'.length);
+    return `/pages/${activeSlug}/assets/${tail}`;
+  }
+  if (cleaned.startsWith('/pages/') || cleaned.startsWith('/prd/')) return cleaned;
+  return '';
 }
 
-export function toPreviewAssetPath(url) {
-  const exportPath = toExportAssetPath(url);
-  return exportPath ? `./${exportPath}` : '';
-}
-
-export function toExportAssetPath(url) {
-  const normalized = normalizeAssetUrl(url);
+/** 在 zip 内的导出路径（与磁盘真实结构对齐）：
+ *   /pages/<slug>/assets/<file> → pages/<slug>/assets/<file>
+ *   /prd/<file>                 → public/prd/<file>
+ */
+export function toExportAssetPath(url, activeSlug = '') {
+  const normalized = normalizeAssetUrl(url, activeSlug);
   if (!normalized) return '';
-  return `public${normalized}`;
+  if (normalized.startsWith('/pages/')) return normalized.slice(1);
+  if (normalized.startsWith('/prd/')) return `public${normalized}`;
+  return '';
+}
+
+/** preview HTML 里 <img src="..."> 引用的相对路径（zip 解压后能直接打开） */
+export function toPreviewAssetPath(url, activeSlug = '') {
+  const exportPath = toExportAssetPath(url, activeSlug);
+  return exportPath ? `./${exportPath}` : '';
 }
 
 function renderMarkdownBodyHtml(markdown) {
@@ -140,11 +161,12 @@ function renderDiagramHtml({
   `;
 }
 
-function buildImageHtml(src, widthPx, assetPathMap) {
+function buildImageHtml(src, widthPx, assetPathMap, activeSlug = '') {
   if (!src) {
     return '<div class="prd-export-image__error">图片地址为空</div>';
   }
-  const previewSrc = assetPathMap.get(normalizeAssetUrl(src)) || toPreviewAssetPath(src);
+  const normalized = normalizeAssetUrl(src, activeSlug);
+  const previewSrc = (normalized && assetPathMap.get(normalized)) || toPreviewAssetPath(src, activeSlug);
   if (!previewSrc) {
     return `<div class="prd-export-image__error">图片路径无效：${escapeHtml(src)}</div>`;
   }
@@ -167,7 +189,7 @@ export async function buildElementHtml(element, context, diagramPlacement = null
   if (!element) return '';
   if (element.type === 'image') {
     const widthPx = context.imageMeta?.[element.src] ?? null;
-    return buildImageHtml(element.src, widthPx, context.assetPathMap);
+    return buildImageHtml(element.src, widthPx, context.assetPathMap, context.activeSlug);
   }
   if (element.type === 'mermaid') {
     const placement = diagramPlacement && (diagramPlacement.kind === 'standalone' || diagramPlacement.kind === 'table')
@@ -342,15 +364,25 @@ export function renderTreeNodes(nodes) {
   }).join('');
 }
 
-export function collectPrdAssetUrls(...sources) {
+/**
+ * 从任意文本/对象中提取 PRD 图片资源 URL（已 normalize 成 dev server 可 GET 的形式）。
+ * 兼容三种字面格式：./assets/X、/pages/<slug>/assets/X、/prd/X
+ * 第一个非 sources 参数：activeSlug（用于把 ./assets/X 解析到具体 doc）。
+ * 旧调用 `collectPrdAssetUrls(text, blocks)` 仍兼容（activeSlug 为空时会跳过 ./assets/X，
+ * 导出器需自己保证传入了 slug）。
+ */
+export function collectPrdAssetUrls({ activeSlug = '' } = {}, ...sources) {
   const set = new Set();
-  const re = /\/prd\/[^\s)"'`]+?\.(?:png|jpe?g|gif|webp|svg)/gi;
+  const re = /(?:\/prd\/[^\s)"'`]+?|\/pages\/doc-\d+\/assets\/[^\s)"'`]+?|(?:^|[^\w./])\.\/assets\/[^\s)"'`]+?)\.(?:png|jpe?g|gif|webp|svg|bmp)/gi;
   sources.forEach((source) => {
     const text = typeof source === 'string' ? source : JSON.stringify(source ?? null);
     if (!text) return;
     let match;
     while ((match = re.exec(text)) !== null) {
-      const normalized = normalizeAssetUrl(match[0]);
+      const raw = match[0];
+      const idx = raw.indexOf('./assets/');
+      const literal = idx > 0 ? raw.slice(idx) : raw;
+      const normalized = normalizeAssetUrl(literal, activeSlug);
       if (normalized) set.add(normalized);
     }
   });

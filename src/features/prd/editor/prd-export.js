@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { toSafeDocBaseName } from '../../../../shared/prd-filename-sanitize.js';
 import { serializePrd } from './prd-writer.js';
+import { serializePrdAsNativeMd } from './prd-export-native-md.js';
 import { buildStandaloneHtml } from './prd-export-template.js';
 import {
   escapeHtml,
@@ -82,8 +83,8 @@ function buildMetaPayload({ imageMeta, mermaidMeta, mindmapMeta }) {
   };
 }
 
-async function fetchAssetBlob(url, cache) {
-  const normalized = normalizeAssetUrl(url);
+async function fetchAssetBlob(url, cache, activeSlug = '') {
+  const normalized = normalizeAssetUrl(url, activeSlug);
   if (!normalized) {
     throw new Error(`非法资源路径：${url}`);
   }
@@ -127,8 +128,11 @@ export async function buildStandalonePrdExport({
   const metaPayload = buildMetaPayload({ imageMeta, mermaidMeta, mindmapMeta });
   const mdText = serializePrd(blocks || []);
   const annotationsPayload = annotationsDoc || {};
-  const assetUrls = collectPrdAssetUrls(mdText, metaPayload, annotationsPayload, blocks);
-  const assetPathMap = new Map(assetUrls.map((url) => [url, toPreviewAssetPath(url)]));
+  const assetUrls = collectPrdAssetUrls(
+    { activeSlug: exportSlug },
+    mdText, metaPayload, annotationsPayload, blocks,
+  );
+  const assetPathMap = new Map(assetUrls.map((url) => [url, toPreviewAssetPath(url, exportSlug)]));
   const tocItems = buildTocItems(blocks);
   const tocTree = buildTocTree(tocItems);
   const contentHtml = await buildContentHtml(blocks, {
@@ -138,6 +142,7 @@ export async function buildStandalonePrdExport({
     renderMermaidSvg,
     renderMindmapSvg,
     assetPathMap,
+    activeSlug: exportSlug,
   });
   const treeHtml = renderTreeNodes(tocTree);
   const previewFileName = toPreviewHtmlFileName(docTitle, exportBaseName);
@@ -156,7 +161,6 @@ export async function buildStandalonePrdExport({
     annotations: annotationsPayload,
     treeHtml,
     contentHtml,
-    assetBase: './public/prd/',
     preview: previewFileName,
     exportedAtLabel,
   })};\n`);
@@ -178,7 +182,8 @@ export async function buildStandalonePrdExport({
     '- export-manifest.json：导出包索引，声明 preview、source 与 assets 的路径映射关系',
     '',
     '素材关系：',
-    '- public/prd/：本次导出中被当前文档数据实际引用到的图片素材集合',
+    `- pages/${exportSlug}/assets/：本次文档实际引用到的图片素材（与 MD 里的 ./assets/ 相对路径对齐）`,
+    '- public/prd/：迁移期遗留的旧路径素材子集（仅当 MD 里仍有 /prd/ 引用时才会出现）',
     '- 这里导出的不是整个仓库素材目录，而是当前文档相关的素材子集',
   ].join('\n'));
   zip.file('pages/.active-doc.json', `${escapeJsonForInlineScript({ slug: exportSlug })}\n`);
@@ -200,13 +205,13 @@ export async function buildStandalonePrdExport({
     },
     assets: assetUrls.map((url) => ({
       source: url,
-      exported: toExportAssetPath(url),
+      exported: toExportAssetPath(url, exportSlug),
     })),
   }, null, 2)}\n`);
   for (const assetUrl of assetUrls) {
-    const exportPath = toExportAssetPath(assetUrl);
+    const exportPath = toExportAssetPath(assetUrl, exportSlug);
     if (!exportPath) continue;
-    const blob = await fetchAssetBlob(assetUrl, assetBlobCache);
+    const blob = await fetchAssetBlob(assetUrl, assetBlobCache, exportSlug);
     zip.file(exportPath, blob);
   }
   const blob = await zip.generateAsync({ type: 'blob' });
@@ -214,6 +219,66 @@ export async function buildStandalonePrdExport({
     fileName: archiveFileName,
     title: docTitle,
     previewFileName,
+    blob,
+  };
+}
+
+/**
+ * 把任意输入路径映射成 zip 内的 `assets/<file>`，
+ * 与 native MD 正文里规范化后的相对路径 `./assets/...` 保持一致。
+ *   /pages/<slug>/assets/X → assets/X
+ *   /prd/X                 → assets/X（迁移期遗留）
+ */
+function toNativeMdAssetPath(url, activeSlug) {
+  const normalized = normalizeAssetUrl(url, activeSlug);
+  if (!normalized) return '';
+  const docMatch = normalized.match(/^\/pages\/doc-\d+\/assets\/(.+)$/);
+  if (docMatch) return `assets/${docMatch[1]}`;
+  if (normalized.startsWith('/prd/')) return `assets/${normalized.slice('/prd/'.length)}`;
+  return '';
+}
+
+/**
+ * 构建「原生 Markdown」导出包：包含一份去掉 block 标记、表格转 GFM 的 .md 文件，
+ * 以及该文档实际引用到的所有图片（统一拍平到 assets/ 目录，与正文里
+ * 规范化后的 `./assets/<file>` 相对路径对齐）。
+ */
+export async function buildNativeMdPrdExport({
+  title,
+  archiveName,
+  blocks,
+  activeSlug,
+  mdPath,
+}) {
+  const docTitle = extractDocTitle(blocks, title);
+  const exportSlug = activeSlug || 'doc-001';
+  const exportBaseName =
+    toSafeDocBaseName(docTitle) || toSafeAsciiBaseName(docTitle, `prd-${exportSlug}`);
+  const mdFileName = getMdFileNameFromPath(mdPath, exportBaseName);
+  const nativeMdText = serializePrdAsNativeMd(blocks || []);
+  // 用原始正文（含原始路径形式）做资源收集，避免 native MD 已规范化后丢失 slug。
+  const originalMd = serializePrd(blocks || []);
+  const assetUrls = collectPrdAssetUrls(
+    { activeSlug: exportSlug },
+    originalMd, blocks,
+  );
+  const archiveFileName = toZipFileName(archiveName || docTitle, `${exportBaseName}-md`);
+
+  const zip = new JSZip();
+  const assetBlobCache = new Map();
+  zip.file(mdFileName, nativeMdText);
+  for (const assetUrl of assetUrls) {
+    const exportPath = toNativeMdAssetPath(assetUrl, exportSlug);
+    if (!exportPath) continue;
+    const blob = await fetchAssetBlob(assetUrl, assetBlobCache, exportSlug);
+    zip.file(exportPath, blob);
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  return {
+    fileName: archiveFileName,
+    title: docTitle,
+    mdFileName,
     blob,
   };
 }

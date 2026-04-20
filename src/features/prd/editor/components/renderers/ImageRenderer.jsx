@@ -7,6 +7,25 @@ import {
   getImageFromPaste,
 } from '../../prd-api.js';
 import { PrdLightbox } from '../PrdLightbox.jsx';
+import { useActiveSlug } from '../../active-slug-context.jsx';
+
+/**
+ * 把 MD 源里的相对路径 ./assets/x.png 解析成浏览器可加载的 URL。
+ * 兼容三种格式（与后端 resolveImagePathOnDisk 对应）：
+ *   - ./assets/<file>           → /pages/<activeSlug>/assets/<file>
+ *   - /pages/doc-XXX/assets/x   → 原样
+ *   - /prd/x                    → 原样（兼容期）
+ *   - http(s) / data: / 其它    → 原样
+ */
+function resolveImgUrlForBrowser(src, activeSlug) {
+  if (typeof src !== 'string' || !src) return src;
+  if (src.startsWith('./assets/') || src.startsWith('assets/')) {
+    if (!activeSlug) return src;
+    const tail = src.replace(/^\.?\//, '').slice('assets/'.length);
+    return `/pages/${activeSlug}/assets/${tail}`;
+  }
+  return src;
+}
 
 const RESIZE_HANDLES = ['nw', 'ne', 'sw', 'se'];
 
@@ -25,16 +44,19 @@ export function ImageRenderer({
   annotationCount = 0,
   prdAssetCacheBust = 0,
 }) {
+  const activeSlug = useActiveSlug();
   const [uploading, setUploading] = useState(false);
   const [lightbox, setLightbox] = useState(false);
   const [imgLoaded, setImgLoaded] = useState(false);
   const [widthPx, setWidthPx] = useState(initialWidthPx ?? null);
-  const bustedSrc = (src, bust) => {
-    if (!src || !bust) return src;
-    if (!src.startsWith('/prd/')) return src;
-    const sep = src.includes('?') ? '&' : '?';
-    return `${src}${sep}v=${bust}`;
-  };
+  const bustedSrc = useCallback((src, bust) => {
+    const resolved = resolveImgUrlForBrowser(src, activeSlug);
+    if (!resolved || !bust) return resolved;
+    // 任何本地 PRD 图（/prd/、/pages/.../assets/）都参与 cache-bust
+    if (!/^\/(?:prd|pages\/doc-\d+\/assets)\//.test(resolved)) return resolved;
+    const sep = resolved.includes('?') ? '&' : '?';
+    return `${resolved}${sep}v=${bust}`;
+  }, [activeSlug]);
   const [imgSrc, setImgSrc] = useState(() => bustedSrc(element.src, prdAssetCacheBust));
   const imgRef = useRef(null);
   const rootRef = useRef(null);
@@ -47,7 +69,7 @@ export function ImageRenderer({
     setImgSrc(bustedSrc(element.src, prdAssetCacheBust));
     setImgLoaded(false);
     retryCountRef.current = 0;
-  }, [element.src, prdAssetCacheBust]);
+  }, [element.src, prdAssetCacheBust, bustedSrc]);
 
   useEffect(() => {
     if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
@@ -66,14 +88,14 @@ export function ImageRenderer({
     e.stopPropagation();
     setUploading(true);
     try {
-      const path = await uploadPastedImage(file);
+      const path = await uploadPastedImage(file, activeSlug);
       onUpdate({ type: 'image', src: path });
     } catch (err) {
       console.error('图片上传失败', err);
     } finally {
       setUploading(false);
     }
-  }, [onUpdate]);
+  }, [onUpdate, activeSlug]);
 
   const handleResizeMouseDown = useCallback((e, corner) => {
     e.preventDefault();

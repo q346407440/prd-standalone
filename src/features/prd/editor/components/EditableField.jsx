@@ -23,6 +23,7 @@ import {
   uploadPastedImage,
   getImageFromPaste,
 } from '../prd-api.js';
+import { useActiveSlug } from '../active-slug-context.jsx';
 import { FloatingActionBubble } from './FloatingActionBubble.jsx';
 
 export function EditableField({
@@ -211,12 +212,13 @@ export function EditableField({
     blockId && selectionRole && globalSelection?.type === 'text-block'
     && globalSelection.blockId === blockId && globalSelection.role === selectionRole;
 
+  const editableActiveSlug = useActiveSlug();
   const onPasteImage = useCallback(async (e) => {
     const file = getImageFromPaste(e);
     if (!file) return;
     e.preventDefault();
     try {
-      const imagePath = await uploadPastedImage(file);
+      const imagePath = await uploadPastedImage(file, editableActiveSlug);
       const insert = `![粘贴图片](${imagePath})`;
       const el = ref.current;
       const start = typeof el?.selectionStart === 'number' ? el.selectionStart : draft.length;
@@ -232,7 +234,7 @@ export function EditableField({
     } catch (err) {
       console.error('图片上传失败', err);
     }
-  }, [draft]);
+  }, [draft, editableActiveSlug]);
 
   const showBoldToolbar = blockLevel == null || !HEADING_BLOCK_TYPE_SET.has(blockLevel);
   const hasLevelSwitcher = blockLevel != null && onBlockLevelChange;

@@ -1,3 +1,4 @@
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createFeishuSyncApi } from './feishu-sync-server.js';
@@ -79,6 +80,12 @@ function attachMiddleware(server, liveSync, docHandlers, fileHandlers) {
       fileHandlers.readMd(req, res, mdMatch[1]);
       return;
     }
+    // GET /pages/:slug/assets/:file → doc 自带的 colocated 图片
+    const assetMatch = pathOnly.match(/^\/pages\/(doc-\d+)\/assets\/([^/]+)$/);
+    if (assetMatch && req.method === 'GET') {
+      fileHandlers.readDocAsset(req, res, assetMatch[1], assetMatch[2]);
+      return;
+    }
 
     if (pathOnly === API_IMAGE && req.method === 'POST') {
       fileHandlers.saveImage(req, res);
@@ -138,7 +145,47 @@ function attachMiddleware(server, liveSync, docHandlers, fileHandlers) {
 }
 
 /**
- * 开发 / 预览时：把 PRD 截图保存到 public/prd/，页面通过 /prd/文件名 访问。
+ * 启动时扫描 pages/<slug>/*.md，统计仍在引用旧 /prd/ 路径的文件。
+ * 仅打印 banner 提示，不阻塞启动 —— 用户自行决定是否跑 npm run migrate-assets。
+ */
+function scanLegacyPrdRefsBanner(pagesDir) {
+  if (!fs.existsSync(pagesDir)) return;
+  const slugs = fs.readdirSync(pagesDir).filter((n) => /^doc-\d+$/.test(n));
+  const offenders = [];
+  for (const slug of slugs) {
+    const dir = path.join(pagesDir, slug);
+    let entries;
+    try { entries = fs.readdirSync(dir); } catch { continue; }
+    for (const name of entries) {
+      if (!name.endsWith('.md')) continue;
+      const full = path.join(dir, name);
+      try {
+        const text = fs.readFileSync(full, 'utf8');
+        const matches = text.match(/\/prd\/[^)\s"'<>]+\.(?:png|jpe?g|gif|webp|svg|bmp)/gi);
+        if (matches && matches.length) {
+          offenders.push({ slug, file: name, count: matches.length });
+        }
+      } catch { /* ignore */ }
+    }
+  }
+  if (!offenders.length) return;
+  const lines = [
+    '╭─ PRD assets migration 提示 ──────────────────────────────────────',
+    '│ 检测到以下 MD 仍在使用旧的 /prd/ 绝对路径，建议迁移到 colocated 资产目录：',
+    '│',
+    ...offenders.map((o) => `│   • pages/${o.slug}/${o.file}  (${o.count} refs)`),
+    '│',
+    '│ 运行：  npm run migrate-assets -- --dry-run   先看报告',
+    '│ 然后：  npm run migrate-assets               真正迁移（自动备份原 MD）',
+    '│ 后端兼容期会继续服务 /prd/ 与 ./assets/ 两种路径，不影响开发。',
+    '╰──────────────────────────────────────────────────────────────────',
+  ];
+  console.log('\n' + lines.join('\n') + '\n');
+}
+
+/**
+ * 开发 / 预览时：保存 PRD 截图到 pages/<slug>/assets/，页面通过 /pages/<slug>/assets/文件名 访问。
+ * 兼容期同时保留 /prd/ 旧路径（public/prd/ 仍由 Vite 服务）。
  */
 export function prdSaveImagePlugin() {
   const ctx = {
@@ -156,6 +203,7 @@ export function prdSaveImagePlugin() {
   return {
     name: 'prd-save-image',
     configureServer(server) {
+      scanLegacyPrdRefsBanner(PRD_PAGES_DIR);
       liveSync.start();
       server.httpServer?.once('close', () => liveSync.stop());
       attachMiddleware(server, liveSync, docHandlers, fileHandlers);
