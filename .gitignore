@@ -18,10 +18,14 @@ dist-ssr/
 .local/
 
 # PRD 业务内容（每个人的文档和截图不同，不提交）
+# pages/doc-*/ 同时覆盖了文档三件套（.md / .meta.json / .annotations.json）
+# 与 doc colocated 截图（pages/<slug>/assets/*.png）。
 pages/doc-*/
 pages/.active-doc.json
 # 本地自动备份镜像（pages/<slug>/ → pages-backup/<slug>/）
 pages-backup/
+# 迁移期遗留旧截图：colocated 落到 pages/<slug>/assets/ 后，
+# public/prd/ 仅保留兼容期未迁的少量历史图，不再产生新文件。
 public/prd/*.png
 public/prd/annotations/
 

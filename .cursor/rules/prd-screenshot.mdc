@@ -8,9 +8,11 @@ alwaysApply: false
 
 > 完整流程与工具名以 `.cursor/skills/prd-spec/SKILL.md` **「七、设计列截图」** 为准；本规则为 Agent 必须遵守的**摘要约束**。
 
-## `public/prd/` 与 Git（核对 PNG 时）
+## 截图入库位置（强制 · colocated）
 
-- 本仓库 **`public/prd/*.png` 常被 `.gitignore`**，**Glob / 索引**可能搜不到；**勿**据此断言「没有图」。核对用只读 **`ls` / `test -f`** 或 **Read** 绝对路径；详见 **prd-spec「七 → public/prd/ 与 Git」** 与 **`prd-writing-guard.mdc`** 同主题条。
+- **新增 PRD 截图**一律落到当前激活文档的 **`pages/<slug>/assets/<file>.png`**（slug 从 `pages/.active-doc.json` 读取），正文里写 **`![语义说明](./assets/<file>.png)`** 相对路径——这样图随文档走，Cursor 内可点跳转、与前端渲染 / 离线包 / 原生 MD 导出 / 飞书同步全链路一致。
+- **禁止**新写 `/prd/` 绝对路径或把图落到 `public/prd/`。兼容期 `public/prd/*.png` 仅留旧引用，不再产生新文件。
+- **核对 PNG 时**：`pages/doc-*/` 与 `public/prd/*.png` 都被 `.gitignore` 整目录忽略，**Glob / 索引**可能搜不到；**勿**据此断言「没有图」。核对用只读 **`ls pages/<slug>/assets/`** / **`test -f`** 或 **Read** 绝对路径；详见 **prd-spec「七」** 与 **`prd-writing-guard.mdc`** 同主题条。
 
 ## 工具优先级（强制）
 
@@ -66,13 +68,13 @@ alwaysApply: false
 - **禁止**使用 DevTools **`take_screenshot(uid)`** 作为设计列入库成图（67% 下节点盒映射易错）。
 - **必须**采用：**整视口** `take_screenshot`（**不传 uid**）得到 PNG，再用目标元素的 **`getBoundingClientRect()`**（与视口同一时刻、同为 CSS 像素）按  
   **`裁切像素 = rect × (PNG 像素宽高 ÷ window.innerWidth / innerHeight)`**  
-  在本机裁切后写入 `public/prd/xxx.png`。
+  在本机裁切后写入 **`pages/<slug>/assets/xxx.png`**（slug 取当前激活文档）。
 - **浮层 / 下拉**：若目标与主容器分离，对**相关多块** rect **求并集**后再裁切，可略加 padding 保留阴影。
 - **成图前**可对目标 `scrollIntoView`；需隐藏 Demo-only 控件时可用 `evaluate_script` 注入 `<style>`，**不得**改业务源码。
 
 ## 设计列单元格允许内容
 
-- **以**：`![语义说明](/prd/xxx.png)`（`[]` **须非空**，见 `prd-writing-guard` / **prd-spec·五 → 图片 Markdown alt**）**为主**。
+- **以**：`![语义说明](./assets/xxx.png)`（`[]` **须非空**，见 `prd-writing-guard` / **prd-spec·五 → 图片 Markdown alt**）**为主**。
 - **可选**：极短场景或状态一句（勿与 alt、`交互` 列重复）；若用标题，`**场景预览：**` 与 `**状态说明：**` **择一即可**，非必填。
 - **禁止**：流程说明、注意事项、可点击页面 URL（PRD 设计列不要求线上/本地跳转链接）。
 - 格内用**原生 Markdown**（段落间空行分隔），**废除** `<br>` 换行。模板见 SKILL **「七 → 设计列模板」**。

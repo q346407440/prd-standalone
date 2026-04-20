@@ -162,7 +162,9 @@ some-project/                 # 业务项目（可选的父目录）
     ├── pages/                #   PRD 文档目录
     │   ├── .active-doc.json  #     当前激活文档
     │   └── doc-NNN/          #     每个文档一个目录
-    ├── public/prd/           #   截图资产
+    │       ├── xxx.md        #       PRD 正文（.md / .meta.json / .annotations.json 三件套）
+    │       └── assets/       #       该文档专属截图（colocated，正文里写作 ./assets/xxx.png）
+    ├── public/prd/           #   迁移期遗留旧截图（本仓库迁前留存，新写不再使用；想清理旧引用跑 npm run migrate-assets，启动 banner 也会提示）
     ├── src/                  #   前端源码
     ├── start.sh              #   一体化启动脚本
     ├── .env.example          #   环境变量模板
