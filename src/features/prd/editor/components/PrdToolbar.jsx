@@ -607,6 +607,7 @@ export function PrdToolbar({
       ) : null}
       {exportMdDialogOpen ? (
         <ExportPackageModal
+          kind="native-md"
           value={exportMdPackageName}
           error={exportMdPackageError}
           exporting={exportingNativeMd}

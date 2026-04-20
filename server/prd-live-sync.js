@@ -78,7 +78,6 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
       try { docAssetsWatcher.close(); } catch {}
       docAssetsWatcher = null;
     }
-    docAssetsWatchedDir = null;
   }
 
   function setupDocAssetsWatch(slug) {

@@ -1,6 +1,22 @@
 import { PRD_FILE_NAME_RULE_HINT } from '../../prd-constants.js';
 
+const COPY = {
+  offline: {
+    title: '重命名离线包',
+    desc: '仅影响下载的 ZIP 文件名，不会修改压缩包内部文件名。',
+    label: '离线包名称',
+    placeholder: '请输入离线包名称',
+  },
+  'native-md': {
+    title: '重命名原生 MD 包',
+    desc: '仅影响下载的 ZIP 文件名，不会修改包内 .md 与图片文件名。',
+    label: '原生 MD 包名称',
+    placeholder: '请输入原生 MD 包名称',
+  },
+};
+
 export function ExportPackageModal({
+  kind = 'offline',
   value,
   error,
   exporting,
@@ -9,15 +25,16 @@ export function ExportPackageModal({
   onCancel,
   onConfirm,
 }) {
+  const copy = COPY[kind] || COPY.offline;
   return (
     <div className="prd-modal-overlay" onClick={onCancel}>
       <div className="prd-modal prd-modal--form" onClick={(e) => e.stopPropagation()}>
         <div className="prd-modal__header">
-          <div className="prd-modal__title">重命名离线包</div>
-          <div className="prd-modal__desc">仅影响下载的 ZIP 文件名，不会修改压缩包内部文件名。</div>
+          <div className="prd-modal__title">{copy.title}</div>
+          <div className="prd-modal__desc">{copy.desc}</div>
         </div>
         <div className="prd-modal__field">
-          <label className="prd-modal__label" htmlFor="prd-export-package-name">离线包名称</label>
+          <label className="prd-modal__label" htmlFor="prd-export-package-name">{copy.label}</label>
           <input
             id="prd-export-package-name"
             ref={inputRef}
@@ -35,7 +52,7 @@ export function ExportPackageModal({
               }
             }}
             disabled={exporting}
-            placeholder="请输入离线包名称"
+            placeholder={copy.placeholder}
           />
           <div className="prd-modal__hint">{PRD_FILE_NAME_RULE_HINT}</div>
           {error ? <div className="prd-modal__error">{error}</div> : null}
