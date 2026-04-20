@@ -157,16 +157,16 @@ export function PrdToolbar({
     folderName,
     mode,
     commitMessage,
+    onProgress,
   }) {
-    const result = await onSyncSourceTree?.({
+    await onSyncSourceTree?.({
       currentTitle: activeTitle || activeSlug,
       targetDir,
       folderName,
       mode,
       commitMessage,
+      onProgress,
     });
-    const isFailed = result === false || result?.ok === false;
-    if (!isFailed) setSyncDialogOpen(false);
   }
 
   useEffect(() => {

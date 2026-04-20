@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildDefaultCommitMessage,
   DEFAULT_SOURCE_TREE_SYNC_MODE,
@@ -11,6 +11,11 @@ import {
 } from './source-tree-sync-shared.js';
 
 const SOURCETREE_SETUP_DOC_URL = 'https://shoplazza.feishu.cn/wiki/WkWUwnaBvimChQkfryYcK1qVnSc';
+
+function normalizeProgressPercent(value, fallback = 0) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
 
 export function SourceTreeSyncModal({
   open,
@@ -34,16 +39,25 @@ export function SourceTreeSyncModal({
   const [targetDirError, setTargetDirError] = useState('');
   const [folderNameError, setFolderNameError] = useState('');
   const [commitMessageError, setCommitMessageError] = useState('');
+  const [sourceTreeProgress, setSourceTreeProgress] = useState(null);
   const [supportsPicker] = useState(
     () => typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function',
   );
   const targetInputRef = useRef(null);
+  const wantCommit = mode === 'commit' || mode === 'commit-and-push';
 
   useEffect(() => {
     setTimeout(() => {
       targetInputRef.current?.focus();
     }, 30);
-  }, []);
+  }, [open]);
+
+  const sourceTreeStatusLabel = useMemo(() => {
+    if (sourceTreeProgress?.status === 'failed') return '失败';
+    if (sourceTreeProgress?.status === 'succeeded') return '已完成';
+    if (syncing || sourceTreeProgress?.status === 'running') return '同步中';
+    return wantCommit ? '已配置自动提交' : '仅镜像文件';
+  }, [sourceTreeProgress?.status, syncing, wantCommit]);
 
   async function handlePickDirectory() {
     if (!window.showDirectoryPicker) return;
@@ -60,7 +74,7 @@ export function SourceTreeSyncModal({
     }
   }
 
-  function validateAndConfirm() {
+  async function validateAndConfirm() {
     const dir = targetDir.trim();
     const name = folderName.trim();
     const msg = commitMessage.trim();
@@ -96,11 +110,21 @@ export function SourceTreeSyncModal({
       window.localStorage.setItem(STORAGE_KEY_FOLDER_NAME, name);
       window.localStorage.setItem(STORAGE_KEY_MODE, mode);
     } catch { /* ignore */ }
-    onConfirm?.({ targetDir: dir, folderName: name, mode, commitMessage: msg });
+    setSourceTreeProgress({
+      status: 'running',
+      percent: 4,
+      message: '已开始准备 SourceTree 同步…',
+    });
+    await onConfirm?.({
+      targetDir: dir,
+      folderName: name,
+      mode,
+      commitMessage: msg,
+      onProgress: setSourceTreeProgress,
+    });
   }
 
   if (!open) return null;
-  const wantCommit = mode === 'commit' || mode === 'commit-and-push';
 
   return (
     <div className="prd-modal-overlay" onClick={onCancel} role="presentation">
@@ -123,6 +147,11 @@ export function SourceTreeSyncModal({
             </a>
             。
           </div>
+        </div>
+        <div className="prd-modal__section-actions" style={{ padding: '0 20px 12px' }}>
+          <span className={`prd-modal__pill${wantCommit ? ' prd-modal__pill--success' : ''}`}>
+            {sourceTreeStatusLabel}
+          </span>
         </div>
         <div className="prd-modal__body">
         <div className="prd-modal__field">
@@ -215,6 +244,33 @@ export function SourceTreeSyncModal({
             />
             <div className="prd-modal__hint">支持多行。默认自动拼「同步 PRD：&lt;文档名&gt; &lt;时间&gt;」，可随时改；按 `Cmd/Ctrl + Enter` 可直接提交。</div>
             {commitMessageError ? <div className="prd-modal__error">{commitMessageError}</div> : null}
+          </div>
+        ) : null}
+        {sourceTreeProgress ? (
+          <div className="prd-modal__progress">
+            <div className="prd-modal__progress-head">
+              <span>SourceTree 同步进度</span>
+              <span>{normalizeProgressPercent(sourceTreeProgress.percent)}%</span>
+            </div>
+            <div className="prd-modal__progress-track">
+              <div
+                className={`prd-modal__progress-bar${
+                  sourceTreeProgress.status === 'failed'
+                    ? ' prd-modal__progress-bar--error'
+                    : sourceTreeProgress.status === 'succeeded'
+                      ? ' prd-modal__progress-bar--success'
+                      : ''
+                }`}
+                style={{ width: `${normalizeProgressPercent(sourceTreeProgress.percent)}%` }}
+              />
+            </div>
+            <div
+              className={`prd-modal__progress-text${
+                sourceTreeProgress.status === 'failed' ? ' prd-modal__progress-text--error' : ''
+              }`}
+            >
+              {sourceTreeProgress.message}
+            </div>
           </div>
         ) : null}
         </div>
