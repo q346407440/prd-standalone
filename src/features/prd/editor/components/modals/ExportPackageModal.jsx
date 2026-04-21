@@ -9,7 +9,7 @@ const COPY = {
   },
   'native-md': {
     title: '重命名原生 MD 包',
-    desc: '仅影响下载的 ZIP 文件名，不会修改包内 .md 与图片文件名。',
+    desc: '仅影响下载的 ZIP 文件名；包内文件固定为 prd.md 和 prd-assets/。',
     label: '原生 MD 包名称',
     placeholder: '请输入原生 MD 包名称',
   },

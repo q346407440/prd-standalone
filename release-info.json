@@ -1,11 +1,10 @@
 {
-  "version": "0.2.0",
+  "version": "0.2.1",
   "date": "2026-04-21",
   "forceUpdate": false,
   "summary": [
-    "新增“同步原型 HTML”入口，可把 index.html 与 index-assets 直接同步到目标目录。",
-    "同步 PRD 与同步原型 HTML 均支持系统目录选择器回填完整绝对路径，也保留手动输入。",
-    "优化 SourceTree 同步提示，能更清楚地区分远端更新、未推送提交与无实质变更。"
+    "导出原生 MD 压缩包时，包内文件名现已固定为 prd.md 和 prd-assets/。",
+    "导出弹窗会明确提示 ZIP 文件名可自定义，但包内文件名不会跟着改动。"
   ],
-  "message": "建议同步前先确认目标仓库分支正确；原型 HTML 只会同步 index.html 与 index-assets。"
+  "message": "如果外部流程会读取导出包内容，请改为固定识别 prd.md 与 prd-assets。"
 }

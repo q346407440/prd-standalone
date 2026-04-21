@@ -1,5 +1,9 @@
 import JSZip from 'jszip';
 import { toSafeDocBaseName } from '../../../../shared/prd-filename-sanitize.js';
+import {
+  SOURCE_TREE_SYNC_ASSET_DIR_NAME,
+  SOURCE_TREE_SYNC_MD_FILE_NAME,
+} from './components/modals/source-tree-sync-shared.js';
 import { serializePrd } from './prd-writer.js';
 import { serializePrdAsNativeMd } from './prd-export-native-md.js';
 import { buildStandaloneHtml } from './prd-export-template.js';
@@ -237,7 +241,7 @@ function toNativeMdAssetPath(url, activeSlug, assetDirName = 'assets') {
 }
 
 /**
- * 抽出「原生 Markdown」导出包的文件树产物：.md 文本 + 拍平到 assets/ 的图片 Blob 列表。
+ * 抽出「原生 Markdown」导出包的文件树产物：.md 文本 + 拍平到素材目录的图片 Blob 列表。
  * 用于：
  *   - 导出原生 MD（打 zip）
  *   - 同步 SourceTree（把解压后的文件树直接镜像到本地目录）
@@ -281,9 +285,9 @@ export async function buildNativeMdFileTree({
 }
 
 /**
- * 构建「原生 Markdown」导出包：包含一份去掉 block 标记、表格转 GFM 的 .md 文件，
- * 以及该文档实际引用到的所有图片（统一拍平到 assets/ 目录，与正文里
- * 规范化后的 `./assets/<file>` 相对路径对齐）。
+ * 构建「原生 Markdown」导出包：包含一份固定命名的 `prd.md`，
+ * 以及该文档实际引用到的所有图片（统一拍平到 `prd-assets/` 目录，与正文里
+ * 规范化后的 `./prd-assets/<file>` 相对路径对齐）。
  */
 export async function buildNativeMdPrdExport({
   title,
@@ -292,7 +296,14 @@ export async function buildNativeMdPrdExport({
   activeSlug,
   mdPath,
 }) {
-  const tree = await buildNativeMdFileTree({ title, blocks, activeSlug, mdPath });
+  const tree = await buildNativeMdFileTree({
+    title,
+    blocks,
+    activeSlug,
+    mdPath,
+    mdFileNameOverride: SOURCE_TREE_SYNC_MD_FILE_NAME,
+    assetDirName: SOURCE_TREE_SYNC_ASSET_DIR_NAME,
+  });
   const archiveFileName = toZipFileName(archiveName || tree.docTitle, `${tree.exportBaseName}-md`);
 
   const zip = new JSZip();
