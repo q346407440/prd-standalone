@@ -29,6 +29,7 @@ import { ExportPackageModal } from './modals/ExportPackageModal.jsx';
 import { BackupFolderPathModal } from './modals/BackupFolderPathModal.jsx';
 import { SourceTreeSyncModal } from './modals/SourceTreeSyncModal.jsx';
 import { CombinedSyncModal } from './modals/CombinedSyncModal.jsx';
+import { PrototypeHtmlSyncModal } from './modals/PrototypeHtmlSyncModal.jsx';
 
 export function PrdToolbar({
   activeSlug,
@@ -37,6 +38,7 @@ export function PrdToolbar({
   onExport,
   onExportNativeMd,
   onSyncSourceTree,
+  onSyncPrototypeHtml,
   exporting = false,
   exportingNativeMd = false,
   syncingSourceTree = false,
@@ -66,6 +68,7 @@ export function PrdToolbar({
   const [exportMdPackageError, setExportMdPackageError] = useState('');
 
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [prototypeSyncDialogOpen, setPrototypeSyncDialogOpen] = useState(false);
   const [combinedSyncDialogOpen, setCombinedSyncDialogOpen] = useState(false);
   const [feishuDialogOpen, setFeishuDialogOpen] = useState(false);
 
@@ -134,6 +137,15 @@ export function PrdToolbar({
     setSyncDialogOpen(false);
   }
 
+  function openPrototypeSyncDialog() {
+    setPrototypeSyncDialogOpen(true);
+  }
+
+  function closePrototypeSyncDialog() {
+    if (syncingSourceTree) return;
+    setPrototypeSyncDialogOpen(false);
+  }
+
   function openCombinedSyncDialog() {
     setCombinedSyncDialogOpen(true);
   }
@@ -154,7 +166,6 @@ export function PrdToolbar({
 
   async function handleSyncConfirm({
     targetDir,
-    folderName,
     mode,
     commitMessage,
     onProgress,
@@ -162,10 +173,28 @@ export function PrdToolbar({
     await onSyncSourceTree?.({
       currentTitle: activeTitle || activeSlug,
       targetDir,
-      folderName,
       mode,
       commitMessage,
       onProgress,
+    });
+  }
+
+  async function handlePrototypeSyncConfirm({
+    targetDir,
+    mode,
+    commitMessage,
+    onProgress,
+    entries,
+    sourceLabel,
+  }) {
+    await onSyncPrototypeHtml?.({
+      currentTitle: activeTitle || activeSlug,
+      targetDir,
+      mode,
+      commitMessage,
+      onProgress,
+      entries,
+      sourceLabel,
     });
   }
 
@@ -638,7 +667,7 @@ export function PrdToolbar({
               ? ' prd-toolbar__btn--active'
               : ''
           }`}
-          title="统一同步到飞书和 SourceTree"
+          title="同步 PRD 到飞书和 SourceTree"
           onClick={openCombinedSyncDialog}
           disabled={syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting}
         >
@@ -646,8 +675,17 @@ export function PrdToolbar({
           <span>
             {syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting
               ? '同步中…'
-              : '同步'}
+              : '同步 PRD'}
           </span>
+        </button>
+        <button
+          className={`prd-toolbar__btn${syncingSourceTree ? ' prd-toolbar__btn--active' : ''}`}
+          title="把本地原型 HTML 文件夹同步到 SourceTree 目标目录"
+          onClick={openPrototypeSyncDialog}
+          disabled={syncingSourceTree}
+        >
+          <FiRefreshCw className="prd-toolbar__btn-icon" />
+          <span>{syncingSourceTree ? '同步中…' : '同步原型 HTML'}</span>
         </button>
       </div>
       {backupPathModalOpen ? (
@@ -691,7 +729,6 @@ export function PrdToolbar({
           open={combinedSyncDialogOpen}
           onCancel={closeCombinedSyncDialog}
           currentTitle={activeTitle || activeSlug}
-          defaultFolderName={normalizeProjectLikeName(activeTitle || activeSlug || '')}
           onSyncSourceTree={onSyncSourceTree}
           syncingSourceTree={syncingSourceTree}
           feishuController={feishuSyncController}
@@ -710,9 +747,18 @@ export function PrdToolbar({
         <SourceTreeSyncModal
           open={syncDialogOpen}
           syncing={syncingSourceTree}
-          defaultFolderName={normalizeProjectLikeName(activeTitle || activeSlug || '')}
+          currentTitle={activeTitle || activeSlug}
           onCancel={closeSyncDialog}
           onConfirm={handleSyncConfirm}
+        />
+      ) : null}
+      {prototypeSyncDialogOpen ? (
+        <PrototypeHtmlSyncModal
+          open={prototypeSyncDialogOpen}
+          syncing={syncingSourceTree}
+          currentTitle={activeTitle || activeSlug}
+          onCancel={closePrototypeSyncDialog}
+          onConfirm={handlePrototypeSyncConfirm}
         />
       ) : null}
     </div>

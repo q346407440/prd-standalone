@@ -132,12 +132,11 @@ export async function deletePrdImage(urlPath, slug) {
 }
 
 /**
- * 把「原生 MD 导出」的文件树镜像写入用户指定的本地 Git 工作区子目录。
+ * 把「原生 MD 导出」的文件树镜像写入用户指定的本地目录。
  * entries 里每个 item 已是 `{ relPath, contentBase64 }`。
  */
 export async function syncNativeMdToDirectory({
   targetDir,
-  folderName,
   entries,
   mode = 'files-only',
   commitMessage = '',
@@ -145,10 +144,37 @@ export async function syncNativeMdToDirectory({
   const res = await fetch('/__prd__/sync-native-md', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ targetDir, folderName, entries, mode, commitMessage }),
+    body: JSON.stringify({ targetDir, entries, mode, commitMessage }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || !data.ok) throw new Error(data.error || `sync failed: ${res.status}`);
+  return data;
+}
+
+export async function pickLocalDirectoryPath(prompt = '请选择文件夹') {
+  const res = await fetch('/__prd__/pick-directory', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (data?.aborted) return { aborted: true, path: '' };
+  if (!res.ok || !data.ok || typeof data.path !== 'string') {
+    throw new Error(data.error || `pick directory failed: ${res.status}`);
+  }
+  return { aborted: false, path: data.path };
+}
+
+export async function readPrototypeHtmlDirectory(sourceDir) {
+  const res = await fetch('/__prd__/read-prototype-html-dir', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceDir }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.ok || !Array.isArray(data.entries)) {
+    throw new Error(data.error || `read prototype html dir failed: ${res.status}`);
+  }
   return data;
 }
 

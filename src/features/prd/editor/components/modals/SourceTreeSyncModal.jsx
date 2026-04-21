@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { pickLocalDirectoryPath } from '../../prd-api.js';
 import {
   buildDefaultCommitMessage,
   DEFAULT_SOURCE_TREE_SYNC_MODE,
   isValidMode,
   MODE_OPTIONS,
   readLocal,
-  STORAGE_KEY_FOLDER_NAME,
   STORAGE_KEY_MODE,
+  SOURCE_TREE_SYNC_ASSET_DIR_NAME,
+  SOURCE_TREE_SYNC_MD_FILE_NAME,
   STORAGE_KEY_TARGET_DIR,
 } from './source-tree-sync-shared.js';
 
@@ -20,29 +22,21 @@ function normalizeProgressPercent(value, fallback = 0) {
 export function SourceTreeSyncModal({
   open,
   syncing,
-  defaultFolderName = '',
+  currentTitle = '',
   onCancel,
   onConfirm,
 }) {
   const [targetDir, setTargetDir] = useState(() => readLocal(STORAGE_KEY_TARGET_DIR));
-  const [folderName, setFolderName] = useState(() => {
-    const storedFolder = readLocal(STORAGE_KEY_FOLDER_NAME);
-    return storedFolder || defaultFolderName || '';
-  });
   const [mode, setMode] = useState(() => {
     const storedMode = readLocal(STORAGE_KEY_MODE, DEFAULT_SOURCE_TREE_SYNC_MODE);
     return isValidMode(storedMode) ? storedMode : DEFAULT_SOURCE_TREE_SYNC_MODE;
   });
   const [commitMessage, setCommitMessage] = useState(() => buildDefaultCommitMessage(
-    readLocal(STORAGE_KEY_FOLDER_NAME) || defaultFolderName,
+    currentTitle,
   ));
   const [targetDirError, setTargetDirError] = useState('');
-  const [folderNameError, setFolderNameError] = useState('');
   const [commitMessageError, setCommitMessageError] = useState('');
   const [sourceTreeProgress, setSourceTreeProgress] = useState(null);
-  const [supportsPicker] = useState(
-    () => typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function',
-  );
   const targetInputRef = useRef(null);
   const wantCommit = mode === 'commit' || mode === 'commit-and-push';
 
@@ -60,14 +54,11 @@ export function SourceTreeSyncModal({
   }, [sourceTreeProgress?.status, syncing, wantCommit]);
 
   async function handlePickDirectory() {
-    if (!window.showDirectoryPicker) return;
     try {
-      const handle = await window.showDirectoryPicker({ mode: 'read' });
-      setTargetDir((prev) => {
-        if (prev && prev.endsWith(handle.name)) return prev;
-        return prev ? `${prev.replace(/\/+$/, '')}/${handle.name}` : handle.name;
-      });
-      setTargetDirError('浏览器只能拿到目录名；请在 mac 的 Finder 中选中文件夹后按 Option + Command + C，复制完整路径并粘贴到这里');
+      const result = await pickLocalDirectoryPath('请选择 SourceTree 目标目录');
+      if (result.aborted) return;
+      setTargetDir(result.path);
+      setTargetDirError('');
     } catch (e) {
       if (e?.name === 'AbortError') return;
       setTargetDirError(e?.message || '选择目录失败');
@@ -76,7 +67,6 @@ export function SourceTreeSyncModal({
 
   async function validateAndConfirm() {
     const dir = targetDir.trim();
-    const name = folderName.trim();
     const msg = commitMessage.trim();
     const wantCommit = mode === 'commit' || mode === 'commit-and-push';
     let hasError = false;
@@ -89,15 +79,6 @@ export function SourceTreeSyncModal({
     } else {
       setTargetDirError('');
     }
-    if (!name) {
-      setFolderNameError('请填写子文件夹名称');
-      hasError = true;
-    } else if (/[\\/]/.test(name) || name === '.' || name === '..') {
-      setFolderNameError('子文件夹名称不能包含 / \\ 或为 . / ..');
-      hasError = true;
-    } else {
-      setFolderNameError('');
-    }
     if (wantCommit && !msg) {
       setCommitMessageError('commit message 不能为空');
       hasError = true;
@@ -107,7 +88,6 @@ export function SourceTreeSyncModal({
     if (hasError) return;
     try {
       window.localStorage.setItem(STORAGE_KEY_TARGET_DIR, dir);
-      window.localStorage.setItem(STORAGE_KEY_FOLDER_NAME, name);
       window.localStorage.setItem(STORAGE_KEY_MODE, mode);
     } catch { /* ignore */ }
     setSourceTreeProgress({
@@ -117,7 +97,6 @@ export function SourceTreeSyncModal({
     });
     await onConfirm?.({
       targetDir: dir,
-      folderName: name,
       mode,
       commitMessage: msg,
       onProgress: setSourceTreeProgress,
@@ -132,7 +111,14 @@ export function SourceTreeSyncModal({
         <div className="prd-modal__header">
           <div className="prd-modal__title">同步 SourceTree</div>
           <div className="prd-modal__desc">
-            把「原生 MD」导出内容镜像到本地 Git 工作区的指定子文件夹，支持自动 commit / push，
+            把「原生 MD」导出内容直接镜像到目标目录，固定输出
+            {' '}
+            <code>{SOURCE_TREE_SYNC_MD_FILE_NAME}</code>
+            {' '}
+            和
+            {' '}
+            <code>{SOURCE_TREE_SYNC_ASSET_DIR_NAME}/</code>
+            ，支持自动 commit / push，
             底层通过系统的 <code>git</code> 命令执行，依赖你本机已配置好的 SSH key（ssh-agent）。
             <br />
             首次使用前请先确认本机已完成 SourceTree / Git / SSH 相关配置；如遇报错，可先查看
@@ -171,38 +157,19 @@ export function SourceTreeSyncModal({
               }}
               disabled={syncing}
             />
-            {supportsPicker ? (
-              <button
-                type="button"
-                className="prd-modal__btn prd-modal__btn--cancel"
-                style={{ flex: '0 0 auto', whiteSpace: 'nowrap' }}
-                onClick={handlePickDirectory}
-                disabled={syncing}
-                title="浏览器只能取到目录名；如需完整路径，可在 Finder 里按 Option + Command + C 复制"
-              >
-                选择目录
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="prd-modal__btn prd-modal__btn--cancel"
+              style={{ flex: '0 0 auto', whiteSpace: 'nowrap' }}
+              onClick={handlePickDirectory}
+              disabled={syncing}
+              title="打开系统目录选择器并回填完整路径"
+            >
+              选择目录
+            </button>
           </div>
-          <div className="prd-modal__hint">该目录必须是已 clone 的 git 仓库（或其父目录）。{supportsPicker ? '「选择目录」只能辅助回填目录名；如需完整路径，可在 mac 的 Finder 中选中文件夹后按 Option + Command + C 复制路径，再粘贴到这里。' : ''}</div>
+          <div className="prd-modal__hint">可手动填写绝对路径，也可直接用「选择目录」回填完整路径；如需自动 commit / push，该目录必须位于某个 git 仓库内。</div>
           {targetDirError ? <div className="prd-modal__error">{targetDirError}</div> : null}
-        </div>
-        <div className="prd-modal__field">
-          <label className="prd-modal__label" htmlFor="prd-sync-folder-name">子文件夹名称</label>
-          <input
-            id="prd-sync-folder-name"
-            className="prd-modal__input"
-            value={folderName}
-            placeholder="例如：prd-docs"
-            onChange={(e) => { setFolderName(e.target.value); setFolderNameError(''); }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') { e.preventDefault(); validateAndConfirm(); }
-              if (e.key === 'Escape') { e.preventDefault(); onCancel?.(); }
-            }}
-            disabled={syncing}
-          />
-          <div className="prd-modal__hint">同步内容将写入「目标目录 / 子文件夹」，已存在则直接镜像更新。</div>
-          {folderNameError ? <div className="prd-modal__error">{folderNameError}</div> : null}
         </div>
         <div className="prd-modal__field">
           <div className="prd-modal__label" id="prd-sync-mode-label">执行方式</div>
@@ -222,7 +189,9 @@ export function SourceTreeSyncModal({
               </button>
             ))}
           </div>
-          <div className="prd-modal__hint">push 失败不会回滚 commit，会把 git 原始报错返回给你。</div>
+          <div className="prd-modal__hint">
+            同步时会直接覆盖目标目录下的 <code>{SOURCE_TREE_SYNC_MD_FILE_NAME}</code> 和 <code>{SOURCE_TREE_SYNC_ASSET_DIR_NAME}/</code>；push 失败不会回滚 commit，会把 git 原始报错返回给你。
+          </div>
         </div>
         {wantCommit ? (
           <div className="prd-modal__field">

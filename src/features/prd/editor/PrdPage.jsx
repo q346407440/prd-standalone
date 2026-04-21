@@ -22,10 +22,7 @@ import {
   downloadStandalonePrdExport,
   saveStandalonePrdExportToDirectory,
 } from './prd-export.js';
-import {
-  isEmptyOrderedListMd,
-  parseListPrefix,
-} from './prd-list-utils.js';
+import { isEmptyOrderedListMd } from './prd-list-utils.js';
 import { buildCropBase64, buildFocusBase64, loadImageElement } from './prd-annotation-images.js';
 import { measurePrdTask, recordPrdInteraction } from './prd-performance.js';
 import {
@@ -79,6 +76,10 @@ import {
   fetchActiveDoc,
   syncNativeMdToDirectory,
 } from './prd-api.js';
+import {
+  SOURCE_TREE_SYNC_ASSET_DIR_NAME,
+  SOURCE_TREE_SYNC_MD_FILE_NAME,
+} from './components/modals/source-tree-sync-shared.js';
 import {
   readPersistedViewportSnapshot,
   persistViewportSnapshot,
@@ -1418,7 +1419,6 @@ export function PrdPage() {
   const handleSyncSourceTree = useCallback(async ({
     currentTitle = '',
     targetDir = '',
-    folderName = '',
     mode = 'files-only',
     commitMessage = '',
     silent = false,
@@ -1427,15 +1427,15 @@ export function PrdPage() {
     if (!blocks?.length || isSyncingSourceTree) {
       return { ok: false, error: '当前 PRD 还未加载完成' };
     }
-    if (!targetDir || !folderName) {
+    if (!targetDir) {
       if (!silent) {
-        emitPrdToast('缺少目标目录或子文件夹名称', {
+        emitPrdToast('缺少目标目录', {
           id: 'prd-sync-sourcetree',
           tone: 'error',
           duration: 2600,
         });
       }
-      return { ok: false, error: '缺少目标目录或子文件夹名称' };
+      return { ok: false, error: '缺少目标目录' };
     }
     setIsSyncingSourceTree(true);
     const progressLabel = mode === 'commit-and-push'
@@ -1462,6 +1462,8 @@ export function PrdPage() {
         blocks,
         activeSlug: activeSlugRef.current,
         mdPath: activeMdPathRef.current,
+        mdFileNameOverride: SOURCE_TREE_SYNC_MD_FILE_NAME,
+        assetDirName: SOURCE_TREE_SYNC_ASSET_DIR_NAME,
       });
       const entries = [];
       entries.push({
@@ -1503,9 +1505,9 @@ export function PrdPage() {
         message: progressLabel,
       });
       const result = await syncNativeMdToDirectory({
-        targetDir, folderName, entries, mode, commitMessage,
+        targetDir, entries, mode, commitMessage,
       });
-      const syncRootLabel = result.syncRoot || `${targetDir}/${folderName}`;
+      const syncRootLabel = result.syncRoot || targetDir;
       const git = result.git || {};
       if (git.error) {
         const message = `已同步到 ${syncRootLabel}，但 ${git.error}`;
@@ -1524,7 +1526,7 @@ export function PrdPage() {
         return { ok: false, error: git.error, message, syncRoot: syncRootLabel, git };
       }
       if (git.skipped === 'no-change') {
-        const message = `已同步到 ${syncRootLabel}，但仓库内无实质变更，未产生 commit`;
+        const message = git.message || `已同步到 ${syncRootLabel}，但仓库内无实质变更，未产生 commit`;
         onProgress?.({
           status: 'succeeded',
           phase: 'done',
@@ -1605,6 +1607,164 @@ export function PrdPage() {
       setIsSyncingSourceTree(false);
     }
   }, [blocks, isSyncingSourceTree]);
+
+  const handleSyncPrototypeHtml = useCallback(async ({
+    currentTitle = '',
+    targetDir = '',
+    mode = 'files-only',
+    commitMessage = '',
+    silent = false,
+    onProgress,
+    entries = [],
+    sourceLabel = '',
+  } = {}) => {
+    if (isSyncingSourceTree) {
+      return { ok: false, error: '当前同步任务尚未完成' };
+    }
+    if (!targetDir) {
+      if (!silent) {
+        emitPrdToast('缺少目标目录', {
+          id: 'prd-sync-sourcetree',
+          tone: 'error',
+          duration: 2600,
+        });
+      }
+      return { ok: false, error: '缺少目标目录' };
+    }
+    if (!Array.isArray(entries) || entries.length === 0) {
+      if (!silent) {
+        emitPrdToast('缺少可同步的原型 HTML 文件', {
+          id: 'prd-sync-sourcetree',
+          tone: 'error',
+          duration: 2600,
+        });
+      }
+      return { ok: false, error: '缺少可同步的原型 HTML 文件' };
+    }
+    setIsSyncingSourceTree(true);
+    const progressLabel = mode === 'commit-and-push'
+      ? '正在同步原型 HTML 并推送到远端…'
+      : mode === 'commit'
+        ? '正在同步原型 HTML 并 commit…'
+        : '正在同步原型 HTML 到本地工作区…';
+    if (!silent) {
+      emitPrdToast(progressLabel, {
+        id: 'prd-sync-sourcetree',
+        tone: 'warning',
+        duration: null,
+      });
+    }
+    try {
+      onProgress?.({
+        status: 'running',
+        phase: 'sync',
+        percent: 36,
+        message: progressLabel,
+      });
+      const result = await syncNativeMdToDirectory({
+        targetDir, entries, mode, commitMessage,
+      });
+      const syncRootLabel = result.syncRoot || targetDir;
+      const git = result.git || {};
+      if (git.error) {
+        const message = `已同步原型 HTML 到 ${syncRootLabel}，但 ${git.error}`;
+        onProgress?.({
+          status: 'failed',
+          phase: 'done',
+          percent: 100,
+          message,
+        });
+        if (!silent) {
+          emitPrdToast(
+            message,
+            { id: 'prd-sync-sourcetree', tone: 'warning', duration: 5000 },
+          );
+        }
+        return { ok: false, error: git.error, message, syncRoot: syncRootLabel, git };
+      }
+      if (git.skipped === 'no-change') {
+        const message = git.message || `已同步原型 HTML 到 ${syncRootLabel}，但仓库内无实质变更，未产生 commit`;
+        onProgress?.({
+          status: 'succeeded',
+          phase: 'done',
+          percent: 100,
+          message,
+        });
+        if (!silent) {
+          emitPrdToast(
+            message,
+            { id: 'prd-sync-sourcetree', tone: 'success', duration: 4200 },
+          );
+        }
+        return { ok: true, message, syncRoot: syncRootLabel, git };
+      }
+      if (git.pushed) {
+        const sourceName = sourceLabel || currentTitle || '原型 HTML';
+        const message = `已同步 ${sourceName} 并 push 成功（${git.commitHash || ''} → ${git.branch || ''}）`;
+        onProgress?.({
+          status: 'succeeded',
+          phase: 'done',
+          percent: 100,
+          message,
+        });
+        if (!silent) {
+          emitPrdToast(
+            message,
+            { id: 'prd-sync-sourcetree', tone: 'success', duration: 3600 },
+          );
+        }
+        return { ok: true, message, syncRoot: syncRootLabel, git };
+      }
+      if (git.committed) {
+        const message = `已同步原型 HTML 并 commit（${git.commitHash || ''}），请到 SourceTree 中推送`;
+        onProgress?.({
+          status: 'succeeded',
+          phase: 'done',
+          percent: 100,
+          message,
+        });
+        if (!silent) {
+          emitPrdToast(
+            message,
+            { id: 'prd-sync-sourcetree', tone: 'success', duration: 3600 },
+          );
+        }
+        return { ok: true, message, syncRoot: syncRootLabel, git };
+      }
+      const message = `已同步原型 HTML 到 ${syncRootLabel}，请到 SourceTree 中提交并推送`;
+      onProgress?.({
+        status: 'succeeded',
+        phase: 'done',
+        percent: 100,
+        message,
+      });
+      if (!silent) {
+        emitPrdToast(
+          message,
+          { id: 'prd-sync-sourcetree', tone: 'success', duration: 3600 },
+        );
+      }
+      return { ok: true, message, syncRoot: syncRootLabel, git };
+    } catch (error) {
+      const message = `同步原型 HTML 失败：${error?.message || error}`;
+      onProgress?.({
+        status: 'failed',
+        phase: 'done',
+        percent: 100,
+        message,
+      });
+      if (!silent) {
+        emitPrdToast(message, {
+          id: 'prd-sync-sourcetree',
+          tone: 'error',
+          duration: 3600,
+        });
+      }
+      return { ok: false, error: error?.message || error, message };
+    } finally {
+      setIsSyncingSourceTree(false);
+    }
+  }, [isSyncingSourceTree]);
 
   const COPY_MD_CURSOR_TOAST =
     '已复制当前位置的 MD 行号（@文件:行号）。在 Cursor 输入框粘贴后即可引用该处并提问。';
@@ -1794,6 +1954,7 @@ export function PrdPage() {
               onExport={() => {}}
               onExportNativeMd={() => {}}
               onSyncSourceTree={() => false}
+              onSyncPrototypeHtml={() => false}
               onSwitch={(slug) => {
                 activeSlugRef.current = slug;
                 setActiveSlug(slug);
@@ -1874,6 +2035,7 @@ export function PrdPage() {
               onExport={handleExportStandalone}
               onExportNativeMd={handleExportNativeMd}
               onSyncSourceTree={handleSyncSourceTree}
+              onSyncPrototypeHtml={handleSyncPrototypeHtml}
               onSwitch={(slug) => {
                 activeSlugRef.current = slug;
                 setActiveSlug(slug);

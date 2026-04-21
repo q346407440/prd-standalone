@@ -4,8 +4,6 @@ import { serializePrd } from './prd-writer.js';
 import { serializePrdAsNativeMd } from './prd-export-native-md.js';
 import { buildStandaloneHtml } from './prd-export-template.js';
 import {
-  escapeHtml,
-  escapeAttribute,
   normalizeAssetUrl,
   toExportAssetPath,
   toPreviewAssetPath,
@@ -224,17 +222,17 @@ export async function buildStandalonePrdExport({
 }
 
 /**
- * 把任意输入路径映射成 zip 内的 `assets/<file>`，
- * 与 native MD 正文里规范化后的相对路径 `./assets/...` 保持一致。
+ * 把任意输入路径映射成导出产物内的 `<assetDirName>/<file>`，
+ * 与 native MD 正文里规范化后的相对路径 `./<assetDirName>/...` 保持一致。
  *   /pages/<slug>/assets/X → assets/X
  *   /prd/X                 → assets/X（迁移期遗留）
  */
-function toNativeMdAssetPath(url, activeSlug) {
+function toNativeMdAssetPath(url, activeSlug, assetDirName = 'assets') {
   const normalized = normalizeAssetUrl(url, activeSlug);
   if (!normalized) return '';
   const docMatch = normalized.match(/^\/pages\/doc-\d+\/assets\/(.+)$/);
-  if (docMatch) return `assets/${docMatch[1]}`;
-  if (normalized.startsWith('/prd/')) return `assets/${normalized.slice('/prd/'.length)}`;
+  if (docMatch) return `${assetDirName}/${docMatch[1]}`;
+  if (normalized.startsWith('/prd/')) return `${assetDirName}/${normalized.slice('/prd/'.length)}`;
   return '';
 }
 
@@ -244,13 +242,20 @@ function toNativeMdAssetPath(url, activeSlug) {
  *   - 导出原生 MD（打 zip）
  *   - 同步 SourceTree（把解压后的文件树直接镜像到本地目录）
  */
-export async function buildNativeMdFileTree({ title, blocks, activeSlug, mdPath }) {
+export async function buildNativeMdFileTree({
+  title,
+  blocks,
+  activeSlug,
+  mdPath,
+  mdFileNameOverride = '',
+  assetDirName = 'assets',
+}) {
   const docTitle = extractDocTitle(blocks, title);
   const exportSlug = activeSlug || 'doc-001';
   const exportBaseName =
     toSafeDocBaseName(docTitle) || toSafeAsciiBaseName(docTitle, `prd-${exportSlug}`);
-  const mdFileName = getMdFileNameFromPath(mdPath, exportBaseName);
-  const nativeMdText = serializePrdAsNativeMd(blocks || []);
+  const mdFileName = mdFileNameOverride || getMdFileNameFromPath(mdPath, exportBaseName);
+  const nativeMdText = serializePrdAsNativeMd(blocks || [], { assetDirName });
   // 用原始正文（含原始路径形式）做资源收集，避免 native MD 已规范化后丢失 slug。
   const originalMd = serializePrd(blocks || []);
   const assetUrls = collectPrdAssetUrls(
@@ -260,7 +265,7 @@ export async function buildNativeMdFileTree({ title, blocks, activeSlug, mdPath 
   const assetBlobCache = new Map();
   const assets = [];
   for (const assetUrl of assetUrls) {
-    const exportPath = toNativeMdAssetPath(assetUrl, exportSlug);
+    const exportPath = toNativeMdAssetPath(assetUrl, exportSlug, assetDirName);
     if (!exportPath) continue;
     const blob = await fetchAssetBlob(assetUrl, assetBlobCache, exportSlug);
     assets.push({ exportPath, blob });

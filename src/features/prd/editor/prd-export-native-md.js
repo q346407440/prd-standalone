@@ -17,18 +17,20 @@ const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.|[a-z]+\.)\s/;
 const FLOWCHART_WITH_BR_RE = /^\s*(?:flowchart|graph)\b/m;
 
 /**
- * 把所有 PRD 图片路径规范化为 `./assets/...`，让导出的 MD 在普通编辑器
+ * 把所有 PRD 图片路径规范化为 `./<assetDirName>/...`，让导出的 MD 在普通编辑器
  * （Typora / VSCode 预览 / Obsidian / GitHub 等）双击 / 上传后能直接显示图片。
  * 兼容三种输入：
  *   1) /prd/<file>                    旧的全局公共目录（迁移期遗留）
  *   2) /pages/doc-XXX/assets/<file>   浏览器 URL 形式
  *   3) ./assets/<file>                已经是新格式，无需变化
  */
-export function rewritePrdAssetPathsForNativeMd(md) {
+export function rewritePrdAssetPathsForNativeMd(md, assetDirName = 'assets') {
   if (typeof md !== 'string' || md.length === 0) return md;
+  const assetPrefix = `./${String(assetDirName || 'assets').replace(/^\.?\//, '').replace(/\/+$/, '')}/`;
   return md
-    .replace(/\/pages\/doc-\d+\/assets\//g, './assets/')
-    .replace(/\/prd\//g, './assets/');
+    .replace(/\/pages\/doc-\d+\/assets\//g, assetPrefix)
+    .replace(/\/prd\//g, assetPrefix)
+    .replace(/\.\/assets\//g, assetPrefix);
 }
 
 function isInlineSuffix(text) {
@@ -272,12 +274,12 @@ function serializeBlockToNativeMd(block) {
 
 /**
  * 把 Block[] 序列化为原生 Markdown 字符串。
- * 同时把 `/prd/...` 的图片路径改写成 `./assets/...`，与导出 zip 的目录结构对齐。
+ * 同时把 `/prd/...` 的图片路径改写成 `./assets/...` 或自定义素材目录，与导出结构对齐。
  */
-export function serializePrdAsNativeMd(blocks) {
+export function serializePrdAsNativeMd(blocks, { assetDirName = 'assets' } = {}) {
   const sections = (blocks || [])
     .map(serializeBlockToNativeMd)
     .filter((s) => s !== '');
   const md = sections.join('\n\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
-  return rewritePrdAssetPathsForNativeMd(md);
+  return rewritePrdAssetPathsForNativeMd(md, assetDirName);
 }

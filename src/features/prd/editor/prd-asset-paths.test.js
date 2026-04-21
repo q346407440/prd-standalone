@@ -110,6 +110,19 @@ describe('rewritePrdAssetPathsForNativeMd · 导出规范化', () => {
     ].join('\n'));
   });
 
+  it('支持自定义素材目录名', () => {
+    const input = [
+      '![](/prd/a.png)',
+      '![](/pages/doc-003/assets/b.png)',
+      '![](./assets/c.png)',
+    ].join('\n');
+    expect(rewritePrdAssetPathsForNativeMd(input, 'prd-assets')).toBe([
+      '![](./prd-assets/a.png)',
+      '![](./prd-assets/b.png)',
+      '![](./prd-assets/c.png)',
+    ].join('\n'));
+  });
+
   it('空字符串 / 非字符串 透传', () => {
     expect(rewritePrdAssetPathsForNativeMd('')).toBe('');
     expect(rewritePrdAssetPathsForNativeMd(null)).toBe(null);

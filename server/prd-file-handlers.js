@@ -9,7 +9,7 @@ import path from 'path';
  */
 function runGit(args, cwd) {
   return new Promise((resolve) => {
-    const child = spawn('git', args, { cwd, env: process.env });
+    const child = spawn('git', args, { cwd, env: globalThis.process?.env || {} });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (c) => { stdout += c.toString('utf8'); });
@@ -17,6 +17,93 @@ function runGit(args, cwd) {
     child.on('error', (err) => resolve({ code: -1, stdout, stderr: stderr || String(err?.message || err) }));
     child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
   });
+}
+
+function runCommand(command, args, cwd = undefined) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd, env: globalThis.process?.env || {} });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => { stdout += c.toString('utf8'); });
+    child.stderr.on('data', (c) => { stderr += c.toString('utf8'); });
+    child.on('error', (err) => resolve({ code: -1, stdout, stderr: stderr || String(err?.message || err) }));
+    child.on('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
+  });
+}
+
+function toAppleScriptString(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+async function pickDirectoryPathNative({ prompt = '请选择文件夹' } = {}) {
+  if (globalThis.process?.platform !== 'darwin') {
+    return { ok: false, error: '当前仅支持在 macOS 中通过系统目录选择器回填绝对路径' };
+  }
+  const script = `POSIX path of (choose folder with prompt "${toAppleScriptString(prompt)}")`;
+  const result = await runCommand('osascript', ['-e', script]);
+  if (result.code === 0) {
+    return { ok: true, path: String(result.stdout || '').trim() };
+  }
+  const message = String(result.stderr || result.stdout || '').trim();
+  if (/User canceled|取消|(-128)/i.test(message)) {
+    return { ok: false, aborted: true };
+  }
+  return { ok: false, error: message || '打开系统目录选择器失败' };
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      try {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        resolve(raw ? JSON.parse(raw) : {});
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+function collectPrototypeHtmlEntriesFromPath(sourceDir) {
+  const resolvedSource = path.resolve(sourceDir);
+  if (!fs.existsSync(resolvedSource) || !fs.statSync(resolvedSource).isDirectory()) {
+    throw new Error(`原型 HTML 文件夹不存在或不是目录：${resolvedSource}`);
+  }
+  const htmlPath = path.join(resolvedSource, 'index.html');
+  if (!fs.existsSync(htmlPath) || !fs.statSync(htmlPath).isFile()) {
+    throw new Error(`所选文件夹中缺少 index.html：${resolvedSource}`);
+  }
+  const entries = [{
+    relPath: 'index.html',
+    contentBase64: fs.readFileSync(htmlPath).toString('base64'),
+  }];
+  const assetsRoot = path.join(resolvedSource, 'index-assets');
+  if (fs.existsSync(assetsRoot) && fs.statSync(assetsRoot).isDirectory()) {
+    const walk = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        const rel = path.relative(resolvedSource, full).split(path.sep).join('/');
+        entries.push({
+          relPath: rel,
+          contentBase64: fs.readFileSync(full).toString('base64'),
+        });
+      }
+    };
+    walk(assetsRoot);
+  }
+  return {
+    sourceDir: resolvedSource,
+    sourceLabel: path.basename(resolvedSource),
+    entries: entries.sort((a, b) => a.relPath.localeCompare(b.relPath)),
+  };
 }
 
 /** git add 一次命令行参数有长度限制，按批拆开执行 */
@@ -37,6 +124,78 @@ function toRepoRelativePath(repoRoot, absPath) {
 
 function uniqueNonEmpty(items) {
   return Array.from(new Set(items.filter(Boolean)));
+}
+
+function trimGitMessage(text, fallback = '') {
+  const value = String(text || '').trim();
+  return value || fallback;
+}
+
+async function inspectRemoteSyncState(repoRoot) {
+  const branchRes = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
+  const branch = trimGitMessage(branchRes.stdout, '当前分支');
+  const upstreamRes = await runGit(
+    ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'],
+    repoRoot,
+  );
+  if (upstreamRes.code !== 0) {
+    return { branch, hasUpstream: false };
+  }
+  const upstream = trimGitMessage(upstreamRes.stdout);
+  const fetchRes = await runGit(['fetch', '--prune'], repoRoot);
+  if (fetchRes.code !== 0) {
+    return {
+      branch,
+      upstream,
+      hasUpstream: true,
+      fetchError: trimGitMessage(fetchRes.stderr || fetchRes.stdout, 'git fetch 失败'),
+    };
+  }
+  const countsRes = await runGit(['rev-list', '--left-right', '--count', `HEAD...${upstream}`], repoRoot);
+  if (countsRes.code !== 0) {
+    return {
+      branch,
+      upstream,
+      hasUpstream: true,
+      inspectError: trimGitMessage(countsRes.stderr || countsRes.stdout, '远端状态检查失败'),
+    };
+  }
+  const [aheadRaw = '0', behindRaw = '0'] = trimGitMessage(countsRes.stdout, '0 0').split(/\s+/);
+  const aheadCount = Number.parseInt(aheadRaw, 10) || 0;
+  const behindCount = Number.parseInt(behindRaw, 10) || 0;
+  return {
+    branch,
+    upstream,
+    hasUpstream: true,
+    aheadCount,
+    behindCount,
+  };
+}
+
+function buildNoChangeMessage(syncRoot, remoteState) {
+  const base = `已同步到 ${syncRoot}`;
+  if (!remoteState || typeof remoteState !== 'object') {
+    return `${base}，但仓库内无实质变更，未产生 commit`;
+  }
+  if (remoteState.fetchError) {
+    return `${base}，但仓库内无实质变更，未产生 commit。远端状态检查失败：${remoteState.fetchError}`;
+  }
+  if (remoteState.inspectError) {
+    return `${base}，但仓库内无实质变更，未产生 commit。远端状态检查失败：${remoteState.inspectError}`;
+  }
+  if (!remoteState.hasUpstream) {
+    return `${base}，但仓库内无实质变更，未产生 commit。当前分支还没有关联远端分支，如需推送请先在 SourceTree 设置远端并推送。`;
+  }
+  if (remoteState.behindCount > 0 && remoteState.aheadCount > 0) {
+    return `${base}，但本次同步结果和你本地仓库里的内容一致，所以没有产生新的 commit。你本地还有 ${remoteState.aheadCount} 个提交没推上去，同时远端也有 ${remoteState.behindCount} 个新提交。请先通过 SourceTree 拉取最新内容并处理冲突，再重新推送。`;
+  }
+  if (remoteState.behindCount > 0) {
+    return `${base}，但本次同步结果与本地仓库一致，未产生新的 commit。检测到远端分支有 ${remoteState.behindCount} 个新提交，请先通过 SourceTree 拉取最新内容后再同步。`;
+  }
+  if (remoteState.aheadCount > 0) {
+    return `${base}，但本次同步结果和你本地仓库里的内容一致，所以没有产生新的 commit。你本地还有 ${remoteState.aheadCount} 个提交没推上去，请先通过 SourceTree 推送。`;
+  }
+  return `${base}，但仓库内无实质变更，未产生 commit`;
 }
 import {
   readActiveDocSlug,
@@ -104,7 +263,7 @@ function prdReadBackupRotateMeta(backupRootForSlug) {
         }
       }
     }
-  } catch (_) { /* ignore */ }
+  } catch { /* ignore */ }
   for (let i = 0; i < PRD_BACKUP_SLOTS.length; i += 1) {
     const slotDir = prdBackupSlotDir(backupRootForSlug, i);
     if (at[i] == null && prdBackupSlotHasContent(slotDir)) at[i] = prdSafeDirMtimeMs(slotDir);
@@ -688,14 +847,60 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
       }
     },
 
+    /** POST /__prd__/pick-directory { prompt? } -> 打开系统目录选择器并返回绝对路径 */
+    pickDirectory(req, res) {
+      readJsonBody(req)
+        .then(async (payload) => {
+          const prompt = typeof payload?.prompt === 'string' ? payload.prompt : '请选择文件夹';
+          const result = await pickDirectoryPathNative({ prompt });
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          if (result.aborted) {
+            res.statusCode = 200;
+            return res.end(JSON.stringify({ ok: false, aborted: true }));
+          }
+          if (!result.ok) {
+            res.statusCode = 500;
+            return res.end(JSON.stringify({ ok: false, error: result.error || '打开系统目录选择器失败' }));
+          }
+          res.statusCode = 200;
+          return res.end(JSON.stringify({ ok: true, path: result.path }));
+        })
+        .catch((e) => {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: false, error: String(e?.message || e) }));
+        });
+    },
+
+    /** POST /__prd__/read-prototype-html-dir { sourceDir } -> 读取 index.html + index-assets */
+    readPrototypeHtmlDir(req, res) {
+      readJsonBody(req)
+        .then((payload) => {
+          const sourceDir = typeof payload?.sourceDir === 'string' ? payload.sourceDir.trim() : '';
+          if (!sourceDir || !path.isAbsolute(sourceDir)) {
+            res.statusCode = 400;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            return res.end(JSON.stringify({ ok: false, error: '原型 HTML 文件夹必须是绝对路径' }));
+          }
+          const data = collectPrototypeHtmlEntriesFromPath(sourceDir);
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          return res.end(JSON.stringify({ ok: true, ...data }));
+        })
+        .catch((e) => {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: false, error: String(e?.message || e) }));
+        });
+    },
+
     /**
      * POST /__prd__/sync-native-md
-     * 把「导出原生 MD」的解压后内容镜像写入用户指定的本地 Git 工作区子目录。
+     * 把「导出原生 MD」的解压后内容镜像写入用户指定的本地目录。
      * 入参（JSON）：
-     *   - targetDir: 绝对路径，工作区根目录（必须已存在且是目录）
-     *   - folderName: 子目录名（仅允许普通目录名，禁止路径穿越）
-     *   - entries: [{ relPath, contentBase64 }]（相对子目录的路径；.md 与 assets/ 文件都在这里）
-     * 镜像策略：写入/覆盖 entries 中的所有文件，并删除该子目录中不在 entries 中的历史文件，
+     *   - targetDir: 绝对路径，目标目录（必须已存在且是目录）
+     *   - entries: [{ relPath, contentBase64 }]（相对目标目录的路径；例如 prd.md / prd-assets/...）
+     * 镜像策略：写入/覆盖 entries 中的所有文件，并删除本次托管范围内不在 entries 中的历史文件，
      * 触发 SourceTree 的新增（A）/ 修改（M）/ 删除（D）状态。
      */
     syncNativeMd(req, res) {
@@ -706,7 +911,6 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
           const raw = Buffer.concat(chunks).toString('utf8');
           const payload = JSON.parse(raw);
           const targetDir = typeof payload.targetDir === 'string' ? payload.targetDir.trim() : '';
-          const folderName = typeof payload.folderName === 'string' ? payload.folderName.trim() : '';
           const entries = Array.isArray(payload.entries) ? payload.entries : null;
           const mode = typeof payload.mode === 'string' ? payload.mode : 'files-only';
           const commitMessage = typeof payload.commitMessage === 'string' ? payload.commitMessage.trim() : '';
@@ -723,17 +927,6 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
             return res.end(JSON.stringify({ ok: false, error: '目标目录必须是绝对路径' }));
           }
-          if (!folderName) {
-            res.statusCode = 400;
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            return res.end(JSON.stringify({ ok: false, error: '子文件夹名称不能为空' }));
-          }
-          // 子目录名：禁止路径分隔、相对跳转与空白；只允许普通目录名
-          if (/[\\/]/.test(folderName) || folderName === '.' || folderName === '..' || /^\s|\s$/.test(folderName)) {
-            res.statusCode = 400;
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            return res.end(JSON.stringify({ ok: false, error: '子文件夹名称非法' }));
-          }
           if (!entries || entries.length === 0) {
             res.statusCode = 400;
             res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -747,12 +940,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
             return res.end(JSON.stringify({ ok: false, error: `目标目录不存在或不是目录：${resolvedTarget}` }));
           }
 
-          const syncRoot = path.resolve(resolvedTarget, folderName);
-          if (!syncRoot.startsWith(resolvedTarget + path.sep) && syncRoot !== resolvedTarget) {
-            res.statusCode = 400;
-            res.setHeader('Content-Type', 'application/json; charset=utf-8');
-            return res.end(JSON.stringify({ ok: false, error: '子文件夹路径穿越到目标目录之外' }));
-          }
+          const syncRoot = resolvedTarget;
 
           // 收集本次期望写入的相对路径（POSIX 风格，便于比对），同时校验每项 relPath
           const expectedRelSet = new Set();
@@ -781,21 +969,35 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
             normalizedEntries.push({ relPath: posixRel, absPath, contentBase64 });
           }
 
-          // 收集目标子目录下已有的所有文件（递归），以便镜像对齐（删除本次不再需要的文件）
+          // 只扫描本次托管的顶层路径，避免误删目标目录里的其他业务文件。
+          const managedRoots = Array.from(new Set(
+            normalizedEntries
+              .map(({ relPath }) => relPath.split('/')[0])
+              .filter(Boolean),
+          ));
           const existingRelPaths = new Set();
-          if (fs.existsSync(syncRoot) && fs.statSync(syncRoot).isDirectory()) {
-            const walk = (dir) => {
-              for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-                const full = path.join(dir, entry.name);
-                if (entry.isDirectory()) { walk(full); continue; }
-                if (!entry.isFile()) continue;
-                const rel = path.relative(syncRoot, full).split(path.sep).join('/');
-                existingRelPaths.add(rel);
-              }
-            };
-            walk(syncRoot);
-          } else {
+          const walkManagedDir = (dir) => {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) { walkManagedDir(full); continue; }
+              if (!entry.isFile()) continue;
+              const rel = path.relative(syncRoot, full).split(path.sep).join('/');
+              existingRelPaths.add(rel);
+            }
+          };
+          if (!fs.existsSync(syncRoot) || !fs.statSync(syncRoot).isDirectory()) {
             fs.mkdirSync(syncRoot, { recursive: true });
+          }
+          for (const rootName of managedRoots) {
+            const rootPath = path.resolve(syncRoot, rootName);
+            if (!rootPath.startsWith(syncRoot + path.sep) && rootPath !== syncRoot) continue;
+            if (!fs.existsSync(rootPath)) continue;
+            const stat = fs.statSync(rootPath);
+            if (stat.isFile()) {
+              existingRelPaths.add(rootName);
+              continue;
+            }
+            if (stat.isDirectory()) walkManagedDir(rootPath);
           }
 
           // 写入/覆盖 entries
@@ -844,7 +1046,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
               res.statusCode = 200;
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
               return res.end(JSON.stringify({
-                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                ok: true, targetDir: resolvedTarget, syncRoot,
                 writtenCount, deletedCount: deletedPaths.length, deletedPaths,
                 git: {
                   ...gitResult,
@@ -861,7 +1063,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
               res.statusCode = 200;
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
               return res.end(JSON.stringify({
-                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                ok: true, targetDir: resolvedTarget, syncRoot,
                 writtenCount, deletedCount: deletedPaths.length, deletedPaths,
                 git: {
                   ...gitResult,
@@ -887,7 +1089,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
               res.statusCode = 200;
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
               return res.end(JSON.stringify({
-                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                ok: true, targetDir: resolvedTarget, syncRoot,
                 writtenCount, deletedCount: deletedPaths.length, deletedPaths,
                 git: {
                   ...gitResult,
@@ -902,7 +1104,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json; charset=utf-8');
                 return res.end(JSON.stringify({
-                  ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                  ok: true, targetDir: resolvedTarget, syncRoot,
                   writtenCount, deletedCount: deletedPaths.length, deletedPaths,
                   git: { ...gitResult, error: `git add 失败：${addRes.stderr}` },
                 }));
@@ -916,12 +1118,19 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
             );
             const hasStagedChange = diffRes.code === 1;
             if (!hasStagedChange) {
+              const remoteState = await inspectRemoteSyncState(repoRoot);
+              const noChangeMessage = buildNoChangeMessage(syncRoot, remoteState);
               res.statusCode = 200;
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
               return res.end(JSON.stringify({
-                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                ok: true, targetDir: resolvedTarget, syncRoot,
                 writtenCount, deletedCount: deletedPaths.length, deletedPaths,
-                git: { ...gitResult, skipped: 'no-change', message: '文件与仓库完全一致，无需 commit' },
+                git: {
+                  ...gitResult,
+                  skipped: 'no-change',
+                  message: noChangeMessage,
+                  remoteState,
+                },
               }));
             }
 
@@ -931,7 +1140,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
               res.statusCode = 200;
               res.setHeader('Content-Type', 'application/json; charset=utf-8');
               return res.end(JSON.stringify({
-                ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                ok: true, targetDir: resolvedTarget, syncRoot,
                 writtenCount, deletedCount: deletedPaths.length, deletedPaths,
                 git: { ...gitResult, error: `git commit 失败：${commitRes.stderr || commitRes.stdout}` },
               }));
@@ -956,11 +1165,11 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json; charset=utf-8');
                 return res.end(JSON.stringify({
-                  ok: true, targetDir: resolvedTarget, folderName, syncRoot,
+                  ok: true, targetDir: resolvedTarget, syncRoot,
                   writtenCount, deletedCount: deletedPaths.length, deletedPaths,
                   git: {
                     ...gitResult,
-                    error: `commit 成功（${gitResult.commitHash || ''}），但 git push 失败：${pushRes.stderr || pushRes.stdout}。请到 SourceTree 里 pull / 解决冲突后重推。`,
+                    error: `commit 成功（${gitResult.commitHash || ''}），但 git push 失败：${pushRes.stderr || pushRes.stdout}。GitLab 上这个分支有新的内容，你本地还不是最新。请先通过 SourceTree 拉取最新内容；如果有冲突，先处理冲突后再重新推送。`,
                   },
                 }));
               }
@@ -974,7 +1183,6 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
           res.end(JSON.stringify({
             ok: true,
             targetDir: resolvedTarget,
-            folderName,
             syncRoot,
             writtenCount,
             deletedCount: deletedPaths.length,
