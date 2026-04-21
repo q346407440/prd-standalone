@@ -130,6 +130,11 @@ bash <prd-standalone 路径>/start.sh
 ```
 
 每次启动同样会按 **`args` 是否含 `chrome-devtools-mcp@latest`** 检查用户级 MCP；缺失则自动写入 `~/.cursor/mcp.json`（见步骤 5）。
+若当前目录是通过 Git 拉取且已配置上游分支，`start.sh` 还会在启动前：
+
+- `git fetch` 检查远端是否有新版本
+- 读取 `release-info.json` 展示当前版本、最新版本与本次更新摘要
+- 在本地无未提交已跟踪改动时，提供 `1` 更新 / `0` 跳过 的启动前选择
 
 ### 写 PRD
 
@@ -159,6 +164,7 @@ some-project/                 # 业务项目（可选的父目录）
 ├── src/                      # 业务源码（AI 可读取来辅助写 PRD）
 └── prd-standalone/           # ← 本项目
     ├── .cursor/              #   Cursor AI 配置（skills + rules）
+    ├── release-info.json     #   对外发布信息（版本号、更新摘要、启动前提示）
     ├── pages/                #   PRD 文档目录
     │   ├── .active-doc.json  #     当前激活文档
     │   └── doc-NNN/          #     每个文档一个目录
@@ -177,5 +183,6 @@ some-project/                 # 业务项目（可选的父目录）
 - **PRD 文档主文件名**（`pages/doc-NNN/xxx.md` 的 `xxx`）支持简体中文等 Unicode，规则见 [`shared/prd-filename-sanitize.js`](shared/prd-filename-sanitize.js)；目录名仍为 `doc-NNN`。
 - `.env.local` 含飞书密钥，**绝不提交 git**
 - `.local/` 是运行时缓存（auth token、同步快照），不提交 git
+- `release-info.json` 应与 `package.json` 的 `version` 保持一致，用于启动前的版本提示与更新说明
 - 端口 `6001` 必须与飞书应用后台配置的回调地址一致
 - 飞书应用需开通权限：`docx:document`、`wiki:wiki:readonly`、`board:whiteboard:node:create`、`board:whiteboard:node:read`、`docs:document.media:upload`、`contact:user.base:readonly`

@@ -3,8 +3,93 @@ set -euo pipefail
 
 PORT=6001
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+UPDATE_INFO_FILE=""
 
 cd "$PROJECT_DIR"
+
+cleanup_temp_files() {
+  if [ -n "${UPDATE_INFO_FILE:-}" ] && [ -f "$UPDATE_INFO_FILE" ]; then
+    rm -f "$UPDATE_INFO_FILE"
+  fi
+}
+
+trap cleanup_temp_files EXIT
+
+json_get() {
+  local field="$1"
+  node --input-type=module -e '
+    import fs from "fs";
+
+    const [filePath, fieldName] = process.argv.slice(1);
+    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const value = fieldName.split(".").reduce((acc, key) => (
+      acc == null ? undefined : acc[key]
+    ), data);
+
+    if (value == null) process.exit(0);
+    if (typeof value === "object") {
+      process.stdout.write(JSON.stringify(value));
+      process.exit(0);
+    }
+    process.stdout.write(String(value));
+  ' "$UPDATE_INFO_FILE" "$field"
+}
+
+json_lines() {
+  local field="$1"
+  local prefix="$2"
+  node --input-type=module -e '
+    import fs from "fs";
+
+    const [filePath, fieldName, prefix] = process.argv.slice(1);
+    const data = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    const value = fieldName.split(".").reduce((acc, key) => (
+      acc == null ? undefined : acc[key]
+    ), data);
+
+    if (!Array.isArray(value)) process.exit(0);
+    value
+      .map((item) => String(item).trim())
+      .filter(Boolean)
+      .forEach((item) => console.log(`${prefix}${item}`));
+  ' "$UPDATE_INFO_FILE" "$field" "$prefix"
+}
+
+refresh_update_info() {
+  if [ -z "${UPDATE_INFO_FILE:-}" ]; then
+    UPDATE_INFO_FILE="$(mktemp -t prd-release-check.XXXXXX)"
+  fi
+  node "$PROJECT_DIR/scripts/check-release-update.js" > "$UPDATE_INFO_FILE"
+}
+
+print_release_block() {
+  local root="$1"
+  local label="$2"
+  local detail_mode="${3:-full}"
+  local version=""
+  local date=""
+  local message=""
+  local summary_lines=""
+
+  version="$(json_get "${root}.version")"
+  date="$(json_get "${root}.date")"
+  message="$(json_get "${root}.message")"
+  summary_lines="$(json_lines "${root}.summary" "  - ")"
+
+  if [ -n "$version" ]; then
+    echo "  ${label}: v${version}"
+  fi
+  if [ -n "$date" ]; then
+    echo "  发布时间: ${date}"
+  fi
+  if [ "$detail_mode" = "full" ] && [ -n "$summary_lines" ]; then
+    echo "  本次更新："
+    printf '%s\n' "$summary_lines"
+  fi
+  if [ "$detail_mode" = "full" ] && [ -n "$message" ]; then
+    echo "  提示：${message}"
+  fi
+}
 
 # ── 0. Node.js 环境检查 ──────────────────────────────────────────────────────
 if ! command -v node &>/dev/null; then
@@ -41,7 +126,90 @@ fi
 
 echo "[check] Node.js $(node --version) ✓"
 
-# ── 0b. Cursor MCP：按 args 检测 chrome-devtools-mcp@latest，缺失则写入 ~/.cursor/mcp.json ──
+# ── 0b. GitHub 更新检查（可跳过）──────────────────────────────────────────────
+refresh_update_info
+UPDATE_STATUS="$(json_get status)"
+
+case "$UPDATE_STATUS" in
+  up-to-date)
+    echo "[check] GitHub 版本已是最新 ✓"
+    ;;
+  not-git)
+    echo "[update] 当前目录不是 Git 仓库，跳过版本检查"
+    ;;
+  no-upstream)
+    echo "[update] 当前分支未配置上游分支，跳过版本检查"
+    ;;
+  fetch-failed)
+    echo "[update] 获取远端更新失败，继续使用本地版本启动"
+    FETCH_ERROR="$(json_get git.fetchError)"
+    if [ -n "$FETCH_ERROR" ]; then
+      echo "        ${FETCH_ERROR}"
+    fi
+    ;;
+  compare-failed)
+    echo "[update] 比较本地与远端版本失败，继续使用本地版本启动"
+    COMPARE_ERROR="$(json_get git.compareError)"
+    if [ -n "$COMPARE_ERROR" ]; then
+      echo "        ${COMPARE_ERROR}"
+    fi
+    ;;
+  local-ahead)
+    echo "[update] 当前分支存在本地提交领先于远端，跳过自动更新"
+    ;;
+  diverged)
+    echo "[update] 当前分支与远端已分叉，请手动处理后再更新"
+    ;;
+  remote-ahead)
+    echo ""
+    echo "============================================================"
+    echo "  [update] 检测到 GitHub 上有新版本"
+    print_release_block "local" "当前版本" "compact"
+    print_release_block "remote" "最新版本" "full"
+
+    DIRTY_TRACKED="$(json_get git.dirtyTracked)"
+    if [ "$DIRTY_TRACKED" = "true" ]; then
+      echo ""
+      echo "  [!] 检测到本地有未提交的已跟踪改动，暂不自动更新"
+      echo "  [!] 请先提交或处理这些改动，再重新运行 start.sh"
+      echo "============================================================"
+      echo ""
+    else
+      while true; do
+        echo ""
+        echo "  输入 1 更新后继续启动"
+        echo "  输入 0 跳过更新直接启动"
+        read -r -p "  请选择 [1/0]: " UPDATE_CHOICE
+        case "$UPDATE_CHOICE" in
+          1)
+            if git pull --ff-only; then
+              refresh_update_info
+              echo ""
+              echo "  [ok] 已更新到最新版本"
+              print_release_block "local" "当前版本" "full"
+            else
+              echo ""
+              echo "  [!] 自动更新失败，请手动执行 git pull --ff-only 后重试"
+            fi
+            break
+            ;;
+          0)
+            echo ""
+            echo "  [skip] 已跳过更新，将继续使用当前本地版本启动"
+            break
+            ;;
+          *)
+            echo "  [!] 请输入 1 或 0"
+            ;;
+        esac
+      done
+      echo "============================================================"
+      echo ""
+    fi
+    ;;
+esac
+
+# ── 0c. Cursor MCP：按 args 检测 chrome-devtools-mcp@latest，缺失则写入 ~/.cursor/mcp.json ──
 node "$PROJECT_DIR/scripts/ensure-chrome-devtools-mcp.js" || true
 
 # ── 1. 依赖安装 ──────────────────────────────────────────────────────────────
