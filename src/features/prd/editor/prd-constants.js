@@ -37,10 +37,10 @@ export const PRD_FILE_NAME_RULE_HINT = '支持中文、英文、数字及 ._-；
 
 export const PERSIST_DEBOUNCE_MS = 480;
 export const TOAST_EXIT_MS = 220;
-export const ACTIONBAR_OPEN_DELAY_MS = 56;
-export const ACTIONBAR_SWITCH_DELAY_MS = 120;
-export const ACTIONBAR_CLOSE_DELAY_MS = 140;
-export const TABLE_HOVER_CLOSE_DELAY_MS = 140;
+export const ACTIONBAR_OPEN_DELAY_MS = 0;
+export const ACTIONBAR_SWITCH_DELAY_MS = 0;
+export const ACTIONBAR_CLOSE_DELAY_MS = 40;
+export const TABLE_HOVER_CLOSE_DELAY_MS = 40;
 export const TABLE_EDGE_HOTZONE_PX = 24;
 export const BUBBLE_GAP = 6;
 export const BUBBLE_MARGIN = 8;

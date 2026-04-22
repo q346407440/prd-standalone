@@ -222,6 +222,7 @@ function TiptapEditingSurface({
   initialCaretOffset,
   onInitialCaretOffsetConsumed,
   onClose,
+  maxIndentLevel = 0,
 }) {
   const valueRef = useRef(value);
   const initialValueRef = useRef(value);
@@ -466,6 +467,33 @@ function TiptapEditingSurface({
     }
   }, [editor]);
 
+  /**
+   * 与 applyMarkdownValue 的区别：**不触发** onSaveRef 向父层回写，**也不**更新 valueRef。
+   *
+   * valueRef 在本组件里的语义是「最近一次同步自父层 value prop 的基线」——commitAndExit 用
+   * `fullMd !== valueRef.current` 判断 dirty 是否需要 onSave。若 Quiet 分支里把 valueRef 提前
+   * 设成新 md，blur 时对比会误判为未改动、跳过 onSave，造成 Tab 改完 prefix 在本地生效但失焦
+   * 回写时被父层旧 value 重新覆盖的「恢复」现象。
+   *
+   * 使用场景：Tab / Shift+Tab 调整 indent 时只改视觉（prefix + editor body）；待 blur 由
+   * commitAndExit 把 `mergeListPrefixWithParagraphMarkdown(inline, prefix)` 拼成完整 md 一次性
+   * onSave，保存时机与普通文字输入对齐。
+   */
+  const applyMarkdownValueQuiet = useCallback((newMd, { focus = 'end' } = {}) => {
+    const parsed = parseListPrefix(newMd);
+    if (parsed) {
+      prefixRef.current = parsed.prefix;
+      editor?.commands.setContent(parsed.body || '');
+    } else {
+      prefixRef.current = '';
+      editor?.commands.setContent(newMd || '');
+    }
+    forceUpdate((n) => n + 1);
+    if (focus) {
+      requestAnimationFrame(() => editor?.commands.focus(focus));
+    }
+  }, [editor]);
+
   const updatePrefix = useCallback((newPrefix) => {
     const inlineMd = editor ? trimTrailingEmptyLines(editorToMarkdown(editor)) : '';
     const newMd = mergeListPrefixWithParagraphMarkdown(inlineMd, newPrefix);
@@ -557,12 +585,19 @@ function TiptapEditingSurface({
     if (e.shiftKey) {
       if (!hasIndent(fullMd)) return;
       const newMd = adjustOrderedMarkerAfterIndent(dedentMarkdown(fullMd));
-      applyMarkdownValue(newMd);
+      // Tab 调整 indent 不立即保存：只更新 prefix + editor 内容，等 blur 时由 commitAndExit 一次性
+      // 把 mergeListPrefixWithParagraphMarkdown(inline, prefix) 拼好 onSave。与普通文字输入保存时机对齐，
+      // 避免连按 Tab 连续 toast 保存。
+      applyMarkdownValueQuiet(newMd);
     } else {
+      // 上限拦截：当前 indent level 已达 maxIndentLevel 时 Tab 无效（保持光标 / prefix 不变），
+      // 避免编辑器里可以无限缩进但落盘时被清零造成「打字看到缩进、保存却没有」的错觉。
+      const currentLevel = Math.floor((parseListPrefix(fullMd)?.indent.length || 0) / 2);
+      if (currentLevel >= maxIndentLevel) return;
       const newMd = adjustOrderedMarkerAfterIndent(indentMarkdown(fullMd));
-      applyMarkdownValue(newMd);
+      applyMarkdownValueQuiet(newMd);
     }
-  }, [editor, onBlockLevelChange, getCurrentMarkdown, applyMarkdownValue]);
+  }, [editor, onBlockLevelChange, getCurrentMarkdown, applyMarkdownValue, applyMarkdownValueQuiet, maxIndentLevel]);
 
   return (
     <div
@@ -599,13 +634,7 @@ function TiptapEditingSurface({
           }}
         />
       )}
-      <SelectionToolbar
-        editor={editor}
-        blockLevel={blockLevel}
-        onBlockLevelChange={onBlockLevelChange}
-        getCurrentMarkdown={getCurrentMarkdown}
-        panelRef={toolbarPanelRef}
-      />
+      <SelectionToolbar editor={editor} />
       <EditorContent editor={editor} />
     </div>
   );
@@ -631,6 +660,7 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
   setGlobalSelection,
   onPrefixManualChange,
   onResetOrderedStart,
+  maxIndentLevel = 0,
 }) {
   const [editing, setEditing] = useState(false);
   /** 進入編輯態時的游標字元 offset；用 state 快照，避免 ref 被 consume 後父層重繪把 initialCaretOffset 變成 null 再次觸發子層 effect 而 focus('end')（表格內 globalSelection / hover 重繪較頻繁）。 */
@@ -685,6 +715,25 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
     }
   }, [onBackspaceEmpty]);
 
+  const handlePreviewMouseDown = useCallback((e) => {
+    selectCurrentTextTarget(e);
+    // 列表預覽：前綴 `•` / `1.` 在 .prd-list-marker 內，不在 contentRef 正文的 span 內；
+    // 點在符號區時 caret API 與距離回退常錯，固定對應正文開頭（與編輯器內不含前綴的 body 一致）。
+    const hitEl = e.target instanceof Element ? e.target : e.target.parentElement;
+    if (hitEl?.closest('.prd-list-marker')) {
+      pendingPreviewCaretOffsetRef.current = 0;
+    } else {
+      pendingPreviewCaretOffsetRef.current = getTextOffsetFromPoint(
+        previewContentRef.current,
+        e.clientX,
+        e.clientY,
+      );
+    }
+    if (e.button !== 0) return;
+    setEditingInitialCaretOffset(pendingPreviewCaretOffsetRef.current);
+    setEditing(true);
+  }, [selectCurrentTextTarget]);
+
   if (!editing) {
     return (
       <div
@@ -696,25 +745,7 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
         ].filter(Boolean).join(' ')}
         data-prd-no-block-select
         tabIndex={0}
-        onMouseDown={(e) => {
-          selectCurrentTextTarget(e);
-          // 列表預覽：前綴 `•` / `1.` 在 .prd-list-marker 內，不在 contentRef 正文的 span 內；
-          // 點在符號區時 caret API 與距離回退常錯，固定對應正文開頭（與編輯器內不含前綴的 body 一致）。
-          const hitEl = e.target instanceof Element ? e.target : e.target.parentElement;
-          if (hitEl?.closest('.prd-list-marker')) {
-            pendingPreviewCaretOffsetRef.current = 0;
-            return;
-          }
-          pendingPreviewCaretOffsetRef.current = getTextOffsetFromPoint(
-            previewContentRef.current,
-            e.clientX,
-            e.clientY,
-          );
-        }}
-        onClick={() => {
-          setEditingInitialCaretOffset(pendingPreviewCaretOffsetRef.current);
-          setEditing(true);
-        }}
+        onMouseDown={handlePreviewMouseDown}
         onKeyDown={handlePreviewKeyDown}
         onPaste={handlePreviewPaste}
       >
@@ -750,6 +781,7 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
       initialCaretOffset={editingInitialCaretOffset}
       onInitialCaretOffsetConsumed={undefined}
       onClose={handleFinishEditing}
+      maxIndentLevel={maxIndentLevel}
     />
   );
 });

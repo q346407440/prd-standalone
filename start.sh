@@ -92,6 +92,18 @@ print_release_block() {
 }
 
 # ── 0. Node.js 环境检查 ──────────────────────────────────────────────────────
+# 非交互 shell 里可能还没加载 nvm，先补一次再检测 node。
+if ! command -v node &>/dev/null; then
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  if [ -s "$NVM_DIR/nvm.sh" ]; then
+    # shellcheck disable=SC1090
+    . "$NVM_DIR/nvm.sh"
+    if ! command -v node &>/dev/null && command -v nvm &>/dev/null; then
+      nvm use --silent 22 >/dev/null 2>&1 || nvm use --silent default >/dev/null 2>&1 || true
+    fi
+  fi
+fi
+
 if ! command -v node &>/dev/null; then
   echo ""
   echo "============================================================"

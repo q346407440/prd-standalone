@@ -371,6 +371,16 @@
   display: block;
 }
 
+/* 空根级 bullet（仅 `- ` 无正文）：正文行盒为空时，::before 若固定 top: 0 会显得偏上。 */
+.prd-md-preview-list-line--root-bullet-empty {
+  min-height: calc(13px * 1.7);
+}
+
+.prd-md-preview-list-line--root-bullet-empty::before {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 /* 有序/字母列表：對齊編輯態按鈕式標記（.prd-list-marker__btn padding 0 2px + 標記後半角空格） */
 .prd-md-preview-list-line--ordered {
   gap: 0.28em;

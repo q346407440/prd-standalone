@@ -1,7 +1,9 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { nodeContainsTarget } from '../prd-utils.js';
+import { BLOCK_LEVEL_OPTIONS } from '../prd-constants.js';
 import { ActionPanel } from './FloatingActionBubble.jsx';
 import { AddBlockMenu } from './AddBlockMenu.jsx';
+import { BlockMoreMenu } from './BlockMoreMenu.jsx';
 import { HeadingBlock } from './blocks/HeadingBlock.jsx';
 import { ParagraphBlock } from './blocks/ParagraphBlock.jsx';
 import { DividerBlock } from './blocks/DividerBlock.jsx';
@@ -14,6 +16,7 @@ export const BlockItem = memo(function BlockItem({
   onMoveUp, onMoveDown, canMoveUp, canMoveDown,
   activeActionBlockId, requestActionbarOpen, requestActionbarClose, keepActionbarOpen, clearActionbarState,
   activeInsertMenuOwnerId, openInsertMenu, closeInsertMenu,
+  setHoveredActionBlockId, clearHoveredActionBlockId,
   globalSelection, setGlobalSelection,
   shouldFocus, onFocusConsumed,
   onEnterBlock, onBackspaceEmptyBlock, onBackspaceMergeBlock, onPasteImageAsBlockBlock,
@@ -30,8 +33,10 @@ export const BlockItem = memo(function BlockItem({
   mermaidMeta, onMermaidMetaChange,
   mindmapMeta, onMindmapMetaChange,
   onCopyMdCursorRef,
+  maxFirstLineIndentLevel = 0,
 }) {
   const [showInsertMenu, setShowInsertMenu] = useState(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const suppressActionbarUntilLeaveRef = useRef(false);
   const rootRef = useRef(null);
   /** 選區在「其他 block」時，不應開啟本 block 的操作欄 */
@@ -69,6 +74,7 @@ export const BlockItem = memo(function BlockItem({
         if (selectedKey !== hoveredKey) return;
       }
     }
+    setHoveredActionBlockId?.(block.id);
     requestActionbarOpen(block.id);
   };
 
@@ -82,12 +88,14 @@ export const BlockItem = memo(function BlockItem({
   const closeActionbarWithDelay = () => {
     requestActionbarClose(block.id);
     setShowInsertMenu(null);
+    setShowMoreMenu(false);
     closeInsertMenu(insertMenuOwnerId);
   };
 
   const closeActionbarImmediately = useCallback(() => {
     requestActionbarClose(block.id, { immediate: true });
     setShowInsertMenu(null);
+    setShowMoreMenu(false);
     closeInsertMenu(insertMenuOwnerId);
   }, [block.id, closeInsertMenu, insertMenuOwnerId, requestActionbarClose]);
 
@@ -202,6 +210,7 @@ export const BlockItem = memo(function BlockItem({
             canMoveUp={canMoveUp}
             canMoveDown={canMoveDown}
             onResetOrderedStart={onResetOrderedStartBlock ? (newMd, startNum) => onResetOrderedStartBlock(block.id, newMd, startNum) : undefined}
+            maxFirstLineIndentLevel={maxFirstLineIndentLevel}
           />
         );
       case 'divider':
@@ -262,10 +271,11 @@ export const BlockItem = memo(function BlockItem({
       data-prd-block-id={block.id}
       className={[
         'prd-block-item',
-        (activeActionBlockId === block.id || showInsertMenu != null) ? 'prd-block-item--action-active' : '',
+        (activeActionBlockId === block.id || showInsertMenu != null || showMoreMenu) ? 'prd-block-item--action-active' : '',
       ].filter(Boolean).join(' ')}
       onMouseEnter={(e) => openActionbar(e)}
       onMouseLeave={() => {
+        clearHoveredActionBlockId?.(block.id);
         suppressActionbarUntilLeaveRef.current = false;
         // 預覽→編輯 DOM 替換或移向 body 上的格式條時會誤觸 leave；編輯態下保持操作欄常駐
         if (isTextUiAnchoredOnThisBlock) return;
@@ -289,80 +299,125 @@ export const BlockItem = memo(function BlockItem({
         }
         className="prd-block-actionbar"
         onMouseEnter={() => {
+          setHoveredActionBlockId?.(block.id);
           keepActionbarOpen(block.id);
         }}
         onMouseLeave={(e) => {
+          const next = e.relatedTarget;
+          if (!(next instanceof Node) || !rootRef.current?.contains(next)) {
+            clearHoveredActionBlockId?.(block.id);
+          }
           if (isTextUiAnchoredOnThisBlock) {
-            const next = e.relatedTarget;
             if (next && rootRef.current?.contains(next)) return;
             if (next && typeof next.closest === 'function' && next.closest('.prd-tiptap-bubble-menu')) return;
           }
           closeActionbarWithDelay();
         }}
       >
-        <button
-          type="button"
-          className="prd-action-btn prd-block-actionbar__btn"
-          onClick={() => onDuplicate(block.id)}
-        >
-          复制
-        </button>
         {onCopyMdCursorRef ? (
           <button
             type="button"
-            className="prd-action-btn prd-block-actionbar__btn"
+            className="prd-action-btn prd-block-actionbar__btn prd-action-btn--primary"
             title="复制 @文件:行号，供粘贴到 Cursor"
             onClick={() => onCopyMdCursorRef({ blockId: block.id, cellPath: null })}
           >
-            复制MD行号
+            复制 MD 行号
           </button>
         ) : null}
-        <button
-          className="prd-action-btn prd-block-actionbar__btn"
-          onClick={() => {
-            const next = showInsertMenu === 'above' ? null : 'above';
-            setShowInsertMenu(next);
-            if (next) openInsertMenu(insertMenuOwnerId, { preserveActionbarBlockId: block.id });
-            else closeInsertMenu(insertMenuOwnerId);
-          }}
-        >
-          上方插入
-        </button>
-        <button
-          className="prd-action-btn prd-block-actionbar__btn"
-          onClick={() => {
-            const next = showInsertMenu === 'below' ? null : 'below';
-            setShowInsertMenu(next);
-            if (next) openInsertMenu(insertMenuOwnerId, { preserveActionbarBlockId: block.id });
-            else closeInsertMenu(insertMenuOwnerId);
-          }}
-        >
-          下方插入
-        </button>
-        <button
-          type="button"
-          className="prd-action-btn prd-block-actionbar__btn"
-          disabled={!canMoveUp}
-          title="上移"
-          onClick={() => onMoveUp(block.id)}
-        >
-          上移
-        </button>
-        <button
-          type="button"
-          className="prd-action-btn prd-block-actionbar__btn"
-          disabled={!canMoveDown}
-          title="下移"
-          onClick={() => onMoveDown(block.id)}
-        >
-          下移
-        </button>
         <button
           className="prd-action-btn prd-action-btn--danger prd-block-actionbar__btn prd-block-actionbar__btn--delete"
           onClick={() => onDelete(block.id)}
         >
           删除
         </button>
+        <div
+          className="prd-block-actionbar__more"
+          onMouseEnter={() => {
+            setShowMoreMenu(true);
+            setShowInsertMenu(null);
+            closeInsertMenu(insertMenuOwnerId);
+          }}
+          onMouseLeave={() => setShowMoreMenu(false)}
+        >
+          <button
+            type="button"
+            className={[
+              'prd-action-btn',
+              'prd-block-actionbar__btn',
+              'prd-action-btn--icon-text',
+              showMoreMenu ? 'prd-action-btn--active' : '',
+            ].filter(Boolean).join(' ')}
+            title="更多操作"
+            aria-haspopup="menu"
+            aria-expanded={showMoreMenu}
+            onFocus={() => {
+              setShowMoreMenu(true);
+              setShowInsertMenu(null);
+              closeInsertMenu(insertMenuOwnerId);
+            }}
+            onClick={() => {
+              setShowMoreMenu((v) => !v);
+              setShowInsertMenu(null);
+              closeInsertMenu(insertMenuOwnerId);
+            }}
+          >
+            更多
+            <span className="prd-action-btn__caret" aria-hidden="true">▾</span>
+          </button>
+          {showMoreMenu && (
+            <BlockMoreMenu
+              position="below"
+              onClose={() => setShowMoreMenu(false)}
+              items={[
+                ...(isTextBlock ? [{
+                  kind: 'submenu',
+                  id: 'convert-to',
+                  label: '转换为…',
+                  children: BLOCK_LEVEL_OPTIONS.map((option) => ({
+                    id: `level-${option.value}`,
+                    label: option.label,
+                    active: option.value === block.type,
+                    disabled: option.value === block.type,
+                    onClick: () => onUpdate({ ...block, type: option.value }),
+                  })),
+                }] : []),
+                {
+                  id: 'duplicate',
+                  label: '复制整块',
+                  onClick: () => onDuplicate(block.id),
+                },
+                {
+                  id: 'insert-above',
+                  label: '上方插入…',
+                  onClick: () => {
+                    setShowInsertMenu('above');
+                    openInsertMenu(insertMenuOwnerId, { preserveActionbarBlockId: block.id });
+                  },
+                },
+                {
+                  id: 'insert-below',
+                  label: '下方插入…',
+                  onClick: () => {
+                    setShowInsertMenu('below');
+                    openInsertMenu(insertMenuOwnerId, { preserveActionbarBlockId: block.id });
+                  },
+                },
+                {
+                  id: 'move-up',
+                  label: '上移',
+                  disabled: !canMoveUp,
+                  onClick: () => onMoveUp(block.id),
+                },
+                {
+                  id: 'move-down',
+                  label: '下移',
+                  disabled: !canMoveDown,
+                  onClick: () => onMoveDown(block.id),
+                },
+              ]}
+            />
+          )}
+        </div>
 
         {showInsertMenu === 'above' && (
           <AddBlockMenu
@@ -398,6 +453,7 @@ export const BlockItem = memo(function BlockItem({
   if (prev.annotationsKey !== next.annotationsKey) return false;
   if (prev.mermaidMetaKey !== next.mermaidMetaKey) return false;
   if (prev.mindmapMetaKey !== next.mindmapMetaKey) return false;
+  if (prev.maxFirstLineIndentLevel !== next.maxFirstLineIndentLevel) return false;
   const prevActive = prev.activeActionBlockId === prev.block.id;
   const nextActive = next.activeActionBlockId === next.block.id;
   if (prevActive !== nextActive) return false;

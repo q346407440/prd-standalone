@@ -53,11 +53,14 @@ function genId() {
 // ─── 工具函數 ────────────────────────────────────────────────────────────────
 
 function trimLines(str) {
-  return str
+  const lines = String(str)
     .split('\n')
-    .map((l) => l.trimEnd())
-    .join('\n')
-    .trim();
+    .map((l) => l.trimEnd());
+  let start = 0;
+  let end = lines.length - 1;
+  while (start <= end && !lines[start].trim()) start += 1;
+  while (end >= start && !lines[end].trim()) end -= 1;
+  return lines.slice(start, end + 1).join('\n');
 }
 
 function normalizeBareListPrefix(text) {

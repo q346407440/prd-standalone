@@ -60,7 +60,6 @@ import {
   slugToMdPath,
   genId,
   diffRemovedPrdPaths,
-  isNodeHovered,
 } from './prd-utils.js';
 import { ActiveSlugProvider } from './active-slug-context.jsx';
 import {
@@ -151,6 +150,7 @@ export function PrdPage() {
   const actionbarOpenTimerRef = useRef(null);
   const actionbarCloseTimerRef = useRef(null);
   const pendingActionbarBlockIdRef = useRef(null);
+  const hoveredActionBlockIdRef = useRef(null);
   /** 全局唯一 UI 选中（文本 / 表格 / 链接等）；与 Block 操作条互斥 */
   const [globalSelection, setGlobalSelection] = useState(null);
   const globalSelectionRef = useRef(null);
@@ -217,6 +217,15 @@ export function PrdPage() {
     actionbarCloseTimerRef.current = null;
   }, []);
 
+  const setHoveredActionBlockId = useCallback((blockId) => {
+    hoveredActionBlockIdRef.current = blockId || null;
+  }, []);
+
+  const clearHoveredActionBlockId = useCallback((blockId) => {
+    if (!blockId || hoveredActionBlockIdRef.current !== blockId) return;
+    hoveredActionBlockIdRef.current = null;
+  }, []);
+
   const clearActionbarState = useCallback(() => {
     clearPendingActionbarOpen();
     clearPendingActionbarClose();
@@ -255,10 +264,10 @@ export function PrdPage() {
     pendingActionbarBlockIdRef.current = blockId;
     const activate = () => {
       if (pendingActionbarBlockIdRef.current !== blockId) return;
-      const blockNode = blockRefs.current[blockId];
       const sel = globalSelectionRef.current;
       const selectionInThisBlock = Boolean(sel && sel.blockId === blockId);
-      if (!isNodeHovered(blockNode) && activeInsertMenuOwnerIdRef.current !== blockId && !selectionInThisBlock) {
+      const hoverIntentInThisBlock = hoveredActionBlockIdRef.current === blockId;
+      if (!hoverIntentInThisBlock && activeInsertMenuOwnerIdRef.current !== blockId && !selectionInThisBlock) {
         pendingActionbarBlockIdRef.current = null;
         actionbarOpenTimerRef.current = null;
         return;
@@ -1839,6 +1848,8 @@ export function PrdPage() {
     closeInsertMenu,
     setFocusBlockId,
     registerBlockRef,
+    setHoveredActionBlockId,
+    clearHoveredActionBlockId,
     clearFocusBlockId,
     onEditingFinishedBlock: clearAutoCreatedOrderedSeed,
   }), [
@@ -1852,6 +1863,8 @@ export function PrdPage() {
     openInsertMenu,
     closeInsertMenu,
     registerBlockRef,
+    setHoveredActionBlockId,
+    clearHoveredActionBlockId,
     clearFocusBlockId,
     clearAutoCreatedOrderedSeed,
   ]);

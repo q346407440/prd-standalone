@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { ElementRenderer, getEnterCurrentMarkdown, getEnterNextMarkdown } from './renderers/ElementRenderer.jsx';
-import { FloatingActionBubble } from './FloatingActionBubble.jsx';
+import { ActionPanel } from './FloatingActionBubble.jsx';
+import { BlockMoreMenu } from './BlockMoreMenu.jsx';
 import {
   mermaidTableMetaKey,
   mindmapTableMetaKey,
@@ -14,7 +15,6 @@ import {
   ELEMENT_TYPE_LABELS,
 } from '../prd-constants.js';
 import {
-  isNodeHovered,
   nodeContainsTarget,
   cloneSerializable,
   isGlobalSelectionOnTableCellElement,
@@ -94,6 +94,7 @@ export function CellRenderer({
   onMindmapMetaChange,
   prdAssetCacheBust = 0,
   onCopyMdCursorRef,
+  onActionBubbleHoverChange,
 }) {
   const elements = useMemo(
     () => cellElement?.elements
@@ -103,10 +104,10 @@ export function CellRenderer({
 
   const [focusIdx, setFocusIdx] = useState(null);
   const [activeElementActionIdx, setActiveElementActionIdx] = useState(null);
+  const [showMoreMenuIdx, setShowMoreMenuIdx] = useState(null);
   const containerRefs = useRef({});
-  /** 每格一個穩定 ref，供 FloatingActionBubble 錨定（Portal 後仍指向 .prd-cell-element） */
-  const anchorRefsPool = useRef({});
   const activeElementActionIdxRef = useRef(null);
+  const hoveredElementActionIdxRef = useRef(null);
   const actionOpenTimerRef = useRef(null);
   const actionCloseTimerRef = useRef(null);
   const pendingActionIdxRef = useRef(null);
@@ -141,13 +142,6 @@ export function CellRenderer({
     activeElementActionIdxRef.current = activeElementActionIdx;
   }, [activeElementActionIdx]);
 
-  const getAnchorRef = useCallback((idx) => {
-    if (!anchorRefsPool.current[idx]) {
-      anchorRefsPool.current[idx] = { current: null };
-    }
-    return anchorRefsPool.current[idx];
-  }, []);
-
   const clearPendingElementActionOpen = useCallback((idx = null) => {
     if (idx != null && pendingActionIdxRef.current !== idx) return;
     if (actionOpenTimerRef.current) clearTimeout(actionOpenTimerRef.current);
@@ -175,9 +169,9 @@ export function CellRenderer({
     pendingActionIdxRef.current = idx;
     const open = () => {
       if (pendingActionIdxRef.current !== idx) return;
-      const container = containerRefs.current[idx];
       const fromSelection = isGlobalSelectionOnTableCellElement(globalSelection, blockId, ri, ci, idx);
-      if (!isNodeHovered(container) && !fromSelection) {
+      const fromHoverIntent = hoveredElementActionIdxRef.current === idx;
+      if (!fromHoverIntent && !fromSelection) {
         pendingActionIdxRef.current = null;
         actionOpenTimerRef.current = null;
         return;
@@ -198,6 +192,7 @@ export function CellRenderer({
     clearPendingElementActionClose();
     const close = () => {
       actionCloseTimerRef.current = null;
+      onActionBubbleHoverChange?.(false);
       setActiveElementActionIdx((curr) => (curr === idx ? null : curr));
     };
     if (immediate) {
@@ -205,10 +200,11 @@ export function CellRenderer({
       return;
     }
     actionCloseTimerRef.current = setTimeout(close, ACTIONBAR_CLOSE_DELAY_MS);
-  }, [clearPendingElementActionClose, clearPendingElementActionOpen]);
+  }, [clearPendingElementActionClose, clearPendingElementActionOpen, onActionBubbleHoverChange]);
 
   const keepElementActionOpen = useCallback((idx) => {
     if (hoverSuppressed || isForeignSelectionForTableCell(globalSelection, blockId, ri, ci)) return;
+    hoveredElementActionIdxRef.current = idx;
     clearPendingElementActionOpen();
     clearPendingElementActionClose();
     if (activeElementActionIdxRef.current !== idx) {
@@ -229,7 +225,7 @@ export function CellRenderer({
       const t = event.target;
       const container = containerRefs.current[idx];
       if (nodeContainsTarget(container, t)) return;
-      /* 操作條掛在 body（與 BlockItem 一致），游標在條上時不得關閉 */
+      /* 保留對舊 portal DOM 的兼容；現行格內 actionbar 已改為貼在元素容器內 */
       if (t && typeof t.closest === 'function' && t.closest('.prd-floating-action-bubble')) return;
       closeActiveAction();
     };
@@ -249,24 +245,31 @@ export function CellRenderer({
   }, [activeElementActionIdx, globalSelection, hoverSuppressed, requestElementActionClose]);
 
   useEffect(() => () => {
+    onActionBubbleHoverChange?.(false);
     clearPendingElementActionOpen();
     clearPendingElementActionClose();
-  }, [clearPendingElementActionClose, clearPendingElementActionOpen]);
+  }, [clearPendingElementActionClose, clearPendingElementActionOpen, onActionBubbleHoverChange]);
 
   useEffect(() => {
     if (hoverSuppressed) {
+      hoveredElementActionIdxRef.current = null;
+      onActionBubbleHoverChange?.(false);
       clearPendingElementActionOpen();
       clearPendingElementActionClose();
       setActiveElementActionIdx(null);
+      setShowMoreMenuIdx(null);
       return;
     }
     if (globalSelection == null) return;
     if (isForeignSelectionForTableCell(globalSelection, blockId, ri, ci)) {
+      hoveredElementActionIdxRef.current = null;
+      onActionBubbleHoverChange?.(false);
       clearPendingElementActionOpen();
       clearPendingElementActionClose();
       setActiveElementActionIdx(null);
+      setShowMoreMenuIdx(null);
     }
-  }, [blockId, ci, clearPendingElementActionClose, clearPendingElementActionOpen, globalSelection, hoverSuppressed, ri]);
+  }, [blockId, ci, clearPendingElementActionClose, clearPendingElementActionOpen, globalSelection, hoverSuppressed, onActionBubbleHoverChange, ri]);
 
   const updateElement = useCallback((idx, newEl) => {
     let next = elements.map((el, i) => i === idx ? newEl : el);
@@ -353,6 +356,12 @@ export function CellRenderer({
       if (curr > idx) return curr - 1;
       return curr;
     });
+    setShowMoreMenuIdx((curr) => {
+      if (curr == null) return null;
+      if (curr === idx) return null;
+      if (curr > idx) return curr - 1;
+      return curr;
+    });
     setTimeout(() => {
       const ae = document.activeElement;
       if (ae instanceof HTMLElement && ae !== document.body) ae.blur();
@@ -428,7 +437,6 @@ export function CellRenderer({
           && globalSelection.cellPath?.ri === ri
           && globalSelection.cellPath?.ci === ci
           && globalSelection.cellPath?.idx === idx;
-        const anchorRef = getAnchorRef(idx);
         return (
         <div
           className={[
@@ -439,20 +447,21 @@ export function CellRenderer({
           ref={(el) => {
             if (el) containerRefs.current[idx] = el;
             else delete containerRefs.current[idx];
-            anchorRef.current = el;
           }}
           onMouseEnter={() => {
             if (element.type === 'text' || !element.type) return;
             /* 圖片僅在點擊選中後顯示格內操作條，hover 不觸發（與 ImageRenderer 選中態一致） */
             if (element.type === 'image') return;
+            hoveredElementActionIdxRef.current = idx;
             requestElementActionOpen(idx);
           }}
           onMouseLeave={() => {
+            if (hoveredElementActionIdxRef.current === idx) hoveredElementActionIdxRef.current = null;
             if (barFromCellSelection) return;
             requestElementActionClose(idx);
           }}
         >
-          <FloatingActionBubble
+          <ActionPanel
             visible={
               !hoverSuppressed
               && (
@@ -463,75 +472,30 @@ export function CellRenderer({
                 )
               )
             }
-            anchorRef={anchorRef}
-            preferredVertical="below"
-            preferredHorizontal="left"
             className="prd-cell-element__actions"
-            onMouseEnter={() => keepElementActionOpen(idx)}
+            onMouseEnter={() => {
+              onActionBubbleHoverChange?.(true);
+              keepElementActionOpen(idx);
+            }}
             onMouseLeave={() => {
+              onActionBubbleHoverChange?.(false);
+              if (hoveredElementActionIdxRef.current === idx) hoveredElementActionIdxRef.current = null;
               if (barFromCellSelection) return;
+              if (showMoreMenuIdx === idx) return;
+              if (elementInsertMenu?.idx === idx) return;
               requestElementActionClose(idx);
             }}
-            innerMouseDown={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              className="prd-action-btn prd-cell-element__action-btn"
-              title="复制"
-              onClick={() => duplicateElementAfter(idx)}
-            >
-              复制
-            </button>
             {onCopyMdCursorRef ? (
               <button
                 type="button"
-                className="prd-action-btn prd-cell-element__action-btn"
+                className="prd-action-btn prd-cell-element__action-btn prd-action-btn--primary"
                 title="复制 @文件:行号，供粘贴到 Cursor"
                 onClick={() => onCopyMdCursorRef({ blockId, cellPath: { ri, ci, idx } })}
               >
-                复制MD行号
+                复制 MD 行号
               </button>
             ) : null}
-            <CellElementInsertButton
-              label="上方插入"
-              direction="above"
-              idx={idx}
-              isOpen={elementInsertMenu?.idx === idx && elementInsertMenu?.direction === 'above'}
-              onToggle={() => setElementInsertMenu((prev) =>
-                prev?.idx === idx && prev?.direction === 'above' ? null : { idx, direction: 'above' }
-              )}
-              onSelect={(elType) => handleElementInsert(idx, 'above', elType)}
-              onClose={() => setElementInsertMenu(null)}
-            />
-            <CellElementInsertButton
-              label="下方插入"
-              direction="below"
-              idx={idx}
-              isOpen={elementInsertMenu?.idx === idx && elementInsertMenu?.direction === 'below'}
-              onToggle={() => setElementInsertMenu((prev) =>
-                prev?.idx === idx && prev?.direction === 'below' ? null : { idx, direction: 'below' }
-              )}
-              onSelect={(elType) => handleElementInsert(idx, 'below', elType)}
-              onClose={() => setElementInsertMenu(null)}
-            />
-            <button
-              type="button"
-              className="prd-action-btn prd-cell-element__action-btn"
-              disabled={idx <= 0}
-              title="上移"
-              onClick={() => moveElement(idx, -1)}
-            >
-              上移
-            </button>
-            <button
-              type="button"
-              className="prd-action-btn prd-cell-element__action-btn"
-              disabled={idx >= elements.length - 1}
-              title="下移"
-              onClick={() => moveElement(idx, 1)}
-            >
-              下移
-            </button>
             <button
               type="button"
               className="prd-action-btn prd-action-btn--danger prd-cell-element__action-btn"
@@ -540,7 +504,83 @@ export function CellRenderer({
             >
               删除
             </button>
-          </FloatingActionBubble>
+            <div
+              className="prd-cell-element__more"
+              onMouseEnter={() => {
+                setShowMoreMenuIdx(idx);
+                setElementInsertMenu(null);
+              }}
+              onMouseLeave={() => {
+                setShowMoreMenuIdx((curr) => (curr === idx ? null : curr));
+              }}
+            >
+              <button
+                type="button"
+                className={[
+                  'prd-action-btn',
+                  'prd-cell-element__action-btn',
+                  'prd-action-btn--icon-text',
+                  showMoreMenuIdx === idx ? 'prd-action-btn--active' : '',
+                ].filter(Boolean).join(' ')}
+                title="更多操作"
+                aria-haspopup="menu"
+                aria-expanded={showMoreMenuIdx === idx}
+                onFocus={() => {
+                  setShowMoreMenuIdx(idx);
+                  setElementInsertMenu(null);
+                }}
+                onClick={() => {
+                  setShowMoreMenuIdx((prev) => (prev === idx ? null : idx));
+                  setElementInsertMenu(null);
+                }}
+              >
+                更多
+                <span className="prd-action-btn__caret" aria-hidden="true">▾</span>
+              </button>
+              {showMoreMenuIdx === idx && (
+                <BlockMoreMenu
+                  position="below"
+                  onClose={() => setShowMoreMenuIdx(null)}
+                  items={[
+                    {
+                      id: 'duplicate',
+                      label: '复制当前',
+                      onClick: () => duplicateElementAfter(idx),
+                    },
+                    {
+                      id: 'insert-above',
+                      label: '上方插入…',
+                      onClick: () => setElementInsertMenu({ idx, direction: 'above' }),
+                    },
+                    {
+                      id: 'insert-below',
+                      label: '下方插入…',
+                      onClick: () => setElementInsertMenu({ idx, direction: 'below' }),
+                    },
+                    {
+                      id: 'move-up',
+                      label: '上移',
+                      disabled: idx <= 0,
+                      onClick: () => moveElement(idx, -1),
+                    },
+                    {
+                      id: 'move-down',
+                      label: '下移',
+                      disabled: idx >= elements.length - 1,
+                      onClick: () => moveElement(idx, 1),
+                    },
+                  ]}
+                />
+              )}
+            </div>
+            {elementInsertMenu?.idx === idx && (
+              <CellElementInsertMenu
+                direction={elementInsertMenu.direction}
+                onSelect={(elType) => handleElementInsert(idx, elementInsertMenu.direction, elType)}
+                onClose={() => setElementInsertMenu(null)}
+              />
+            )}
+          </ActionPanel>
           <ElementRenderer
             element={element}
             onUpdate={(newEl) => updateElement(idx, newEl)}
@@ -598,11 +638,10 @@ export function CellRenderer({
   );
 }
 
-export function CellElementInsertButton({ label, direction, idx, isOpen, onToggle, onSelect, onClose }) {
+export function CellElementInsertMenu({ direction, onSelect, onClose }) {
   const menuRef = useRef(null);
 
   useEffect(() => {
-    if (!isOpen) return;
     const handleClickOutside = (e) => {
       if (menuRef.current && !menuRef.current.contains(e.target)) {
         onClose();
@@ -610,32 +649,27 @@ export function CellElementInsertButton({ label, direction, idx, isOpen, onToggl
     };
     document.addEventListener('mousedown', handleClickOutside, true);
     return () => document.removeEventListener('mousedown', handleClickOutside, true);
-  }, [isOpen, onClose]);
+  }, [onClose]);
 
   return (
-    <div className="prd-cell-element__insert-wrap" ref={menuRef}>
-      <button
-        type="button"
-        className={`prd-action-btn prd-cell-element__action-btn${isOpen ? ' prd-action-btn--active' : ''}`}
-        title={label}
-        onClick={onToggle}
-      >
-        {label}
-      </button>
-      {isOpen && (
-        <div className={`prd-cell-element__insert-menu prd-cell-element__insert-menu--${direction}`}>
-          {Object.entries(ELEMENT_TYPE_LABELS).map(([elType, elLabel]) => (
-            <button
-              key={elType}
-              type="button"
-              className="prd-cell-element__insert-menu-item"
-              onClick={() => onSelect(elType)}
-            >
-              {elLabel}
-            </button>
-          ))}
-        </div>
-      )}
+    <div
+      ref={menuRef}
+      className={`prd-cell-element__insert-menu prd-cell-element__insert-menu--${direction} prd-cell-element__insert-menu--standalone`}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      {Object.entries(ELEMENT_TYPE_LABELS).map(([elType, elLabel]) => (
+        <button
+          key={elType}
+          type="button"
+          className="prd-cell-element__insert-menu-item"
+          onClick={() => {
+            onSelect(elType);
+            onClose();
+          }}
+        >
+          {elLabel}
+        </button>
+      ))}
     </div>
   );
 }

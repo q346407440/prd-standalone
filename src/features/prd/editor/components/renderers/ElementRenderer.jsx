@@ -55,6 +55,7 @@ export const ElementRenderer = memo(function ElementRenderer({
   onMermaidViewModeChange,
   mindmapViewMode,
   onMindmapViewModeChange,
+  maxIndentLevel = 0,
 }) {
   if (!element || element.type === 'text') {
     const isInCell = cellPath != null;
@@ -76,6 +77,7 @@ export const ElementRenderer = memo(function ElementRenderer({
         blockLevel={isInCell ? undefined : blockType}
         onBlockLevelChange={isInCell ? undefined : onBlockLevelChange}
         onResetOrderedStart={onResetOrderedStart}
+        maxIndentLevel={maxIndentLevel}
       />
     );
   }

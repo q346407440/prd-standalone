@@ -47,12 +47,15 @@ function renderListLinePreviewHtml(parsed) {
   const isBullet = /^[-*+]$/.test(parsed.marker);
   const markerChar = isBullet ? '•' : parsed.marker;
   const pad = indentLevel * 16;
+  const isEmptyBody = !(parsed.body ?? '').trim();
   const body = md.renderInline(parsed.body);
   const markerEsc = md.utils.escapeHtml(markerChar);
   const classes = ['prd-md-preview-list-line'];
   if (!isBullet) classes.push('prd-md-preview-list-line--ordered');
   if (isBullet && indentLevel === 0) {
-    return `<div class="prd-md-preview-list-line--root-bullet"><span class="prd-md-preview-list-line__body">${body}</span></div>`;
+    const rootClasses = ['prd-md-preview-list-line--root-bullet'];
+    if (isEmptyBody) rootClasses.push('prd-md-preview-list-line--root-bullet-empty');
+    return `<div class="${rootClasses.join(' ')}"><span class="prd-md-preview-list-line__body">${body}</span></div>`;
   }
   return `<div class="${classes.join(' ')}" style="padding-left:${pad}px"><span class="prd-md-preview-list-line__marker">${markerEsc}</span><span class="prd-md-preview-list-line__body">${body}</span></div>`;
 }

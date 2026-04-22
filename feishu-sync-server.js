@@ -801,13 +801,15 @@ function convertRootBlockToLinearChildren(block) {
   if (!block) return null;
   if (/^h[1-9]$/.test(block.type)) {
     const blockType = inferHeadingBlockType(block.type);
-    return convertMarkdownToDocxBlocks(block?.content?.markdown || block?.content?.text || '', blockType);
+    // 走 descendant 节点形态（带 block_id + children），嵌套缩进通过父子关系渲染；
+    // flushNonImage 会根据是否含嵌套选 docxCreateDescendants / docxCreateChildren 两条路径。
+    return createDescendantTextNodes(block?.content?.markdown || block?.content?.text || '', blockType);
   }
   if (block.type === 'paragraph') {
     if (block?.content?.type === 'image') {
       return [createDocxImagePlaceholder(block.content.src)];
     }
-    return convertMarkdownToDocxBlocks(block?.content?.markdown || '', BLOCK_TYPE_TEXT);
+    return createDescendantTextNodes(block?.content?.markdown || '', BLOCK_TYPE_TEXT);
   }
   if (block.type === 'divider') {
     return [createDividerBlock()];
@@ -824,52 +826,72 @@ function createTempId(prefix) {
  * 列表子级通过 children 父子关系实现缩进（docx v1 不支持 style.list.indentLevel）。
  * 返回的是**平铺**的 descriptor 数组，但 children 字段已正确指向子节点 block_id。
  */
-function createDescendantTextNodes(markdown, preferredType = BLOCK_TYPE_TEXT) {
+/**
+ * 把 markdown 转为带 `_indentLevel` 的扁平 raw 节点（已分配 block_id 但未建父子关系）。
+ * 供 createDescendantTextNodes（单 block 场景）与 writeBlocksToDocument（跨 block 累积）共用。
+ * 纯数据转换，不含 clamp / sort / 父子建模；这三步由 buildDescendantFromRawNodes 统一做。
+ */
+function convertMarkdownToRawNodes(markdown, preferredType = BLOCK_TYPE_TEXT) {
   const rawBlocks = convertMarkdownToDocxBlocks(markdown, preferredType);
+  return rawBlocks.map((child) => {
+    const level = child._indentLevel || 0;
+    const { _indentLevel: _il, ...rest } = child;
+    return { block_id: createTempId('text'), ...rest, children: [], _indentLevel: level };
+  });
+}
 
-  const hasIndent = rawBlocks.some((b) => b._indentLevel > 0);
+/**
+ * 把扁平 raw 节点（可能来自多个连续 paragraph）组装成飞书 descendant 节点数组：
+ *   1) 顺序 clamp indent：第一行必须 = 0，后续行 ≤ 前一行 + 1；
+ *   2) 按 clamped level 建立父子关系（每个节点挂到最近的、level 比自己小的前驱）；
+ *   3) 按 BFS 层级排序（同层连续、浅层在前），满足 docx v1 descendant API 约束。
+ * 多个 paragraph 的 raw 顺接后统一调用本函数，跨 block 的 "上一 paragraph 末尾行" 就会
+ * 成为当前 paragraph 首行缩进合法的父——实现 "连续 paragraph 之间可跨 block 挂父子"。
+ */
+function buildDescendantFromRawNodes(rawNodes) {
+  if (!rawNodes.length) return [];
+
+  // Clamp：第一行必须 level 0，后续 level ≤ 前一行 + 1；兜住 MD 源跳级 / 孤儿深缩进。
+  let prevLevel = 0;
+  for (let i = 0; i < rawNodes.length; i++) {
+    const raw = rawNodes[i]._indentLevel || 0;
+    const maxAllowed = i === 0 ? 0 : prevLevel + 1;
+    rawNodes[i]._indentLevel = Math.min(raw, maxAllowed);
+    prevLevel = rawNodes[i]._indentLevel;
+  }
+
+  const hasIndent = rawNodes.some((n) => n._indentLevel > 0);
   if (!hasIndent) {
-    return rawBlocks.map((child) => {
-      const { _indentLevel: _il, ...rest } = child;
-      return { block_id: createTempId('text'), ...rest, children: [] };
+    return rawNodes.map((node) => {
+      const { _indentLevel: _il, ...rest } = node;
+      return rest;
     });
   }
 
-  // 按 _indentLevel 建立父子关系：每个节点挂到最近的、indent 比自己小的节点上
-  const nodes = rawBlocks.map((child) => {
-    const { _indentLevel: _il, ...rest } = child;
-    return { block_id: createTempId('text'), ...rest, children: [], _indentLevel: _il || 0 };
-  });
-
   // parentStack[level] = 该层级最后一个节点的 index
   const parentStack = [];
-  for (let i = 0; i < nodes.length; i++) {
-    const level = nodes[i]._indentLevel;
+  for (let i = 0; i < rawNodes.length; i++) {
+    const level = rawNodes[i]._indentLevel;
     parentStack[level] = i;
-    // 清除比当前 level 更深的 stack 条目
     for (let d = level + 1; d < parentStack.length; d++) parentStack[d] = undefined;
     if (level > 0) {
-      // 找最近的更浅层级作为父节点
       for (let p = level - 1; p >= 0; p--) {
         if (parentStack[p] != null) {
-          nodes[parentStack[p]].children.push(nodes[i].block_id);
+          rawNodes[parentStack[p]].children.push(rawNodes[i].block_id);
           break;
         }
       }
     }
   }
 
-  // 收集所有被引用为 child 的 block_id
   const childIds = new Set();
-  for (const node of nodes) {
+  for (const node of rawNodes) {
     for (const cid of node.children) childIds.add(cid);
   }
 
-  // 平铺输出并标记顶层节点。
-  // 飞书 descendant API 要求按 BFS 层级顺序排列（同层节点连续、浅层在前、深层在后），
-  // 否则多层嵌套时（如 bullet→bullet 两层）会返回 1770001 invalid param。
-  // 参考官方示例：table → 所有 table_cell → 所有 cell 的 children。
-  const stamped = nodes.map((node, originalIndex) => {
+  // BFS 排序：同层连续、浅层在前，满足 descendant API 对层级顺序的要求。
+  // 否则多层嵌套（如 bullet→bullet 两层）会返回 1770001 invalid param。
+  const stamped = rawNodes.map((node, originalIndex) => {
     const rest = { ...node };
     if (childIds.has(rest.block_id)) rest._isChild = true;
     rest._originalIndex = originalIndex;
@@ -883,6 +905,15 @@ function createDescendantTextNodes(markdown, preferredType = BLOCK_TYPE_TEXT) {
     const { _indentLevel: _il, _originalIndex: _oi, ...rest } = node;
     return rest;
   });
+}
+
+/**
+ * 把单段 markdown 转为飞书 descendant 节点列表（单 block 场景）。
+ * 列表子级通过 children 父子关系实现缩进（docx v1 不支持 style.list.indentLevel）。
+ * 跨 block 合并场景请直接用 convertMarkdownToRawNodes + buildDescendantFromRawNodes。
+ */
+function createDescendantTextNodes(markdown, preferredType = BLOCK_TYPE_TEXT) {
+  return buildDescendantFromRawNodes(convertMarkdownToRawNodes(markdown, preferredType));
 }
 
 function createCellContentNodes(cell) {
@@ -1544,6 +1575,14 @@ async function clearDocumentRootChildren(state, accessToken, documentId) {
  */
 async function writeBlocksToDocument(state, accessToken, documentId, blocks, addWorkUnits, startInsertIndex) {
   const report = typeof addWorkUnits === 'function' ? addWorkUnits : () => {};
+  /**
+   * linearBatch 每项：
+   *   - { kind: 'image', payload }：单张图片占位块（独立 upload + replace_image 流程）
+   *   - { kind: 'group', nodes }：来自单个 PRD root block 展开的 descendant 节点数组
+   * 保留 group 边界是为了 flush 时按「PRD block 粒度」切片——不能把同一 paragraph 的
+   * 父/子节点切到两次 descendant 请求里，否则父节点 children 指向的子 block_id 在第一次
+   * 请求时还不存在，飞书会返回 1770001 invalid param。
+   */
   let linearBatch = [];
   /** 当前 linearBatch 中尚未 flush 的根层 PRD block 个数 */
   let linearBatchBlockCount = 0;
@@ -1558,23 +1597,87 @@ async function writeBlocksToDocument(state, accessToken, documentId, blocks, add
     if (!linearBatch.length) return;
     const blocksToCount = linearBatchBlockCount;
     linearBatchBlockCount = 0;
-    let nonImageBatch = [];
-    async function flushNonImage() {
-      if (!nonImageBatch.length) return;
-      for (let idx = 0; idx < nonImageBatch.length; idx += MAX_LINEAR_BLOCKS_PER_REQUEST) {
-        const slice = nonImageBatch.slice(idx, idx + MAX_LINEAR_BLOCKS_PER_REQUEST);
-        const result = await docxCreateChildren(state, accessToken, documentId, documentId, slice, currentInsertIndex);
+    /** @type {Array<Array<object>>} 每项是一个 group（来自单个 PRD block 的所有 descendant 节点） */
+    let nonImageGroups = [];
+
+    async function sendSlice(sliceGroups) {
+      if (!sliceGroups.length) return;
+      const flat = sliceGroups.flat();
+      const hasNesting = flat.some((n) => Array.isArray(n?.children) && n.children.length > 0);
+
+      if (hasNesting) {
+        // 含列表子级缩进：走 descendant API，通过 children 父子关系渲染缩进
+        // （docx v1 text/bullet/ordered 无 style.list.indentLevel，不能直接设缩进）。
+        // 同批中可能混入无 block_id 的节点（如 divider），先补齐 block_id / children 字段。
+        const normalizedSlice = flat.map((n) => {
+          const base = n || {};
+          const block_id = base.block_id || createTempId('desc');
+          const children = Array.isArray(base.children) ? base.children : [];
+          return { ...base, block_id, children };
+        });
+        const topLevelIds = normalizedSlice.filter((n) => !n._isChild).map((n) => n.block_id);
+        const descendants = normalizedSlice.map((n) => stripDescendantNodeForApi(n));
+        await docxCreateDescendants(state, accessToken, documentId, documentId, {
+          index: currentInsertIndex != null && currentInsertIndex >= 0 ? currentInsertIndex : -1,
+          children_id: topLevelIds,
+          descendants,
+        });
+        // descendant API 不直接返回新建块的真实 block_id 列表；
+        // 用 fetchRootBlockIds 回查，按插入位置切片取真实顶层 ID。
+        const liveIds = await fetchRootBlockIds(state, accessToken, documentId);
+        const insertAt = currentInsertIndex != null && currentInsertIndex >= 0
+          ? currentInsertIndex
+          : (liveIds.length - topLevelIds.length);
+        const realTopIds = liveIds.slice(insertAt, insertAt + topLevelIds.length);
+        createdBlockIds.push(...realTopIds);
+        advanceIndex(topLevelIds.length);
+      } else {
+        // 无嵌套：走原 children API；strip 掉 descendant 节点的内部字段（block_id/children/_isChild）
+        const apiChildren = flat.map((n) => {
+          if (n == null) return n;
+          const {
+            block_id: _bid,
+            children: _ch,
+            _isChild: _ic,
+            _imageSrc: _img,
+            _boardCode: _bc,
+            _boardType: _bt,
+            ...rest
+          } = n;
+          return rest;
+        });
+        const result = await docxCreateChildren(state, accessToken, documentId, documentId, apiChildren, currentInsertIndex);
         const ids = (result.children || []).map((c) => c.block_id).filter(Boolean);
         createdBlockIds.push(...ids);
         advanceIndex(ids.length);
       }
-      nonImageBatch = [];
     }
-    for (const block of linearBatch) {
-      if (block.block_type === BLOCK_TYPE_IMAGE && block._imageSrc) {
+
+    async function flushNonImage() {
+      if (!nonImageGroups.length) return;
+      // 按 group 边界打包：累计节点数接近 MAX_LINEAR_BLOCKS_PER_REQUEST 时 flush。
+      // 单个 group 本身超过阈值时整体发送一次（极端长嵌套，避免切断父子关系）。
+      let sliceGroups = [];
+      let sliceCount = 0;
+      for (const group of nonImageGroups) {
+        if (!group.length) continue;
+        if (sliceGroups.length && sliceCount + group.length > MAX_LINEAR_BLOCKS_PER_REQUEST) {
+          await sendSlice(sliceGroups);
+          sliceGroups = [];
+          sliceCount = 0;
+        }
+        sliceGroups.push(group);
+        sliceCount += group.length;
+      }
+      await sendSlice(sliceGroups);
+      nonImageGroups = [];
+    }
+
+    for (const item of linearBatch) {
+      if (item.kind === 'image') {
         await flushNonImage();
         const imgBlock = await createAndUploadImage(
-          state, accessToken, documentId, documentId, block._imageSrc, currentInsertIndex,
+          state, accessToken, documentId, documentId, item.payload._imageSrc, currentInsertIndex,
           () => report(1, '上传图片'),
         );
         if (imgBlock?.block_id) {
@@ -1582,7 +1685,7 @@ async function writeBlocksToDocument(state, accessToken, documentId, blocks, add
           advanceIndex(1);
         }
       } else {
-        nonImageBatch.push(block);
+        nonImageGroups.push(item.nodes);
       }
     }
     await flushNonImage();
@@ -1592,10 +1695,44 @@ async function writeBlocksToDocument(state, accessToken, documentId, blocks, add
     }
   }
 
+  // 连续 paragraph(text) 的 raw 节点累积：跨 block 共用一次 buildDescendantFromRawNodes，
+  // 让"上一 paragraph 末尾行"成为"当前 paragraph 首行缩进"的合法父，自然实现跨 block 挂父子。
+  // 非 paragraph-text 的 block（heading / paragraph-image / divider / table / mermaid / mindmap）
+  // 一律打断累积，保持独立 group / 独立 API 调用的原有行为。
+  let paragraphTextRawAccum = null;
+  function flushParagraphAccum() {
+    if (!paragraphTextRawAccum) return;
+    if (paragraphTextRawAccum.length) {
+      const stamped = buildDescendantFromRawNodes(paragraphTextRawAccum);
+      if (stamped.length) linearBatch.push({ kind: 'group', nodes: stamped });
+    }
+    paragraphTextRawAccum = null;
+  }
+
   for (const block of blocks || []) {
+    // 可合并 paragraph(text)：累积 raw 节点，不走 convertRootBlockToLinearChildren 的 stamp 路径
+    if (block?.type === 'paragraph' && block?.content?.type !== 'image') {
+      const raws = convertMarkdownToRawNodes(block?.content?.markdown || '', BLOCK_TYPE_TEXT);
+      if (paragraphTextRawAccum == null) paragraphTextRawAccum = [];
+      paragraphTextRawAccum.push(...raws);
+      linearBatchBlockCount += 1;
+      continue;
+    }
+
+    // 其它任何 block 打断 paragraph-text 合并
+    flushParagraphAccum();
+
     const linearChildren = convertRootBlockToLinearChildren(block);
     if (linearChildren) {
-      linearBatch.push(...linearChildren);
+      // paragraph-content=image 返回 [imagePlaceholder]；heading/divider 返回 descendant 节点数组。
+      const isImageOnly = linearChildren.length === 1
+        && linearChildren[0]?.block_type === BLOCK_TYPE_IMAGE
+        && linearChildren[0]?._imageSrc;
+      if (isImageOnly) {
+        linearBatch.push({ kind: 'image', payload: linearChildren[0] });
+      } else {
+        linearBatch.push({ kind: 'group', nodes: linearChildren });
+      }
       linearBatchBlockCount += 1;
       continue;
     }
@@ -1635,6 +1772,7 @@ async function writeBlocksToDocument(state, accessToken, documentId, blocks, add
     throw new Error(`暂不支持的 PRD block 类型：${block?.type || 'unknown'}`);
   }
 
+  flushParagraphAccum();
   await flushLinearBatch();
   return createdBlockIds;
 }

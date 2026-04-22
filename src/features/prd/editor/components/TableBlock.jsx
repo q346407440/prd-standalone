@@ -82,6 +82,7 @@ export function TableBlock({
   const tableRef = useRef(null);
   const wrapRef = useRef(null);
   const mouseInsideWrapRef = useRef(false);
+  const bubbleHoveringRef = useRef(false);
   const hoverHideTimerRef = useRef(null);
   const hoverEdgeFrameRef = useRef(null);
   const hoverEdgeRef = useRef({ col: null, row: null });
@@ -125,6 +126,7 @@ export function TableBlock({
 
   const closeHoverBarsWithDelay = useCallback(() => {
     if (isGlobalSelectionInTableBlock(block.id, globalSelection)) return;
+    if (mouseInsideWrapRef.current || bubbleHoveringRef.current) return;
     if (hoverHideTimerRef.current) clearTimeout(hoverHideTimerRef.current);
     hoverHideTimerRef.current = setTimeout(() => {
       setShowHoverBars(false);
@@ -160,32 +162,26 @@ export function TableBlock({
     if (globalSelection != null) return;
     if (!showHoverBars) return;
     if (mouseInsideWrapRef.current) return;
+    if (bubbleHoveringRef.current) return;
     setShowHoverBars(false);
     flushHoverEdges(null, null);
   }, [flushHoverEdges, globalSelection, showHoverBars]);
 
-  /**
-   * 格內元素操作條掛在 body（Portal），游標移上去後不再觸發 td 的 mousemove/mouseleave，
-   * colEdge/rowEdge 會卡在上一幀，藍色插入線與灰條仍像「被 hover」。
-   * 在 document 捕獲階偵測游標是否進入格內浮層，若是則同步清邊緣（不走 rAF 避免競爭）。
-   */
-  useEffect(() => {
-    const onPointer = (e) => {
-      const t = e.target;
-      if (!t || typeof t.closest !== 'function') return;
-      if (!t.closest('[data-cell-action-bubble]')) return;
-      flushHoverEdges(null, null);
+  const handleActionBubbleHoverChange = useCallback((hovering) => {
+    bubbleHoveringRef.current = hovering;
+    if (hovering) {
       if (hoverHideTimerRef.current) {
         clearTimeout(hoverHideTimerRef.current);
         hoverHideTimerRef.current = null;
       }
-      setShowHoverBars(false);
-    };
-    document.addEventListener('mousemove', onPointer, true);
-    return () => {
-      document.removeEventListener('mousemove', onPointer, true);
-    };
-  }, [flushHoverEdges]);
+      setShowHoverBars(true);
+      flushHoverEdges(null, null);
+      return;
+    }
+    if (!mouseInsideWrapRef.current) {
+      closeHoverBarsWithDelay();
+    }
+  }, [closeHoverBarsWithDelay, flushHoverEdges]);
 
   const measureTable = useCallback(() => {
     const table = tableRef.current;
@@ -526,6 +522,7 @@ export function TableBlock({
                       onMindmapMetaChange={onMindmapMetaChange}
                       prdAssetCacheBust={prdAssetCacheBust}
                       onCopyMdCursorRef={onCopyMdCursorRef}
+                      onActionBubbleHoverChange={handleActionBubbleHoverChange}
                     />
                   </td>
                   );

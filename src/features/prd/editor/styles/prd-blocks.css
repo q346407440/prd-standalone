@@ -3,7 +3,7 @@
 .prd-block-item {
   position: relative;
   border-radius: 6px;
-  transition: background 0.1s;
+  transition: background 0.08s;
   overflow: visible;
 }
 
@@ -26,7 +26,7 @@
   gap: 6px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s, transform 0.15s;
+  transition: opacity 0.08s, transform 0.08s;
   white-space: nowrap;
 }
 
@@ -40,6 +40,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   cursor: pointer;
   font-size: 12px;
   color: #4c5a72;
@@ -48,7 +49,7 @@
   border: 1px solid #d7deea;
   border-radius: 6px;
   line-height: 1.4;
-  transition: color 0.12s, background 0.12s, border-color 0.12s, box-shadow 0.12s;
+  transition: color 0.08s, background 0.08s, border-color 0.08s, box-shadow 0.08s;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
   white-space: nowrap;
 }
@@ -82,6 +83,32 @@
 
 .prd-action-btn--bold {
   font-weight: 700;
+}
+
+/* 主操作按钮：高频动作（复制 MD 行号）强调色 */
+.prd-action-btn--primary {
+  color: #1677ff;
+  background: #f0f7ff;
+  border-color: #91caff;
+}
+
+.prd-action-btn--primary:hover {
+  color: #fff;
+  background: #1677ff;
+  border-color: #1677ff;
+  box-shadow: 0 2px 6px rgba(22, 119, 255, 0.22);
+}
+
+/* 带 caret 的"更多"按钮 */
+.prd-action-btn--icon-text {
+  gap: 2px;
+}
+
+.prd-action-btn__caret {
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.7;
+  margin-left: 1px;
 }
 
 .prd-action-btn--icon {
@@ -146,8 +173,13 @@
   /* 不超出 block 寬度，避免撐寬 .prd-page__content-scroll 的 scrollWidth */
   box-sizing: border-box;
   max-width: 100%;
-  flex-wrap: wrap;
-  white-space: normal;
+  white-space: nowrap;
+}
+
+/* "更多"按钮 wrap：为下拉菜单提供相对定位容器 */
+.prd-block-actionbar__more {
+  position: relative;
+  display: inline-flex;
 }
 
 /* 透明热区桥：把 actionbar 与 block 之间的 gap + actionbar 高度纳入当前 block 的 hover 范围，
@@ -165,17 +197,13 @@
   z-index: 49;
 }
 
-/* 当 actionbar 可见时（父容器 hover 激活），热区开启鼠标响应 */
-.prd-block-item:hover::after {
+/* 仅在操作栏真正可见时开启热区，避免密集文本块间的 hover 桥挡住下一块点击 */
+.prd-block-item--action-active::after {
   pointer-events: auto;
 }
 
 .prd-block-actionbar__btn {
   user-select: none;
-}
-
-.prd-block-actionbar__btn:hover {
-  color: #1677ff;
 }
 
 /* 儲存格內操作條：須覆蓋上方 .prd-action-panel 的 nowrap（prd-table-edit 先載入會被蓋掉）
@@ -184,8 +212,7 @@
   box-sizing: border-box;
   width: max-content;
   max-width: none;
-  flex-wrap: wrap;
-  white-space: normal;
+  white-space: nowrap;
 }
 
 /* 删除按钮 */
@@ -212,6 +239,155 @@
   background: #fff;
   border-color: #d7deea;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+/* ─── BlockMoreMenu：actionbar 中"更多"按钮展开的下拉 ─────────────────────── */
+
+.prd-more-menu {
+  position: absolute;
+  left: 0;
+  z-index: 120;
+  min-width: 140px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+}
+
+.prd-more-menu--below {
+  top: calc(100% + 4px);
+}
+
+.prd-more-menu--above {
+  bottom: calc(100% + 4px);
+}
+
+.prd-more-menu--align-right {
+  left: auto;
+  right: 0;
+}
+
+.prd-more-menu__item {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #334155;
+  border-radius: 5px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.prd-more-menu__item:hover {
+  background: #f0f7ff;
+  color: #1677ff;
+}
+
+.prd-more-menu__item:disabled {
+  cursor: not-allowed;
+  color: #94a3b8;
+  opacity: 0.7;
+}
+
+.prd-more-menu__item:disabled:hover {
+  background: transparent;
+  color: #94a3b8;
+}
+
+.prd-more-menu__item--danger {
+  color: #cf1322;
+}
+
+.prd-more-menu__item--danger:hover {
+  background: #fff1f0;
+  color: #cf1322;
+}
+
+/* ─── BlockMoreMenu 子菜单（转换为…等二级展开） ─────────────────────────── */
+
+.prd-more-menu__submenu-wrap {
+  position: relative;
+}
+
+.prd-more-menu__item--has-submenu {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prd-more-menu__item--has-submenu.prd-more-menu__item--expanded {
+  background: #f0f7ff;
+  color: #1677ff;
+}
+
+.prd-more-menu__caret {
+  font-size: 10px;
+  line-height: 1;
+  color: #94a3b8;
+}
+
+.prd-more-menu__item--has-submenu:hover .prd-more-menu__caret,
+.prd-more-menu__item--has-submenu.prd-more-menu__item--expanded .prd-more-menu__caret {
+  color: #1677ff;
+}
+
+.prd-more-menu__submenu {
+  position: absolute;
+  z-index: 121;
+  min-width: 132px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: #fff;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.14);
+}
+
+.prd-more-menu__submenu--below {
+  top: -5px;
+}
+
+.prd-more-menu__submenu--above {
+  bottom: -5px;
+}
+
+.prd-more-menu__submenu--right {
+  left: calc(100% + 4px);
+}
+
+.prd-more-menu__submenu--left {
+  right: calc(100% + 4px);
+}
+
+.prd-more-menu__item--sub {
+  gap: 6px;
+}
+
+.prd-more-menu__check {
+  display: inline-flex;
+  justify-content: center;
+  width: 12px;
+  color: #1677ff;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.prd-more-menu__item--active {
+  color: #1677ff;
+  background: #f0f7ff;
+  font-weight: 500;
+}
+
+.prd-more-menu__item--active:hover {
+  background: #e6f2ff;
 }
 
 /* ─── 插入 Block 選單 ────────────────────────────────────────────────────── */

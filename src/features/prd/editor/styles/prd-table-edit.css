@@ -188,7 +188,7 @@
   z-index: 40;
   opacity: 0;
   pointer-events: none;
-  transition: background 0.15s, opacity 0.15s;
+  transition: background 0.08s, opacity 0.08s;
 }
 
 /* 无全局表格选中时：显示 hover bars（由 JS 延迟控制显示/隐藏） */
@@ -218,7 +218,7 @@
   z-index: 40;
   opacity: 0;
   pointer-events: none;
-  transition: background 0.15s, opacity 0.15s;
+  transition: background 0.08s, opacity 0.08s;
 }
 
 .prd-table-row-bar:hover {
@@ -433,7 +433,6 @@
   z-index: 5;
 }
 
-.prd-cell-element:hover::after,
 .prd-cell-element--action-active::after {
   pointer-events: auto;
 }
@@ -466,6 +465,12 @@
 .prd-cell-element__action-btn {
   padding: 4px 8px;
   font-size: 11px;
+}
+
+/* "更多"按钮 wrap：为下拉菜单提供相对定位容器 */
+.prd-cell-element__more {
+  position: relative;
+  display: inline-flex;
 }
 
 /* ─── 上传提示（通用）───────────────────────────────────────────────────── */
@@ -502,6 +507,13 @@
 
 .prd-cell-element__insert-menu--below {
   top: calc(100% + 4px);
+}
+
+/* 独立版（不再嵌在 insert-wrap 里，改挂在 actionbar 内，相对 actionbar 定位） */
+.prd-cell-element__insert-menu--standalone {
+  left: auto;
+  right: 0;
+  z-index: 130;
 }
 
 .prd-cell-element__insert-menu-item {

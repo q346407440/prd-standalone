@@ -67,6 +67,102 @@ export function hasIndent(md) {
   return /^\s{2,}/.test(md || '');
 }
 
+/**
+ * 根据「前一个 paragraph block 的 markdown」给出当前 block **首行**允许的最大 indent level。
+ *
+ * 规则（与飞书同步端 descendant 父子链上限一致）：
+ *   - 前一 block 不是 paragraph（heading / divider / table / paragraph-image / 无前置）→ 返回 0，
+ *     即当前 block 首行不能缩进（没有合法父可挂靠）；
+ *   - 前一 block 是 paragraph(text)：取其末尾非空行的 list level（非 list 行视作 0），+1 作为上限；
+ *     例如末行 `- xxx`（level 0）→ 当前 block 首行 max = 1；末行 `    - xxx`（level 2）→ max = 3。
+ *
+ * 调用方：用这个返回值作为编辑器 Tab 拦截的 ceiling，Tab 想再缩一级时若当前已达上限则不响应。
+ */
+export function computeFirstLineIndentCeiling(prevParagraphMarkdown) {
+  if (prevParagraphMarkdown == null) return 0;
+  const lines = String(prevParagraphMarkdown).split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].trim()) continue;
+    const parsed = parseListPrefix(lines[i]);
+    const level = parsed ? Math.floor(parsed.indent.length / 2) : 0;
+    return level + 1;
+  }
+  return 0;
+}
+
+/**
+ * 给定一段 paragraph markdown 与「行索引 i」，返回**该行**允许的最大 indent level。
+ *
+ * 规则：
+ *   - i === 0：上限由外部传入的 firstLineCeiling 决定（通常来自 computeFirstLineIndentCeiling）；
+ *   - i > 0：取第 i 行之前最后一个非空行的 level（非 list 行视作 0），+1 作为上限。
+ *
+ * 调用方：ParagraphLinesEditor 在多行编辑场景下，给每一行算出独立的 maxIndentLevel 下发到
+ * 每行的 TiptapMarkdownEditor。
+ */
+export function computeLineIndentCeiling(markdown, lineIdx, firstLineCeiling = 0) {
+  if (lineIdx <= 0) return firstLineCeiling;
+  const lines = String(markdown || '').split('\n');
+  for (let i = Math.min(lineIdx, lines.length) - 1; i >= 0; i--) {
+    if (!lines[i].trim()) continue;
+    const parsed = parseListPrefix(lines[i]);
+    const level = parsed ? Math.floor(parsed.indent.length / 2) : 0;
+    return level + 1;
+  }
+  return firstLineCeiling;
+}
+
+/**
+ * 把 paragraph block 的 markdown 里的「非法列表缩进」规整到合法层级。
+ *
+ * 规则（与飞书同步端 buildDescendantFromRawNodes 的 clamp 规则一致）：
+ *   1) 首行（该 block 的第一个非空行）必须 level = 0——paragraph block 没有上文父可挂靠；
+ *   2) 其后任何 list 行的 indent level ≤ 前一非空行 level + 1，超过时 clamp；
+ *   3) 非 list 行（普通正文）视作 level 0，作为后续 list 行的参考基准；
+ *   4) ``` ``` 代码块内部不做处理，避免示例代码被误当成 list 行规整。
+ *
+ * 前端写回磁盘前调用：阻止用户/Agent 在 paragraph block 里写出「前置无合法父」的
+ * 孤儿缩进——避免同步飞书 / 离线导出时出现非法层级或渲染错乱。
+ *
+ * 仅改动被 clamp 的 list 行的首行空格，不改变 marker 与 body；不在 list 行上做 clamp
+ * 的行（普通文本、代码、空行）完全保留原样。
+ */
+export function clampParagraphListIndent(markdown) {
+  if (!markdown) return markdown;
+  const lines = String(markdown).split('\n');
+  let inFence = false;
+  let prevLevel = 0;
+  let seenFirstRealLine = false;
+  let mutated = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*```/.test(line)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) continue;
+    if (!line.trim()) continue;
+    const parsed = parseListPrefix(line);
+    if (!parsed) {
+      prevLevel = 0;
+      seenFirstRealLine = true;
+      continue;
+    }
+    const rawLevel = Math.floor(parsed.indent.length / 2);
+    const maxAllowed = seenFirstRealLine ? prevLevel + 1 : 0;
+    const clamped = Math.min(rawLevel, maxAllowed);
+    const newIndentLen = clamped * 2;
+    if (newIndentLen !== parsed.indent.length) {
+      // 只替换首行空格，marker / body / 尾部空格一律保留原样
+      lines[i] = ' '.repeat(newIndentLen) + line.slice(parsed.indent.length);
+      mutated = true;
+    }
+    prevLevel = clamped;
+    seenFirstRealLine = true;
+  }
+  return mutated ? lines.join('\n') : markdown;
+}
+
 function nextAlpha(alpha) {
   let carry = 1;
   const chars = alpha.split('');

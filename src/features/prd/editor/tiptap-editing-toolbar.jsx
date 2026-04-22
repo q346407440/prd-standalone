@@ -2,18 +2,12 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 
 import { createPortal } from 'react-dom';
 import { BsLink45Deg, BsTypeBold, BsTypeItalic } from 'react-icons/bs';
 import { MdFormatListNumbered, MdFormatListNumberedRtl, MdNumbers } from 'react-icons/md';
-import { editorToMarkdown } from './tiptap-md-utils.js';
 import {
   alphaToNum,
   numToAlphaMarker,
   parseListPrefix,
 } from './prd-list-utils.js';
 
-const BLOCK_LEVEL_TYPES = ['paragraph', ...Array.from({ length: 7 }, (_, index) => `h${index + 1}`)];
-const BLOCK_LEVEL_OPTIONS = BLOCK_LEVEL_TYPES.map((type) => ({
-  value: type,
-  label: type === 'paragraph' ? '正文' : type.toUpperCase(),
-}));
 const BUBBLE_GAP = 6;
 const BUBBLE_MARGIN = 8;
 
@@ -26,15 +20,11 @@ function sameBubbleStyle(a, b) {
     && a.zIndex === b.zIndex;
 }
 
-export function SelectionToolbar({
-  editor, blockLevel, onBlockLevelChange, getCurrentMarkdown, panelRef,
-}) {
+export function SelectionToolbar({ editor }) {
   const ref = useRef(null);
   const [style, setStyle] = useState(null);
   const [hasTextSel, setHasTextSel] = useState(false);
   const frameRef = useRef(null);
-
-  const hasLevelSwitcher = blockLevel != null && !!onBlockLevelChange;
 
   const reposition = useCallback(() => {
     if (!editor) return;
@@ -109,33 +99,8 @@ export function SelectionToolbar({
 
   return (
     <>
-      {/* level-switcher：absolute 定位，固定在編輯器容器上方，與底部 actionbar 同機制 */}
-      {hasLevelSwitcher && (
-        <div
-          data-prd-no-block-select
-          className="prd-tiptap-bubble-menu prd-tiptap-level-switcher"
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <label className="prd-action-select-wrap" title="标题层级">
-            <select
-              ref={panelRef}
-              className="prd-action-select"
-              value={blockLevel}
-              onMouseDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              onChange={(e) => {
-                const md = getCurrentMarkdown ? getCurrentMarkdown() : editorToMarkdown(editor);
-                onBlockLevelChange(e.target.value, md);
-              }}
-            >
-              {BLOCK_LEVEL_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-      )}
-      {/* 文字選取工具列：跟著選取位置浮動，保持 Portal + fixed */}
+      {/* 文字選取工具列：跟著選取位置浮動，保持 Portal + fixed。
+          （原本常駐的「層級切換」浮層已併入 block actionbar 的「更多 → 轉換為…」） */}
       {hasTextSel && createPortal(
         <div
           ref={ref}
