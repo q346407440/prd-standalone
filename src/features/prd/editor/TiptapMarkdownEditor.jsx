@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import HardBreak from '@tiptap/extension-hard-break';
@@ -421,7 +421,7 @@ function TiptapEditingSurface({
     onInitialCaretConsumedRef.current = onInitialCaretOffsetConsumed;
   }, [onInitialCaretOffsetConsumed]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!editor) return;
     const md = initialValueRef.current;
     const parsed = parseListPrefix(md);
@@ -432,18 +432,16 @@ function TiptapEditingSurface({
       prefixRef.current = '';
       editor.commands.setContent(md || '');
     }
-    requestAnimationFrame(() => {
+    if (initialCaretOffset != null) {
       editor.commands.focus();
-      if (initialCaretOffset != null) {
-        const docPlainLen = editor.state.doc.textContent.length;
-        const clamped = Math.max(0, Math.min(initialCaretOffset, docPlainLen));
-        const pos = getProseMirrorPosFromTextOffset(editor.state.doc, clamped);
-        editor.commands.setTextSelection(pos);
-        onInitialCaretConsumedRef.current?.();
-      } else {
-        editor.commands.focus('end');
-      }
-    });
+      const docPlainLen = editor.state.doc.textContent.length;
+      const clamped = Math.max(0, Math.min(initialCaretOffset, docPlainLen));
+      const pos = getProseMirrorPosFromTextOffset(editor.state.doc, clamped);
+      editor.commands.setTextSelection(pos);
+      onInitialCaretConsumedRef.current?.();
+    } else {
+      editor.commands.focus('end');
+    }
   }, [editor, initialCaretOffset]);
 
   const [, forceUpdate] = useState(0);
