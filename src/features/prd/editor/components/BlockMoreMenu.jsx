@@ -105,9 +105,8 @@ function SubmenuItem({ item, open, onToggle, onOpen, onClose, onSelectChild }) {
     const spaceLeft = rect.left - margin;
     const spaceBelow = vh - rect.top - margin;
     const spaceAbove = rect.bottom - margin;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 量測後翻轉方向，避免子菜單超出視窗
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- submenu direction is measured from the current trigger/submenu geometry
     setFlipSide(spaceRight >= subW || spaceRight >= spaceLeft ? 'right' : 'left');
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 量測後翻轉方向，避免子菜單超出視窗
     setSubmenuVertical(spaceBelow >= subH || spaceBelow >= spaceAbove ? 'below' : 'above');
   }, [open]);
 

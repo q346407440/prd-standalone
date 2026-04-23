@@ -244,7 +244,6 @@ async function requestFeishuJson(url, options = {}, { retries = 3, retryDelayMs 
           await sleep(retryDelayMs * (attempt + 1));
           continue;
         }
-        // eslint-disable-next-line no-console
         console.error('[feishu-api-error]', url, 'code:', payload.code, 'msg:', payload.msg, JSON.stringify(payload).slice(0, 800));
         // 把详细错误写到日志文件，便于调试
         try {
@@ -994,12 +993,10 @@ async function listDescendantBlocksPreOrder(state, accessToken, documentId, root
   async function walk(id) {
     let pageToken = '';
     do {
-      // eslint-disable-next-line no-await-in-loop
       const data = await docxGetChildren(state, accessToken, documentId, id, pageToken);
       const items = Array.isArray(data.items) ? data.items : [];
       for (const item of items) {
         out.push(item);
-        // eslint-disable-next-line no-await-in-loop
         await walk(item.block_id);
       }
       pageToken = data.has_more ? (data.page_token || '') : '';
@@ -1018,7 +1015,6 @@ async function uploadNestedCellImagesAfterDescendant(state, accessToken, documen
     throw new Error(`嵌套单元格图片数量不一致：飞书 ${imageBlocks.length}，本地 ${srcs.length}`);
   }
   for (let i = 0; i < srcs.length; i += 1) {
-    // eslint-disable-next-line no-await-in-loop
     await uploadAndBindImage(state, accessToken, documentId, imageBlocks[i].block_id, srcs[i]);
     addWorkUnits?.(1, '上传表格内图片');
   }
@@ -1299,7 +1295,6 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
   // 追加剩余行：每次 patch 末尾插入 1 行（row_index: -1）
   const extraRows = rowCount - initialRowSize;
   for (let i = 0; i < extraRows; i += 1) {
-    // eslint-disable-next-line no-await-in-loop
     await docxPatchBlock(state, accessToken, documentId, tableBlock.block_id, {
       insert_table_row: { row_index: -1 },
     });
@@ -1425,7 +1420,6 @@ async function docxCreateTable(state, accessToken, documentId, block, insertInde
     async function flushCellBatch() {
       if (!batch.length) return;
       for (let bIdx = 0; bIdx < batch.length; bIdx += MAX_LINEAR_BLOCKS_PER_REQUEST) {
-        // eslint-disable-next-line no-await-in-loop
         await docxCreateChildren(state, accessToken, documentId, cellId, batch.slice(bIdx, bIdx + MAX_LINEAR_BLOCKS_PER_REQUEST));
       }
       batch = [];

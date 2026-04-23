@@ -12,11 +12,14 @@ export function BackupFolderPathModal({ slug, open, onClose }) {
   useEffect(() => {
     if (!open || !slug) return undefined;
     let cancelled = false;
+    /* eslint-disable react-hooks/set-state-in-effect -- opening the modal intentionally resets async view state before the fetch resolves */
     setLoading(true);
     setBackupDir('');
     setSlots([]);
     setError('');
     setCopiedKey('');
+    setBackupExists(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
     fetchBackupDocDir(slug)
       .then((data) => {
         if (cancelled) return;

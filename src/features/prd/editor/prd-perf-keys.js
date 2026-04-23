@@ -144,25 +144,6 @@ export function getBlockImageMetaPerfKey(block, imageMeta) {
   return paths.map((path) => `${path}:${imageMeta?.[path] ?? ''}`).join('|');
 }
 
-function getTableMetaPerfKeys(block) {
-  const mermaidKeys = [];
-  const mindmapKeys = [];
-  if (block?.type !== 'table') return { mermaidKeys, mindmapKeys };
-  const blockId = block.id;
-  const rows = block.content?.rows || [];
-  for (let ri = 0; ri < rows.length; ri += 1) {
-    const row = rows[ri] || [];
-    for (let ci = 0; ci < row.length; ci += 1) {
-      const elements = getCellElements(row[ci]);
-      elements.forEach((element, idx) => {
-        if (element?.type === 'mermaid') mermaidKeys.push(mermaidTableMetaKey(blockId, ri, ci, idx));
-        if (element?.type === 'mindmap') mindmapKeys.push(mindmapTableMetaKey(blockId, ri, ci, idx));
-      });
-    }
-  }
-  return { mermaidKeys, mindmapKeys };
-}
-
 export function getBlockMermaidMetaPerfKey(block, mermaidMeta) {
   if (block?.type === 'mermaid') {
     const code = block.content?.code || '';

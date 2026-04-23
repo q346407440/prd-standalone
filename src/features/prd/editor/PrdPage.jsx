@@ -107,13 +107,13 @@ import {
   getBlockMindmapMetaPerfKey,
   getTableAnnotationsPerfKey,
 } from './prd-perf-keys.js';
-import { renderMermaidSvgForExport } from './components/renderers/MermaidRenderer.jsx';
-import { renderMindmapSvgForExport } from './components/renderers/MindmapRenderer.jsx';
+import { renderMermaidSvgForExport } from './components/renderers/mermaid-renderer-utils.js';
+import { renderMindmapSvgForExport } from './components/renderers/mindmap-renderer-utils.js';
 import {
   getEnterCurrentMarkdown,
   getEnterNextMarkdown,
   hasExplicitEnterNextMarkdown,
-} from './components/renderers/ElementRenderer.jsx';
+} from './components/renderers/element-renderer-utils.js';
 import { BlockCanvas } from './components/BlockCanvas.jsx';
 import { OutlineSidebar } from './components/OutlineSidebar.jsx';
 import { PrdToolbar } from './components/PrdToolbar.jsx';
@@ -605,6 +605,7 @@ export function PrdPage() {
   }, [clearToastTimers, dismissToast]);
 
   useEffect(() => {
+    const activeToastTimers = toastTimersRef.current;
     const onToast = (e) => {
       const nextMessage = e.detail?.message;
       if (!nextMessage) return;
@@ -618,7 +619,7 @@ export function PrdPage() {
     window.addEventListener(PRD_TOAST_EVENT, onToast);
     return () => {
       window.removeEventListener(PRD_TOAST_EVENT, onToast);
-      for (const id of toastTimersRef.current.keys()) {
+      for (const id of activeToastTimers.keys()) {
         clearToastTimers(id);
       }
     };
@@ -2084,8 +2085,8 @@ export function PrdPage() {
             <div
               ref={contentScrollRef}
               className="prd-page__content-scroll"
-              onMouseDown={(e) => {
-                // 章节锚点链接：mouseDown 阶段先吞掉，避免触发段落 → 编辑态切换
+              onMouseDownCapture={(e) => {
+                // 章节锚点链接：必须在捕获阶段先吞掉；若等到冒泡阶段，子层预览已先切进编辑态。
                 if (e.target.closest('strong.prd-chapter-link[data-prd-chapter-target]')) {
                   e.preventDefault();
                   e.stopPropagation();

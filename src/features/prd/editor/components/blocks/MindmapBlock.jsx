@@ -7,7 +7,7 @@ import {
 import { MindmapRenderer } from '../renderers/MindmapRenderer.jsx';
 
 export function MindmapBlock({
-  block, onUpdate, mindmapMeta, onMindmapMetaChange,
+  block, onUpdate, mindmapMeta, onMindmapMetaChange, isSelected = false, onSelect,
 }) {
   const placement = { kind: 'standalone', blockId: block.id };
   const viewMode = resolveMindmapViewMode(mindmapMeta, block.content?.code, placement);
@@ -15,15 +15,15 @@ export function MindmapBlock({
   const metaKey = mindmapStandaloneMetaKey(block.id);
 
   return (
-    <div className="prd-block-mindmap" data-prd-no-block-select>
+    <div className="prd-block-mindmap">
       <MindmapRenderer
         code={block.content?.code || ''}
         onCodeChange={(newCode) => onUpdate({ ...block, content: { type: 'mindmap', code: newCode } })}
         viewMode={viewMode}
         onViewModeChange={(mode) => onMindmapMetaChange?.('mindmapViewModes', metaKey, mode)}
         widthPx={widthPx}
-        onWidthChange={(w) => onMindmapMetaChange?.('mindmapWidths', metaKey, w)}
-        resizable
+        isSelected={isSelected}
+        onSelect={onSelect}
       />
     </div>
   );

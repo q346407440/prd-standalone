@@ -7,6 +7,7 @@
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import process from 'node:process';
 
 const TARGET_ARG = 'chrome-devtools-mcp@latest';
 const SERVER_KEY = 'chrome-devtools';

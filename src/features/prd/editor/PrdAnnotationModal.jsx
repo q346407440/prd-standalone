@@ -294,6 +294,7 @@ export function PrdAnnotationModal({
 
   useEffect(() => {
     if (!open) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- reopening the annotation modal needs to snapshot the latest usage + regions into editable draft state */
     setDraftUsage({ ...usage, isBeforeIteration: Boolean(usage?.isBeforeIteration) });
     const nextRegions = relabelRegions(regions || []);
     setDraftRegions(nextRegions);
@@ -302,7 +303,8 @@ export function PrdAnnotationModal({
         ? current
         : nextRegions[0]?.regionId ?? null
     ));
-  }, [open, regions, usage?.usageId]);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [open, regions, usage]);
 
   useEffect(() => {
     if (!open || typeof document === 'undefined') return undefined;

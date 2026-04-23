@@ -88,6 +88,7 @@ export function CellPendingConfirmControl({
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- popover reopens with the latest saved note as its edit baseline
     setDraftNote(note || '');
   }, [note, open]);
 

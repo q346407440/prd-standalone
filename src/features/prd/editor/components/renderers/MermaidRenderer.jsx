@@ -5,100 +5,12 @@ import { PrdLightbox } from '../PrdLightbox.jsx';
 import { AsyncDiagramSurface } from '../AsyncDiagramSurface.jsx';
 import { emitPrdToast } from '../../prd-toast.js';
 import { DEFAULT_DIAGRAM_VIEW_MODE } from '../../prd-constants.js';
+import {
+  estimateMermaidTextareaRows,
+  getMermaidLib,
+} from './mermaid-renderer-utils.js';
 
-let _mermaidInitialized = false;
-let _mermaidLibPromise = null;
-export async function getMermaidLib() {
-  if (!_mermaidLibPromise) {
-    _mermaidLibPromise = import('mermaid').then((mod) => mod.default || mod);
-  }
-  const mermaidLib = await _mermaidLibPromise;
-  if (_mermaidInitialized) return mermaidLib;
-  _mermaidInitialized = true;
-  mermaidLib.initialize({
-    startOnLoad: false,
-    theme: 'default',
-    securityLevel: 'strict',
-    fontFamily: 'inherit',
-  });
-  return mermaidLib;
-}
-
-export let _mermaidRenderSeq = 0;
-
-/**
- * 检测是否为 Mermaid mindmap 语法并转换为 Markdown 缩进列表。
- */
-export function convertMermaidMindmapToMarkdown(code) {
-  const MERMAID_MINDMAP_RE = /^mindmap\s*\n/;
-  if (!MERMAID_MINDMAP_RE.test(code)) return null;
-  const lines = code.split('\n').slice(1);
-  if (!lines.length) return '';
-
-  const SHAPE_RE = /^(.*?)(?:\(\(([^)]*)\)\)|\(([^)]*)\)|\[([^\]]*)\]|\{([^}]*)\})(.*)$/;
-
-  let rootIndent = -1;
-  const result = [];
-
-  for (const rawLine of lines) {
-    if (!rawLine.trim()) continue;
-    const spaces = rawLine.match(/^(\s*)/)[1].length;
-    let text = rawLine.trim();
-
-    if (rootIndent < 0) {
-      rootIndent = spaces;
-    }
-
-    const shapeMatch = text.match(SHAPE_RE);
-    if (shapeMatch) {
-      text = (shapeMatch[1] + (shapeMatch[2] ?? shapeMatch[3] ?? shapeMatch[4] ?? shapeMatch[5] ?? '') + shapeMatch[6]).trim();
-    }
-
-    const depth = Math.max(0, spaces - rootIndent);
-    const indent = '  '.repeat(depth);
-    result.push(`${indent}- ${text}`);
-  }
-
-  return result.join('\n');
-}
-
-export function waitForNextAnimationFrame() {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => resolve());
-  });
-}
-
-/**
- * `textarea` 的 `rows` 只按 `\n` 計行。時序圖等常寫成「單行 + 分號」，
- * 會得到 rows=1、編輯區極矮；此處用分號分段作輔助估算，並設下限。
- */
-export function estimateMermaidTextareaRows(code) {
-  const text = code || '';
-  const newlineRows = Math.max(text.split('\n').length, 1);
-  if (!text.includes(';')) {
-    return Math.min(60, Math.max(newlineRows, 4));
-  }
-  const stmtApprox = Math.max(
-    text.split(';').filter((s) => s.trim().length > 0).length,
-    1,
-  );
-  return Math.min(60, Math.max(newlineRows, stmtApprox, 4));
-}
-
-export async function renderMermaidSvgForExport(code) {
-  const currentCode = (code || '').trim();
-  if (!currentCode) {
-    return { svgHtml: '', error: 'Mermaid 代码为空' };
-  }
-  try {
-    const mermaidLib = await getMermaidLib();
-    const renderKey = `mermaid-export-${Date.now()}-${++_mermaidRenderSeq}`;
-    const { svg } = await mermaidLib.render(renderKey, currentCode);
-    return { svgHtml: svg, error: '' };
-  } catch (error) {
-    return { svgHtml: '', error: String(error?.message || error) };
-  }
-}
+let mermaidRenderSeq = 0;
 
 export function MermaidRenderer({
   code,
@@ -106,26 +18,24 @@ export function MermaidRenderer({
   viewMode = DEFAULT_DIAGRAM_VIEW_MODE,
   onViewModeChange,
   widthPx = null,
-  onWidthChange,
-  resizable = false,
+  isSelected = false,
+  onSelect,
 }) {
   const [localViewMode, setLocalViewMode] = useState(viewMode);
   const [svgHtml, setSvgHtml] = useState('');
   const [renderError, setRenderError] = useState('');
   const [rendering, setRendering] = useState(false);
   const [showViewMenu, setShowViewMenu] = useState(false);
-  const [localWidthPx, setLocalWidthPx] = useState(widthPx);
+  const [chartHeightPx, setChartHeightPx] = useState(null);
   const [lightbox, setLightbox] = useState(false);
   const rootRef = useRef(null);
   const chartRef = useRef(null);
-  const dragRef = useRef(null);
   const textareaRef = useRef(null);
   const lineNumbersRef = useRef(null);
   const viewMenuRef = useRef(null);
   const renderTaskRef = useRef(0);
 
   useEffect(() => { setLocalViewMode(viewMode); }, [viewMode]);
-  useEffect(() => { setLocalWidthPx(widthPx); }, [widthPx]);
 
   useEffect(() => {
     if (localViewMode !== 'chart') {
@@ -141,7 +51,7 @@ export function MermaidRenderer({
       return;
     }
     let cancelled = false;
-    const renderKey = `mermaid-${Date.now()}-${++_mermaidRenderSeq}`;
+    const renderKey = `mermaid-${Date.now()}-${++mermaidRenderSeq}`;
     setRendering(true);
     setRenderError('');
     getMermaidLib().then((mermaidLib) => mermaidLib.render(renderKey, currentCode)).then(
@@ -174,6 +84,22 @@ export function MermaidRenderer({
     return () => document.removeEventListener('mousedown', handleClickOutside, true);
   }, [showViewMenu]);
 
+  useEffect(() => {
+    if (localViewMode !== 'chart') return undefined;
+    const node = chartRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = () => {
+      const next = Math.max(60, Math.round(node.getBoundingClientRect().height));
+      setChartHeightPx((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    const observer = new ResizeObserver(() => {
+      measure();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [localViewMode, renderError, rendering, svgHtml]);
+
   const handleViewModeSwitch = useCallback((mode) => {
     setShowViewMenu(false);
     if (mode === localViewMode) return;
@@ -185,34 +111,6 @@ export function MermaidRenderer({
         : '已保存视图偏好：仅展示图表',
     );
   }, [onViewModeChange, localViewMode]);
-
-  const handleResizeMouseDown = useCallback((e, corner) => {
-    if (!resizable) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const rootEl = rootRef.current;
-    if (!rootEl) return;
-    const startW = rootEl.getBoundingClientRect().width;
-    dragRef.current = { startX: e.clientX, startW, corner };
-
-    const onMove = (ev) => {
-      const { startX, startW: sw, corner: c } = dragRef.current;
-      const dx = ev.clientX - startX;
-      const delta = (c === 'nw' || c === 'sw') ? -dx : dx;
-      const nextW = Math.max(160, Math.round(sw + delta));
-      dragRef.current._lastW = nextW;
-      setLocalWidthPx(nextW);
-    };
-    const onUp = () => {
-      const finalW = dragRef.current?._lastW;
-      dragRef.current = null;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if (finalW != null) onWidthChange?.(finalW);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [resizable, onWidthChange]);
 
   const lines = (code || '').split('\n');
   const gutterLineCount = Math.max(lines.length, 1);
@@ -241,14 +139,39 @@ export function MermaidRenderer({
     return () => cancelAnimationFrame(id);
   }, [code, localViewMode, gutterLineCount, syncLineNumbersScroll]);
 
-  const rootStyle = resizable && localWidthPx != null ? { width: localWidthPx } : {};
+  const handleChartMouseDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (target?.closest('.prd-mermaid-renderer__view-btn, .prd-mermaid-renderer__view-menu')) {
+      return;
+    }
+    if (localViewMode !== 'chart') return;
+    if (!svgHtml) {
+      return;
+    }
+    e.preventDefault();
+    if (!isSelected) {
+      onSelect?.();
+      return;
+    }
+    e.stopPropagation();
+    setLightbox(true);
+  }, [isSelected, localViewMode, onSelect, svgHtml]);
+  const rootStyle = widthPx != null ? { width: `${widthPx}px`, maxWidth: '100%' } : undefined;
+  const codeAreaStyle = chartHeightPx != null
+    ? { minHeight: `${chartHeightPx}px`, height: `${chartHeightPx}px`, maxHeight: `${chartHeightPx}px` }
+    : undefined;
 
   return (
     <div
       ref={rootRef}
-      className="prd-mermaid-renderer"
+      className={[
+        'prd-mermaid-renderer',
+        isSelected ? 'prd-mermaid-renderer--selected' : '',
+      ].filter(Boolean).join(' ')}
       style={rootStyle}
       data-prd-no-block-select
+      onMouseDown={handleChartMouseDown}
     >
       <div
         className="prd-mermaid-renderer__toolbar"
@@ -287,7 +210,7 @@ export function MermaidRenderer({
       </div>
 
       {localViewMode === 'code' && (
-        <div className="prd-mermaid-renderer__code-area">
+        <div className="prd-mermaid-renderer__code-area" style={codeAreaStyle}>
           <div
             ref={lineNumbersRef}
             className="prd-mermaid-renderer__line-numbers"
@@ -325,7 +248,6 @@ export function MermaidRenderer({
               loadingText="图表加载中…"
               emptyText="暂无图表内容"
               interactive={Boolean(svgHtml)}
-              onClick={() => setLightbox(true)}
             >
               <div
                 className="prd-mermaid-renderer__svg-canvas"
@@ -336,14 +258,6 @@ export function MermaidRenderer({
           )}
         </div>
       )}
-
-      {resizable && ['nw', 'ne', 'sw', 'se'].map((corner) => (
-        <div
-          key={corner}
-          className={`prd-mermaid-renderer__handle prd-mermaid-renderer__handle--${corner}`}
-          onMouseDown={(e) => handleResizeMouseDown(e, corner)}
-        />
-      ))}
 
       {lightbox && svgHtml && createPortal(
         <PrdLightbox htmlContent={svgHtml} onClose={() => setLightbox(false)} />,

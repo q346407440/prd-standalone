@@ -43,6 +43,7 @@ export function ImageRenderer({
   onAnnotate,
   annotationCount = 0,
   prdAssetCacheBust = 0,
+  fillContainerByDefault = true,
 }) {
   const activeSlug = useActiveSlug();
   const [uploading, setUploading] = useState(false);
@@ -75,7 +76,7 @@ export function ImageRenderer({
     if (imgRef.current?.complete && imgRef.current.naturalWidth > 0) {
       setImgLoaded(true);
     }
-  });
+  }, [imgSrc]);
 
   useEffect(() => {
     if (isSelected) rootRef.current?.focus();
@@ -126,7 +127,9 @@ export function ImageRenderer({
     document.addEventListener('mouseup', onUp);
   }, [onWidthChange]);
 
-  const imgStyle = widthPx != null ? { width: widthPx } : { width: '100%' };
+  const imgStyle = widthPx != null
+    ? { width: widthPx }
+    : (fillContainerByDefault ? { width: '100%' } : { width: 'auto', maxWidth: '100%' });
 
   return (
     <>

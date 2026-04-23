@@ -3,7 +3,7 @@ import { parseListPrefix } from './prd-list-utils.js';
 import { extractStrongChapterRef } from './prd-chapter-anchor.js';
 
 const md = markdownit({ html: false, linkify: false, breaks: false });
-md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+md.renderer.rules.link_open = (tokens, idx) => {
   const token = tokens[idx];
   const href = token.attrGet('href') || '';
   return `<a href="${href}" class="prd-md-link" target="_blank" rel="noreferrer noopener">`;

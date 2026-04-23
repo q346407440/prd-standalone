@@ -22,7 +22,7 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
         client.write(payload);
       } catch {
         clients.delete(client);
-        try { client.end(); } catch {}
+        try { client.end(); } catch { /* noop: client may already be closed */ }
       }
     }
   }
@@ -65,6 +65,7 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
         }, 120);
       });
     } catch {
+      // noop: fs.watch may fail on some filesystems; live sync just falls back silently
       publicPrdWatcher = null;
     }
   }
@@ -75,7 +76,7 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
       docAssetsDebounce = null;
     }
     if (docAssetsWatcher) {
-      try { docAssetsWatcher.close(); } catch {}
+      try { docAssetsWatcher.close(); } catch { /* noop: watcher may already be closed */ }
       docAssetsWatcher = null;
     }
   }
@@ -97,6 +98,7 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
         }, 120);
       });
     } catch {
+      // noop: asset watcher setup is best-effort only
       docAssetsWatcher = null;
     }
   }
@@ -135,12 +137,12 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
         publicPrdDebounce = null;
       }
       if (publicPrdWatcher) {
-        try { publicPrdWatcher.close(); } catch {}
+        try { publicPrdWatcher.close(); } catch { /* noop: watcher may already be closed */ }
         publicPrdWatcher = null;
       }
       teardownDocAssetsWatch();
       for (const client of clients) {
-        try { client.end(); } catch {}
+        try { client.end(); } catch { /* noop: client connection may already be closed */ }
       }
       clients.clear();
       started = false;
@@ -157,7 +159,7 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
       clients.add(res);
       req.on('close', () => {
         clients.delete(res);
-        try { res.end(); } catch {}
+        try { res.end(); } catch { /* noop: SSE response may already be closed */ }
       });
     },
   };

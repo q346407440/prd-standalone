@@ -1,10 +1,9 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BsLink45Deg, BsTypeBold, BsTypeItalic } from 'react-icons/bs';
 import { MdFormatListNumbered, MdFormatListNumberedRtl, MdNumbers } from 'react-icons/md';
 import {
   alphaToNum,
-  numToAlphaMarker,
   parseListPrefix,
 } from './prd-list-utils.js';
 
@@ -92,6 +91,7 @@ export function SelectionToolbar({ editor }) {
   }, [editor, scheduleReposition]);
 
   useLayoutEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the selection bubble repositions synchronously from live DOM geometry
     reposition();
   }, [reposition]);
 
@@ -225,6 +225,7 @@ export function ListPrefixMenu({ prefix, anchorRef, menuRef: externalMenuRef, on
     let left = rect.left;
     if (top + mh > vh - 8) top = rect.top - mh - 4;
     if (left + mw > vw - 8) left = vw - mw - 8;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the list-prefix menu stores measured fixed-position geometry from the current DOM rect
     setMenuStyle({ position: 'fixed', top: Math.round(top), left: Math.round(left), zIndex: 9999 });
   }, [anchorRef, showInput]);
 

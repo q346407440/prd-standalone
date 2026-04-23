@@ -204,7 +204,7 @@ export function PrdToolbar({
       const cur = list.find(d => d.slug === activeSlug);
       if (cur) setActiveTitle(cur.title);
     });
-  }, []);
+  }, [activeSlug]);
 
   useEffect(() => {
     const cur = docs.find(d => d.slug === activeSlug);
@@ -231,7 +231,7 @@ export function PrdToolbar({
         if (cur) setActiveTitle(cur.title);
       })
       .finally(() => setDocsLoading(false));
-  }, [switchPanelOpen]);
+  }, [switchPanelOpen, activeSlug, docs.length]);
 
   useEffect(() => {
     if (creating) setTimeout(() => newDocInputRef.current?.focus(), 30);
@@ -239,7 +239,7 @@ export function PrdToolbar({
 
   useEffect(() => {
     if (renaming) setTimeout(() => { renameInputRef.current?.focus(); renameInputRef.current?.select(); }, 30);
-  }, [renaming?.slug]);
+  }, [renaming]);
 
   /** 从「关闭自动备份」切回「开启」时，允许对该 slug 再跑一次立即备份（仅同 slug 内 off→on，换文档时不误删） */
   useEffect(() => {

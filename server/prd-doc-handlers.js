@@ -12,7 +12,9 @@ export function readActiveDocSlug(pagesDir, activeFile) {
       const data = JSON.parse(fs.readFileSync(activeFile, 'utf8'));
       if (typeof data.slug === 'string' && data.slug) return data.slug;
     }
-  } catch {}
+  } catch {
+    // noop: fallback to default doc slug when active-doc metadata is unreadable
+  }
   return 'doc-001';
 }
 

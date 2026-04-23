@@ -38,6 +38,7 @@ export function AddBlockMenu({ onAdd, onClose, position = 'below' }) {
     const fitsAbove = submenuRect.height <= availableAbove;
 
     if (!fitsBelow && (fitsAbove || availableAbove > availableBelow)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- submenu direction is derived from freshly measured DOM geometry
       setSubmenuVertical('above');
     } else {
       setSubmenuVertical('below');

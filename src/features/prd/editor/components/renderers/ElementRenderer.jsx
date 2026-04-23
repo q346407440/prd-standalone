@@ -3,29 +3,7 @@ import { TiptapMarkdownEditor } from '../../TiptapMarkdownEditor.jsx';
 import { MermaidRenderer } from './MermaidRenderer.jsx';
 import { MindmapRenderer } from './MindmapRenderer.jsx';
 import { ImageRenderer } from './ImageRenderer.jsx';
-import { inferListPrefix } from '../../prd-list-utils.js';
 import { DEFAULT_DIAGRAM_VIEW_MODE } from '../../prd-constants.js';
-
-export function hasOwnEnterField(payload, key) {
-  return !!payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, key);
-}
-
-export function getEnterCurrentMarkdown(payload) {
-  if (typeof payload === 'string') return payload;
-  if (hasOwnEnterField(payload, 'currentMarkdown')) return payload.currentMarkdown ?? '';
-  return undefined;
-}
-
-export function hasExplicitEnterNextMarkdown(payload) {
-  return hasOwnEnterField(payload, 'nextMarkdown');
-}
-
-export function getEnterNextMarkdown(payload) {
-  if (typeof payload === 'string') return inferListPrefix(payload) ?? '';
-  if (hasExplicitEnterNextMarkdown(payload)) return payload.nextMarkdown ?? '';
-  const currentMarkdown = getEnterCurrentMarkdown(payload);
-  return currentMarkdown ? (inferListPrefix(currentMarkdown) ?? '') : '';
-}
 
 export const ElementRenderer = memo(function ElementRenderer({
   element,
@@ -35,6 +13,7 @@ export const ElementRenderer = memo(function ElementRenderer({
   cellPath = null,
   isPreviewSelected = false,
   isImageSelected = false,
+  isDiagramSelected = false,
   setGlobalSelection,
   onEnter,
   onBackspaceEmpty,
@@ -55,6 +34,7 @@ export const ElementRenderer = memo(function ElementRenderer({
   onMermaidViewModeChange,
   mindmapViewMode,
   onMindmapViewModeChange,
+  onDiagramSelect,
   maxIndentLevel = 0,
 }) {
   if (!element || element.type === 'text') {
@@ -103,6 +83,7 @@ export const ElementRenderer = memo(function ElementRenderer({
         onAnnotate={onAnnotate}
         annotationCount={annotationCount}
         prdAssetCacheBust={prdAssetCacheBust}
+        fillContainerByDefault={cellPath == null}
       />
     );
   }
@@ -115,7 +96,8 @@ export const ElementRenderer = memo(function ElementRenderer({
           onCodeChange={(newCode) => onUpdate({ type: 'mermaid', code: newCode })}
           viewMode={mermaidViewMode || 'code'}
           onViewModeChange={onMermaidViewModeChange}
-          resizable={false}
+          isSelected={isDiagramSelected}
+          onSelect={onDiagramSelect}
         />
       </div>
     );
@@ -129,7 +111,8 @@ export const ElementRenderer = memo(function ElementRenderer({
           onCodeChange={(newCode) => onUpdate({ type: 'mindmap', code: newCode })}
           viewMode={mindmapViewMode || DEFAULT_DIAGRAM_VIEW_MODE}
           onViewModeChange={onMindmapViewModeChange}
-          resizable={false}
+          isSelected={isDiagramSelected}
+          onSelect={onDiagramSelect}
         />
       </div>
     );

@@ -144,6 +144,7 @@ export function PrdLightbox({ imageSrc, htmlContent, onClose }) {
 
   useEffect(() => {
     if (document.activeElement !== inputRef.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the zoom input synced to the rendered percentage when it is not being edited
       setInputValue(String(displayPercent));
     }
   }, [displayPercent]);

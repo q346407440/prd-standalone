@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { TiptapMarkdownEditor } from '../TiptapMarkdownEditor.jsx';
 import { CellRenderer } from './CellRenderer.jsx';
 import { getCellColumnKey, getCellState } from '../prd-annotations.js';
@@ -12,7 +12,7 @@ import {
   isTableKindSelection,
   isGlobalSelectionInTableBlock,
 } from '../prd-utils.js';
-import { makeEmptyCell, makeEmptyRow } from '../prd-block-operations.js';
+import { makeEmptyCell } from '../prd-block-operations.js';
 import { cellFromMarkdownString } from '../prd-inline-image-split.js';
 import {
   TableColSelectorActions,
@@ -143,6 +143,7 @@ export function TableBlock({
 
   useEffect(() => {
     if (hoverSuppressed) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hover suppression should immediately collapse table hover affordances
       if (showHoverBars) setShowHoverBars(false);
       flushHoverEdges(null, null);
       return;
@@ -163,8 +164,10 @@ export function TableBlock({
     if (!showHoverBars) return;
     if (mouseInsideWrapRef.current) return;
     if (bubbleHoveringRef.current) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- when neither pointer nor selection keeps the table active, close hover bars immediately */
     setShowHoverBars(false);
     flushHoverEdges(null, null);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [flushHoverEdges, globalSelection, showHoverBars]);
 
   const handleActionBubbleHoverChange = useCallback((hovering) => {

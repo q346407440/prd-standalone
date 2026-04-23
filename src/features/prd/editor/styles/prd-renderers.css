@@ -6,6 +6,7 @@
   max-width: 100%;
   border-radius: 6px;
   outline: none;
+  cursor: zoom-in;
 }
 
 .prd-image-renderer--selected .prd-image-renderer__img-wrap {
@@ -312,12 +313,18 @@
 .prd-mermaid-renderer {
   position: relative;
   display: inline-block;
+  box-sizing: border-box;
   max-width: 100%;
   min-width: 200px;
-  border: 1px solid #e0e4ea;
+  border: 1.5px solid #d7deea;
   border-radius: 6px;
   background: #fafbfc;
   outline: none;
+  cursor: zoom-in;
+}
+
+.prd-mermaid-renderer--selected {
+  border-color: #4a90e2;
 }
 
 .prd-block-mermaid {
@@ -330,12 +337,15 @@
 .prd-cell-mermaid-wrap {
   position: relative;
   z-index: 100;
+  display: block;
   width: 100%;
+  max-width: 100%;
 }
 
 .prd-cell-mermaid-wrap .prd-mermaid-renderer {
   display: block;
   width: 100%;
+  max-width: 100%;
 }
 
 .prd-mermaid-renderer__toolbar {
@@ -449,32 +459,52 @@
   color: #333;
   tab-size: 2;
   overflow: auto;
-  white-space: pre;
-  word-wrap: normal;
-  overflow-wrap: normal;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* 图表视图 */
 .prd-mermaid-renderer__chart-area {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
   padding: 16px;
   min-height: 60px;
   overflow: auto;
+  cursor: zoom-in;
+  user-select: none;
 }
 
 .prd-mermaid-renderer__svg-wrap {
   position: relative;
-  display: flex;
+  display: inline-flex;
   justify-content: center;
   min-height: 60px;
+  max-width: 100%;
+  margin: 0 auto;
+  cursor: zoom-in;
 }
 
 .prd-mermaid-renderer__svg-wrap svg {
   max-width: 100%;
   height: auto;
+  pointer-events: none;
+  user-select: none;
 }
 
 .prd-mermaid-renderer__svg-canvas {
-  width: 100%;
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+  pointer-events: none;
+  user-select: none;
+  cursor: zoom-in;
+}
+
+.prd-mermaid-renderer__svg-canvas * {
+  pointer-events: none;
+  user-select: none;
 }
 
 .prd-mermaid-renderer__error {
@@ -520,12 +550,18 @@
 .prd-mindmap-renderer {
   position: relative;
   display: inline-block;
+  box-sizing: border-box;
   max-width: 100%;
   min-width: 200px;
-  border: 1px solid #e0e4ea;
+  border: 1.5px solid #d7deea;
   border-radius: 6px;
   background: #fafbfc;
   outline: none;
+  cursor: zoom-in;
+}
+
+.prd-mindmap-renderer--selected {
+  border-color: #4a90e2;
 }
 
 .prd-block-mindmap {
@@ -535,12 +571,27 @@
 .prd-cell-mindmap-wrap {
   position: relative;
   z-index: 100;
+  display: block;
   width: 100%;
+  max-width: 100%;
 }
 
 .prd-cell-mindmap-wrap .prd-mindmap-renderer {
   display: block;
   width: 100%;
+  max-width: 100%;
+}
+
+.prd-cell-element .prd-image-renderer {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+}
+
+.prd-cell-element .prd-image-renderer__img-wrap {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
 }
 
 .prd-mindmap-renderer__toolbar {
@@ -654,27 +705,58 @@
   color: #333;
   tab-size: 2;
   overflow: auto;
-  white-space: pre;
-  word-wrap: normal;
-  overflow-wrap: normal;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .prd-mindmap-renderer__chart-area {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
   padding: 16px;
   min-height: 60px;
   overflow: auto;
+  cursor: zoom-in;
+  user-select: none;
 }
 
 .prd-mindmap-renderer__svg-wrap {
   position: relative;
-  display: flex;
+  display: inline-flex;
   justify-content: center;
   min-height: 60px;
+  max-width: 100%;
+  margin: 0 auto;
+  cursor: zoom-in;
+}
+
+.prd-mindmap-renderer__svg-hidden {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 .prd-mindmap-renderer__svg-wrap svg {
   max-width: 100%;
   height: auto;
+  pointer-events: none;
+  user-select: none;
+}
+
+.prd-mindmap-renderer__svg-canvas {
+  display: inline-block;
+  width: auto;
+  max-width: 100%;
+  pointer-events: none;
+  user-select: none;
+  cursor: zoom-in;
+}
+
+.prd-mindmap-renderer__svg-canvas * {
+  pointer-events: none;
+  user-select: none;
 }
 
 .prd-diagram-surface__overlay {
@@ -730,18 +812,3 @@
   font-style: italic;
 }
 
-.prd-mindmap-renderer__handle {
-  position: absolute;
-  width: 10px;
-  height: 10px;
-  background: #fff;
-  border: 2px solid #1677ff;
-  border-radius: 50%;
-  z-index: 5;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
-}
-
-.prd-mindmap-renderer__handle--nw { top: -5px;    left: -5px;    cursor: nw-resize; }
-.prd-mindmap-renderer__handle--ne { top: -5px;    right: -5px;   cursor: ne-resize; }
-.prd-mindmap-renderer__handle--sw { bottom: -5px; left: -5px;    cursor: sw-resize; }
-.prd-mindmap-renderer__handle--se { bottom: -5px; right: -5px;   cursor: se-resize; }

@@ -35,12 +35,18 @@ export const BlockItem = memo(function BlockItem({
   onCopyMdCursorRef,
   maxFirstLineIndentLevel = 0,
 }) {
-  const [showInsertMenu, setShowInsertMenu] = useState(null);
+  const [insertMenuPosition, setInsertMenuPosition] = useState(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const suppressActionbarUntilLeaveRef = useRef(false);
   const rootRef = useRef(null);
   /** 選區在「其他 block」時，不應開啟本 block 的操作欄 */
   const selectionOnOtherBlock = globalSelection != null && globalSelection.blockId !== block.id;
+  const isDiagramBlock = block.type === 'mermaid' || block.type === 'mindmap';
+  const isDiagramSelectedOnThisBlock = globalSelection?.type === 'diagram'
+    && globalSelection.blockId === block.id
+    && globalSelection.cellPath == null;
+  const allowHoverDespiteForeignSelection = isDiagramBlock;
+  const selectionBlocksActionbar = selectionOnOtherBlock && !allowHoverDespiteForeignSelection;
   /** 主文或表格內 Tiptap：選區類型為 text-block 且屬於本 block（含儲存格） */
   const isTextUiAnchoredOnThisBlock = globalSelection?.blockId === block.id
     && globalSelection?.type === 'text-block';
@@ -49,16 +55,13 @@ export const BlockItem = memo(function BlockItem({
     || block.type === 'h1' || block.type === 'h2' || block.type === 'h3'
     || block.type === 'h4' || block.type === 'h5' || block.type === 'h6' || block.type === 'h7';
   const insertMenuOwnerId = block.id;
-
-  useEffect(() => {
-    if (activeInsertMenuOwnerId === insertMenuOwnerId) return;
-    setShowInsertMenu(null);
-  }, [activeInsertMenuOwnerId, insertMenuOwnerId]);
+  const showInsertMenu = activeInsertMenuOwnerId === insertMenuOwnerId ? insertMenuPosition : null;
 
   const openActionbar = (event) => {
-    if (selectionOnOtherBlock) return;
+    if (selectionBlocksActionbar) return;
     if (suppressActionbarUntilLeaveRef.current) return;
     if (isTextBlock) return;
+    if (isDiagramBlock) return;
     /* 表格等 block：游標從外側進入「未選中的圖片」時不打開底部操作欄，僅在圖片已選中時與選區聯動 */
     const t = event?.target;
     if (t && typeof t.closest === 'function') {
@@ -86,15 +89,16 @@ export const BlockItem = memo(function BlockItem({
   }, [block.id, globalSelection, requestActionbarOpen]);
 
   const closeActionbarWithDelay = () => {
+    if (isDiagramSelectedOnThisBlock) return;
     requestActionbarClose(block.id);
-    setShowInsertMenu(null);
+    setInsertMenuPosition(null);
     setShowMoreMenu(false);
     closeInsertMenu(insertMenuOwnerId);
   };
 
   const closeActionbarImmediately = useCallback(() => {
     requestActionbarClose(block.id, { immediate: true });
-    setShowInsertMenu(null);
+    setInsertMenuPosition(null);
     setShowMoreMenu(false);
     closeInsertMenu(insertMenuOwnerId);
   }, [block.id, closeInsertMenu, insertMenuOwnerId, requestActionbarClose]);
@@ -135,7 +139,7 @@ export const BlockItem = memo(function BlockItem({
   }, [shouldFocus, onFocusConsumed, clearActionbarState]);
 
   useEffect(() => {
-    if (activeActionBlockId !== block.id || selectionOnOtherBlock || suppressActionbarUntilLeaveRef.current) return undefined;
+    if (activeActionBlockId !== block.id || selectionBlocksActionbar || suppressActionbarUntilLeaveRef.current || isDiagramSelectedOnThisBlock) return undefined;
     const handlePointerOutside = (event) => {
       const t = event.target;
       if (nodeContainsTarget(rootRef.current, t)) return;
@@ -166,7 +170,12 @@ export const BlockItem = memo(function BlockItem({
       window.removeEventListener('blur', closeActionbarImmediately);
       window.removeEventListener('mouseout', handleWindowMouseOut);
     };
-  }, [activeActionBlockId, block.id, closeActionbarImmediately, isTextUiAnchoredOnThisBlock, selectionOnOtherBlock]);
+  }, [activeActionBlockId, block.id, closeActionbarImmediately, isDiagramSelectedOnThisBlock, isTextUiAnchoredOnThisBlock, selectionBlocksActionbar]);
+
+  const selectDiagramBlock = useCallback(() => {
+    setGlobalSelection?.({ type: 'diagram', blockId: block.id });
+    requestActionbarOpen(block.id, { immediate: true });
+  }, [block.id, requestActionbarOpen, setGlobalSelection]);
 
   const renderContent = () => {
     switch (block.type) {
@@ -222,6 +231,8 @@ export const BlockItem = memo(function BlockItem({
             onUpdate={onUpdate}
             mermaidMeta={mermaidMeta}
             onMermaidMetaChange={onMermaidMetaChange}
+            isSelected={isDiagramSelectedOnThisBlock}
+            onSelect={selectDiagramBlock}
           />
         );
       case 'mindmap':
@@ -231,6 +242,8 @@ export const BlockItem = memo(function BlockItem({
             onUpdate={onUpdate}
             mindmapMeta={mindmapMeta}
             onMindmapMetaChange={onMindmapMetaChange}
+            isSelected={isDiagramSelectedOnThisBlock}
+            onSelect={selectDiagramBlock}
           />
         );
       case 'table':
@@ -262,6 +275,15 @@ export const BlockItem = memo(function BlockItem({
     }
   };
 
+  /* eslint-disable react-hooks/refs -- this flag intentionally stays ref-backed to avoid rerendering every hover/edit transition */
+  const actionbarVisible = activeActionBlockId === block.id
+    && !selectionBlocksActionbar
+    && (
+      !suppressActionbarUntilLeaveRef.current
+      || isTextUiAnchoredOnThisBlock
+    );
+  /* eslint-enable react-hooks/refs */
+
   return (
     <div
       ref={(node) => {
@@ -277,6 +299,7 @@ export const BlockItem = memo(function BlockItem({
       onMouseLeave={() => {
         clearHoveredActionBlockId?.(block.id);
         suppressActionbarUntilLeaveRef.current = false;
+        if (isDiagramSelectedOnThisBlock) return;
         // 預覽→編輯 DOM 替換或移向 body 上的格式條時會誤觸 leave；編輯態下保持操作欄常駐
         if (isTextUiAnchoredOnThisBlock) return;
         closeActionbarWithDelay();
@@ -289,14 +312,8 @@ export const BlockItem = memo(function BlockItem({
 
       {/* 下方浮层 actionbar（hover 时显示） */}
       <ActionPanel
-        visible={
-          activeActionBlockId === block.id
-          && !selectionOnOtherBlock
-          && (
-            !suppressActionbarUntilLeaveRef.current
-            || isTextUiAnchoredOnThisBlock
-          )
-        }
+        // eslint-disable-next-line react-hooks/refs -- visibility intentionally follows a ref-backed suppression flag to avoid extra hover/edit rerenders
+        visible={actionbarVisible}
         className="prd-block-actionbar"
         onMouseEnter={() => {
           setHoveredActionBlockId?.(block.id);
@@ -334,7 +351,7 @@ export const BlockItem = memo(function BlockItem({
           className="prd-block-actionbar__more"
           onMouseEnter={() => {
             setShowMoreMenu(true);
-            setShowInsertMenu(null);
+            setInsertMenuPosition(null);
             closeInsertMenu(insertMenuOwnerId);
           }}
           onMouseLeave={() => setShowMoreMenu(false)}
@@ -352,12 +369,12 @@ export const BlockItem = memo(function BlockItem({
             aria-expanded={showMoreMenu}
             onFocus={() => {
               setShowMoreMenu(true);
-              setShowInsertMenu(null);
+              setInsertMenuPosition(null);
               closeInsertMenu(insertMenuOwnerId);
             }}
             onClick={() => {
               setShowMoreMenu((v) => !v);
-              setShowInsertMenu(null);
+              setInsertMenuPosition(null);
               closeInsertMenu(insertMenuOwnerId);
             }}
           >
@@ -390,7 +407,7 @@ export const BlockItem = memo(function BlockItem({
                   id: 'insert-above',
                   label: '上方插入…',
                   onClick: () => {
-                    setShowInsertMenu('above');
+                    setInsertMenuPosition('above');
                     openInsertMenu(insertMenuOwnerId, { preserveActionbarBlockId: block.id });
                   },
                 },
@@ -398,7 +415,7 @@ export const BlockItem = memo(function BlockItem({
                   id: 'insert-below',
                   label: '下方插入…',
                   onClick: () => {
-                    setShowInsertMenu('below');
+                    setInsertMenuPosition('below');
                     openInsertMenu(insertMenuOwnerId, { preserveActionbarBlockId: block.id });
                   },
                 },
@@ -421,9 +438,9 @@ export const BlockItem = memo(function BlockItem({
 
         {showInsertMenu === 'above' && (
           <AddBlockMenu
-            onAdd={(type) => { onInsertBefore(block.id, type); setShowInsertMenu(null); }}
+            onAdd={(type) => { onInsertBefore(block.id, type); setInsertMenuPosition(null); }}
             onClose={() => {
-              setShowInsertMenu(null);
+              setInsertMenuPosition(null);
               closeInsertMenu(insertMenuOwnerId);
             }}
             position="above"
@@ -432,9 +449,9 @@ export const BlockItem = memo(function BlockItem({
 
         {showInsertMenu === 'below' && (
           <AddBlockMenu
-            onAdd={(type) => { onInsertAfter(block.id, type); setShowInsertMenu(null); }}
+            onAdd={(type) => { onInsertAfter(block.id, type); setInsertMenuPosition(null); }}
             onClose={() => {
-              setShowInsertMenu(null);
+              setInsertMenuPosition(null);
               closeInsertMenu(insertMenuOwnerId);
             }}
             position="below"

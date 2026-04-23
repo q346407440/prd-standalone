@@ -1,14 +1,8 @@
-import { useState, useEffect } from 'react';
 import { AddBlockMenu } from './AddBlockMenu.jsx';
 
 export function AddAtEndButton({ onAdd, activeInsertMenuOwnerId, openInsertMenu, closeInsertMenu }) {
-  const [showMenu, setShowMenu] = useState(false);
   const ownerId = 'add-at-end';
-
-  useEffect(() => {
-    if (activeInsertMenuOwnerId === ownerId) return;
-    setShowMenu(false);
-  }, [activeInsertMenuOwnerId]);
+  const showMenu = activeInsertMenuOwnerId === ownerId;
 
   return (
     <div className="prd-add-end">
@@ -16,7 +10,6 @@ export function AddAtEndButton({ onAdd, activeInsertMenuOwnerId, openInsertMenu,
         className="prd-add-section-btn"
         onClick={() => {
           const next = !showMenu;
-          setShowMenu(next);
           if (next) openInsertMenu(ownerId);
           else closeInsertMenu(ownerId);
         }}
@@ -28,7 +21,6 @@ export function AddAtEndButton({ onAdd, activeInsertMenuOwnerId, openInsertMenu,
           position="above"
           onAdd={onAdd}
           onClose={() => {
-            setShowMenu(false);
             closeInsertMenu(ownerId);
           }}
         />

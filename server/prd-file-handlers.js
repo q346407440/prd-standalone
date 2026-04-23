@@ -345,6 +345,49 @@ function prdBuildBackupSlotsPayload(backupRootForSlug) {
   });
 }
 
+function formatPrdBackupTimestamp(dateLike = new Date()) {
+  const d = dateLike instanceof Date ? dateLike : new Date(dateLike);
+  const yyyy = String(d.getFullYear());
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}${hh}${mi}${ss}`;
+}
+
+function prdRenameBackupDocBundle(slotDir, backupAt) {
+  let mdNames = [];
+  try {
+    mdNames = fs.readdirSync(slotDir)
+      .filter((name) => name.endsWith('.md'))
+      .sort((a, b) => a.localeCompare(b, 'zh-CN'));
+  } catch {
+    return null;
+  }
+  if (mdNames.length === 0) return null;
+
+  const oldMdPath = path.join(slotDir, mdNames[0]);
+  const oldBase = path.basename(oldMdPath, '.md');
+  const newBase = `${oldBase}-backup${formatPrdBackupTimestamp(backupAt)}`;
+  const newMdPath = path.join(slotDir, `${newBase}.md`);
+  if (newMdPath !== oldMdPath) fs.renameSync(oldMdPath, newMdPath);
+
+  const oldMetaPath = mdFileToMetaPath(oldMdPath);
+  const newMetaPath = mdFileToMetaPath(newMdPath);
+  if (fs.existsSync(oldMetaPath) && newMetaPath !== oldMetaPath) {
+    fs.renameSync(oldMetaPath, newMetaPath);
+  }
+
+  const oldAnnotationsPath = mdFileToAnnotationsPath(oldMdPath);
+  const newAnnotationsPath = mdFileToAnnotationsPath(newMdPath);
+  if (fs.existsSync(oldAnnotationsPath) && newAnnotationsPath !== oldAnnotationsPath) {
+    fs.renameSync(oldAnnotationsPath, newAnnotationsPath);
+  }
+
+  return path.basename(newMdPath);
+}
+
 // ─── Handler 工厂 ────────────────────────────────────────────────────────────
 
 export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAssetDir }) {
@@ -784,10 +827,11 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
             return true;
           },
         });
-        const nextAt = beforeMeta.slice(0, PRD_BACKUP_SLOTS.length);
-        nextAt[slotIndex] = Date.now();
-        prdWriteBackupRotateMeta(resolvedDestParent, nextAt);
         const at = new Date();
+        const backupMdFileName = prdRenameBackupDocBundle(resolvedSlot, at);
+        const nextAt = beforeMeta.slice(0, PRD_BACKUP_SLOTS.length);
+        nextAt[slotIndex] = at.getTime();
+        prdWriteBackupRotateMeta(resolvedDestParent, nextAt);
         const slotsPayload = prdBuildBackupSlotsPayload(resolvedDestParent);
         res.statusCode = 200;
         res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -799,6 +843,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
           backupDir: resolvedDestParent,
           backupSlot: slotIndex,
           backupSlotDir: resolvedSlot,
+          backupMdFileName,
           slots: slotsPayload,
         }));
       } catch (e) {

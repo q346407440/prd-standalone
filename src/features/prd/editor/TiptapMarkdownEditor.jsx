@@ -8,7 +8,6 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { Markdown } from 'tiptap-markdown';
 import { editorToMarkdown } from './tiptap-md-utils.js';
 import { getTextOffsetFromPoint } from './prd-text-editing.js';
-import { emitPrdToast } from './prd-toast.js';
 import { uploadPastedImage } from './prd-api.js';
 import { useActiveSlug } from './active-slug-context.jsx';
 import { renderParagraphMarkdownPreviewToHtml } from './tiptap-markdown-preview.js';
@@ -207,7 +206,6 @@ function TiptapEditingSurface({
   blockId,
   cellPath,
   selectionRole,
-  blockLevel,
   onBlockLevelChange,
   onEnter,
   singleLine,
@@ -239,6 +237,9 @@ function TiptapEditingSurface({
   const [prefixMenuOpen, setPrefixMenuOpen] = useState(false);
   const prefixButtonRef = useRef(null);
   const prefixMenuRef = useRef(null);
+  const syncPrefixValue = useCallback((nextPrefix) => {
+    prefixRef.current = nextPrefix;
+  }, []);
   const onPrefixManualChangeRef = useRef(onPrefixManualChange);
   useEffect(() => { onPrefixManualChangeRef.current = onPrefixManualChange; }, [onPrefixManualChange]);
   const onResetOrderedStartRef = useRef(onResetOrderedStart);
@@ -314,7 +315,7 @@ function TiptapEditingSurface({
           if (listTrigger) {
             event.preventDefault();
             const newPrefix = `${listTrigger[0]} `;
-            prefixRef.current = newPrefix;
+            syncPrefixValue(newPrefix);
             ed.commands.setContent('');
             const fullMd = newPrefix;
             onSaveRef.current?.(fullMd);
@@ -339,7 +340,7 @@ function TiptapEditingSurface({
           if (isRootSingleEmptyParagraph(ed.state.doc)) {
             if (prefixRef.current) {
               event.preventDefault();
-              prefixRef.current = '';
+              syncPrefixValue('');
               valueRefInternal.current = '';
               forceUpdateRef.current?.();
               onSaveRef.current?.('');
@@ -355,7 +356,7 @@ function TiptapEditingSurface({
             if ($from.pos === 1) {
               event.preventDefault();
               const bodyMd = trimTrailingEmptyLines(editorToMarkdown(ed));
-              prefixRef.current = '';
+              syncPrefixValue('');
               onSaveRef.current?.(bodyMd);
               valueRefInternal.current = bodyMd;
               onPrefixManualChangeRef.current?.(bodyMd);
@@ -394,7 +395,7 @@ function TiptapEditingSurface({
         commitAndExitRef.current?.();
       });
     },
-  }, [singleLine, placeholder, finishEditing]);
+  }, [singleLine, placeholder, finishEditing, syncPrefixValue]);
 
   useEffect(() => { editorRef.current = editor; }, [editor]);
 
@@ -426,10 +427,10 @@ function TiptapEditingSurface({
     const md = initialValueRef.current;
     const parsed = parseListPrefix(md);
     if (parsed) {
-      prefixRef.current = parsed.prefix;
+      syncPrefixValue(parsed.prefix);
       editor.commands.setContent(parsed.body || '');
     } else {
-      prefixRef.current = '';
+      syncPrefixValue('');
       editor.commands.setContent(md || '');
     }
     if (initialCaretOffset != null) {
@@ -442,7 +443,7 @@ function TiptapEditingSurface({
     } else {
       editor.commands.focus('end');
     }
-  }, [editor, initialCaretOffset]);
+  }, [editor, initialCaretOffset, syncPrefixValue]);
 
   const [, forceUpdate] = useState(0);
   useEffect(() => { forceUpdateRef.current = () => forceUpdate((n) => n + 1); });
@@ -450,10 +451,10 @@ function TiptapEditingSurface({
   const applyMarkdownValue = useCallback((newMd, { focus = 'end' } = {}) => {
     const parsed = parseListPrefix(newMd);
     if (parsed) {
-      prefixRef.current = parsed.prefix;
+      syncPrefixValue(parsed.prefix);
       editor?.commands.setContent(parsed.body || '');
     } else {
-      prefixRef.current = '';
+      syncPrefixValue('');
       editor?.commands.setContent(newMd || '');
     }
     onSaveRef.current?.(newMd);
@@ -463,7 +464,7 @@ function TiptapEditingSurface({
     if (focus) {
       requestAnimationFrame(() => editor?.commands.focus(focus));
     }
-  }, [editor]);
+  }, [editor, syncPrefixValue]);
 
   /**
    * 与 applyMarkdownValue 的区别：**不触发** onSaveRef 向父层回写，**也不**更新 valueRef。
@@ -480,17 +481,17 @@ function TiptapEditingSurface({
   const applyMarkdownValueQuiet = useCallback((newMd, { focus = 'end' } = {}) => {
     const parsed = parseListPrefix(newMd);
     if (parsed) {
-      prefixRef.current = parsed.prefix;
+      syncPrefixValue(parsed.prefix);
       editor?.commands.setContent(parsed.body || '');
     } else {
-      prefixRef.current = '';
+      syncPrefixValue('');
       editor?.commands.setContent(newMd || '');
     }
     forceUpdate((n) => n + 1);
     if (focus) {
       requestAnimationFrame(() => editor?.commands.focus(focus));
     }
-  }, [editor]);
+  }, [editor, syncPrefixValue]);
 
   const updatePrefix = useCallback((newPrefix) => {
     const inlineMd = editor ? trimTrailingEmptyLines(editorToMarkdown(editor)) : '';
@@ -517,14 +518,14 @@ function TiptapEditingSurface({
     if (onResetOrderedStartRef.current) {
       const inlineMd = editor ? trimTrailingEmptyLines(editorToMarkdown(editor)) : '';
       const newMd = mergeListPrefixWithParagraphMarkdown(inlineMd, newPrefix);
-      prefixRef.current = newPrefix;
+      syncPrefixValue(newPrefix);
       valueRef.current = newMd;
       forceUpdate((n2) => n2 + 1);
       onResetOrderedStartRef.current(newMd, startNum);
     } else {
       updatePrefix(newPrefix);
     }
-  }, [editor, updatePrefix]);
+  }, [editor, syncPrefixValue, updatePrefix]);
 
   const isOrderedPrefix = useCallback((pref) => {
     if (!pref) return false;
@@ -606,10 +607,13 @@ function TiptapEditingSurface({
       onFocus={selectCurrentTextTarget}
       onKeyDownCapture={handleWrapperKeyDown}
     >
+      {/* eslint-disable-next-line react-hooks/refs -- prefix is mutated frequently during typing/indent commands; using a ref avoids extra editor rerenders */}
       {prefixRef.current && (
         <span className="prd-list-prefix">
           {renderListMarker(
+            // eslint-disable-next-line react-hooks/refs -- render reads the latest prefix snapshot without scheduling another state update
             prefixRef.current,
+            // eslint-disable-next-line react-hooks/refs -- ordered-prefix detection follows the same ref-backed snapshot
             isOrderedPrefix(prefixRef.current) ? {
               buttonRef: prefixButtonRef,
               onClickMarker: (e) => {
@@ -620,8 +624,10 @@ function TiptapEditingSurface({
           )}
         </span>
       )}
+      {/* eslint-disable-next-line react-hooks/refs -- menu visibility follows the same ref-backed prefix snapshot */}
       {prefixMenuOpen && isOrderedPrefix(prefixRef.current) && (
         <ListPrefixMenu
+          // eslint-disable-next-line react-hooks/refs -- pass the current prefix snapshot to the menu without introducing a mirror state
           prefix={prefixRef.current}
           anchorRef={prefixButtonRef}
           menuRef={prefixMenuRef}
@@ -645,7 +651,6 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
   blockId,
   cellPath,
   selectionRole = 'paragraph',
-  blockLevel,
   onBlockLevelChange,
   onEnter,
   singleLine = false,
@@ -714,10 +719,14 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
   }, [onBackspaceEmpty]);
 
   const handlePreviewMouseDown = useCallback((e) => {
+    const target = e.target instanceof Element ? e.target : e.target?.parentElement;
+    if (e.defaultPrevented || target?.closest('strong.prd-chapter-link[data-prd-chapter-target]')) {
+      return;
+    }
     selectCurrentTextTarget(e);
     // 列表預覽：前綴 `•` / `1.` 在 .prd-list-marker 內，不在 contentRef 正文的 span 內；
     // 點在符號區時 caret API 與距離回退常錯，固定對應正文開頭（與編輯器內不含前綴的 body 一致）。
-    const hitEl = e.target instanceof Element ? e.target : e.target.parentElement;
+    const hitEl = target;
     if (hitEl?.closest('.prd-list-marker')) {
       pendingPreviewCaretOffsetRef.current = 0;
     } else {
@@ -764,7 +773,6 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
       blockId={blockId}
       cellPath={cellPath}
       selectionRole={selectionRole}
-      blockLevel={blockLevel}
       onBlockLevelChange={onBlockLevelChange}
       onEnter={onEnter}
       singleLine={singleLine}

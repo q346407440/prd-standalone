@@ -7,7 +7,7 @@ import {
 import { MermaidRenderer } from '../renderers/MermaidRenderer.jsx';
 
 export function MermaidBlock({
-  block, onUpdate, mermaidMeta, onMermaidMetaChange,
+  block, onUpdate, mermaidMeta, onMermaidMetaChange, isSelected = false, onSelect,
 }) {
   const placement = { kind: 'standalone', blockId: block.id };
   const viewMode = resolveMermaidViewMode(mermaidMeta, block.content?.code, placement);
@@ -15,15 +15,15 @@ export function MermaidBlock({
   const metaKey = mermaidStandaloneMetaKey(block.id);
 
   return (
-    <div className="prd-block-mermaid" data-prd-no-block-select>
+    <div className="prd-block-mermaid">
       <MermaidRenderer
         code={block.content?.code || ''}
         onCodeChange={(newCode) => onUpdate({ ...block, content: { type: 'mermaid', code: newCode } })}
         viewMode={viewMode}
         onViewModeChange={(mode) => onMermaidMetaChange?.('mermaidViewModes', metaKey, mode)}
         widthPx={widthPx}
-        onWidthChange={(w) => onMermaidMetaChange?.('mermaidWidths', metaKey, w)}
-        resizable
+        isSelected={isSelected}
+        onSelect={onSelect}
       />
     </div>
   );

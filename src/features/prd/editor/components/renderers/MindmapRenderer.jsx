@@ -8,77 +8,8 @@ import { DEFAULT_DIAGRAM_VIEW_MODE } from '../../prd-constants.js';
 import {
   convertMermaidMindmapToMarkdown,
   estimateMermaidTextareaRows,
-  waitForNextAnimationFrame,
-} from './MermaidRenderer.jsx';
-
-let _markmapDepsPromise = null;
-let _markmapTransformer = null;
-
-export async function getMarkmapDeps() {
-  if (!_markmapDepsPromise) {
-    _markmapDepsPromise = Promise.all([
-      import('markmap-lib'),
-      import('markmap-view'),
-    ]).then(([libMod, viewMod]) => ({
-      Transformer: libMod.Transformer,
-      Markmap: viewMod.Markmap,
-    }));
-  }
-  const deps = await _markmapDepsPromise;
-  if (!_markmapTransformer) _markmapTransformer = new deps.Transformer();
-  return {
-    ...deps,
-    transformer: _markmapTransformer,
-  };
-}
-
-export async function renderMindmapSvgForExport(code) {
-  let currentCode = (code || '').trim();
-  const converted = convertMermaidMindmapToMarkdown(currentCode);
-  if (converted !== null) currentCode = converted;
-  if (!currentCode) {
-    return { svgHtml: '', error: '思维导图代码为空' };
-  }
-
-  let host = null;
-  let markmap = null;
-  try {
-    const { transformer, Markmap } = await getMarkmapDeps();
-    const { root } = transformer.transform(currentCode);
-
-    host = document.createElement('div');
-    host.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:1200px;visibility:hidden;pointer-events:none;overflow:hidden;';
-    const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    host.appendChild(svgEl);
-    document.body.appendChild(host);
-
-    const mmOptions = { autoFit: true, pan: false, zoom: false, duration: 0 };
-    markmap = Markmap.create(svgEl, mmOptions, root);
-    await waitForNextAnimationFrame();
-    await waitForNextAnimationFrame();
-
-    const g = svgEl.querySelector('g');
-    const clone = svgEl.cloneNode(true);
-    if (g) {
-      const bbox = g.getBBox();
-      if (bbox.width > 0 && bbox.height > 0) {
-        const pad = 30;
-        clone.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
-        const cloneG = clone.querySelector('g');
-        if (cloneG) cloneG.setAttribute('transform', '');
-      }
-    }
-    clone.removeAttribute('width');
-    clone.removeAttribute('height');
-    clone.style.cssText = 'width:100%;height:auto;min-height:0';
-    return { svgHtml: clone.outerHTML, error: '' };
-  } catch (error) {
-    return { svgHtml: '', error: String(error?.message || error) };
-  } finally {
-    try { markmap?.destroy?.(); } catch { /* noop */ }
-    host?.remove();
-  }
-}
+} from './mermaid-renderer-utils.js';
+import { getMarkmapDeps } from './mindmap-renderer-utils.js';
 
 export function MindmapRenderer({
   code,
@@ -86,21 +17,20 @@ export function MindmapRenderer({
   viewMode = DEFAULT_DIAGRAM_VIEW_MODE,
   onViewModeChange,
   widthPx = null,
-  onWidthChange,
-  resizable = false,
+  isSelected = false,
+  onSelect,
 }) {
   const [localViewMode, setLocalViewMode] = useState(viewMode);
   const [svgHtml, setSvgHtml] = useState('');
   const [renderError, setRenderError] = useState('');
   const [rendering, setRendering] = useState(false);
   const [showViewMenu, setShowViewMenu] = useState(false);
-  const [localWidthPx, setLocalWidthPx] = useState(widthPx);
+  const [chartHeightPx, setChartHeightPx] = useState(null);
   const [lightbox, setLightbox] = useState(false);
   const rootRef = useRef(null);
   const chartRef = useRef(null);
   const svgRef = useRef(null);
   const markmapRef = useRef(null);
-  const dragRef = useRef(null);
   const textareaRef = useRef(null);
   const lineNumbersRef = useRef(null);
   const viewMenuRef = useRef(null);
@@ -113,7 +43,6 @@ export function MindmapRenderer({
   }, []);
 
   useEffect(() => { setLocalViewMode(viewMode); }, [viewMode]);
-  useEffect(() => { setLocalWidthPx(widthPx); }, [widthPx]);
 
   useEffect(() => {
     if (localViewMode !== 'chart') {
@@ -207,6 +136,22 @@ export function MindmapRenderer({
     return () => document.removeEventListener('mousedown', handleClickOutside, true);
   }, [showViewMenu]);
 
+  useEffect(() => {
+    if (localViewMode !== 'chart') return undefined;
+    const node = chartRef.current;
+    if (!node || typeof ResizeObserver === 'undefined') return undefined;
+    const measure = () => {
+      const next = Math.max(60, Math.round(node.getBoundingClientRect().height));
+      setChartHeightPx((prev) => (prev === next ? prev : next));
+    };
+    measure();
+    const observer = new ResizeObserver(() => {
+      measure();
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [localViewMode, renderError, rendering, svgHtml]);
+
   const handleViewModeSwitch = useCallback((mode) => {
     setShowViewMenu(false);
     if (mode === localViewMode) return;
@@ -218,34 +163,6 @@ export function MindmapRenderer({
         : '已保存视图偏好：仅展示图表',
     );
   }, [onViewModeChange, localViewMode]);
-
-  const handleResizeMouseDown = useCallback((e, corner) => {
-    if (!resizable) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const rootEl = rootRef.current;
-    if (!rootEl) return;
-    const startW = rootEl.getBoundingClientRect().width;
-    dragRef.current = { startX: e.clientX, startW, corner };
-
-    const onMove = (ev) => {
-      const { startX, startW: sw, corner: c } = dragRef.current;
-      const dx = ev.clientX - startX;
-      const delta = (c === 'nw' || c === 'sw') ? -dx : dx;
-      const nextW = Math.max(160, Math.round(sw + delta));
-      dragRef.current._lastW = nextW;
-      setLocalWidthPx(nextW);
-    };
-    const onUp = () => {
-      const finalW = dragRef.current?._lastW;
-      dragRef.current = null;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      if (finalW != null) onWidthChange?.(finalW);
-    };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [resizable, onWidthChange]);
 
   const lines = (code || '').split('\n');
   const gutterLineCount = Math.max(lines.length, 1);
@@ -274,14 +191,39 @@ export function MindmapRenderer({
     return () => cancelAnimationFrame(id);
   }, [code, localViewMode, gutterLineCount, syncLineNumbersScroll]);
 
-  const rootStyle = resizable && localWidthPx != null ? { width: localWidthPx } : {};
+  const handleChartMouseDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (target?.closest('.prd-mindmap-renderer__view-btn, .prd-mindmap-renderer__view-menu')) {
+      return;
+    }
+    if (localViewMode !== 'chart') return;
+    if (!svgHtml) {
+      return;
+    }
+    e.preventDefault();
+    if (!isSelected) {
+      onSelect?.();
+      return;
+    }
+    e.stopPropagation();
+    setLightbox(true);
+  }, [isSelected, localViewMode, onSelect, svgHtml]);
+  const rootStyle = widthPx != null ? { width: `${widthPx}px`, maxWidth: '100%' } : undefined;
+  const codeAreaStyle = chartHeightPx != null
+    ? { minHeight: `${chartHeightPx}px`, height: `${chartHeightPx}px`, maxHeight: `${chartHeightPx}px` }
+    : undefined;
 
   return (
     <div
       ref={rootRef}
-      className="prd-mindmap-renderer"
+      className={[
+        'prd-mindmap-renderer',
+        isSelected ? 'prd-mindmap-renderer--selected' : '',
+      ].filter(Boolean).join(' ')}
       style={rootStyle}
       data-prd-no-block-select
+      onMouseDown={handleChartMouseDown}
     >
       <div
         className="prd-mindmap-renderer__toolbar"
@@ -320,7 +262,7 @@ export function MindmapRenderer({
       </div>
 
       {localViewMode === 'code' && (
-        <div className="prd-mindmap-renderer__code-area">
+        <div className="prd-mindmap-renderer__code-area" style={codeAreaStyle}>
           <div
             ref={lineNumbersRef}
             className="prd-mindmap-renderer__line-numbers"
@@ -344,7 +286,10 @@ export function MindmapRenderer({
       )}
 
       {localViewMode === 'chart' && (
-        <div className="prd-mindmap-renderer__chart-area" ref={chartRef}>
+        <div
+          className="prd-mindmap-renderer__chart-area"
+          ref={chartRef}
+        >
           {renderError ? (
             <div className="prd-mindmap-renderer__error">
               <FiAlertCircle size={16} />
@@ -358,29 +303,27 @@ export function MindmapRenderer({
               loadingText="思维导图加载中…"
               emptyText="暂无思维导图内容"
               interactive={Boolean(svgHtml)}
-              onClick={() => setLightbox(true)}
             >
-              <svg
-                ref={svgRef}
-                style={{
-                  width: '100%',
-                  minHeight: 200,
-                  pointerEvents: 'none',
-                  visibility: svgHtml || rendering ? 'visible' : 'hidden',
-                }}
+              <div className="prd-mindmap-renderer__svg-hidden" aria-hidden="true">
+                <svg
+                  ref={svgRef}
+                  style={{
+                    width: '100%',
+                    minHeight: 200,
+                    pointerEvents: 'none',
+                    visibility: 'hidden',
+                  }}
+                />
+              </div>
+              <div
+                className="prd-mindmap-renderer__svg-canvas"
+                aria-hidden={!svgHtml}
+                dangerouslySetInnerHTML={{ __html: svgHtml }}
               />
             </AsyncDiagramSurface>
           )}
         </div>
       )}
-
-      {resizable && ['nw', 'ne', 'sw', 'se'].map((corner) => (
-        <div
-          key={corner}
-          className={`prd-mindmap-renderer__handle prd-mindmap-renderer__handle--${corner}`}
-          onMouseDown={(e) => handleResizeMouseDown(e, corner)}
-        />
-      ))}
 
       {lightbox && svgHtml && createPortal(
         <PrdLightbox htmlContent={svgHtml} onClose={() => setLightbox(false)} />,

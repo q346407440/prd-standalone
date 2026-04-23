@@ -103,6 +103,7 @@ export function isGlobalSelectionInTableBlock(blockId, sel) {
   if (sel.type === 'table-col' || sel.type === 'table-row') return true;
   if (sel.type === 'text-block') return true;
   if (sel.type === 'image' && sel.cellPath != null) return true;
+  if (sel.type === 'diagram' && sel.cellPath != null) return true;
   return false;
 }
 
@@ -110,6 +111,9 @@ export function isGlobalSelectionInTableBlock(blockId, sel) {
 export function isGlobalSelectionOnTableCellElement(sel, blockId, ri, ci, idx) {
   if (!sel || sel.blockId !== blockId) return false;
   if (sel.type === 'image') {
+    return sel.cellPath?.ri === ri && sel.cellPath?.ci === ci && sel.cellPath?.idx === idx;
+  }
+  if (sel.type === 'diagram') {
     return sel.cellPath?.ri === ri && sel.cellPath?.ci === ci && sel.cellPath?.idx === idx;
   }
   if (sel.type === 'text-block' && sel.cellPath != null) {
@@ -130,6 +134,10 @@ export function isForeignSelectionForTableCell(sel, blockId, ri, ci) {
     return sel.cellPath.ri !== ri || sel.cellPath.ci !== ci;
   }
   if (sel.type === 'image') {
+    if (sel.cellPath == null) return true;
+    return sel.cellPath.ri !== ri || sel.cellPath.ci !== ci;
+  }
+  if (sel.type === 'diagram') {
     if (sel.cellPath == null) return true;
     return sel.cellPath.ri !== ri || sel.cellPath.ci !== ci;
   }

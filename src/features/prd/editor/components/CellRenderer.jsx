@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { ElementRenderer, getEnterCurrentMarkdown, getEnterNextMarkdown } from './renderers/ElementRenderer.jsx';
+import { ElementRenderer } from './renderers/ElementRenderer.jsx';
+import { getEnterCurrentMarkdown, getEnterNextMarkdown } from './renderers/element-renderer-utils.js';
 import { ActionPanel } from './FloatingActionBubble.jsx';
 import { BlockMoreMenu } from './BlockMoreMenu.jsx';
 import {
@@ -25,7 +26,6 @@ import {
   createTypedMarkdownListOptions,
   renumberOrderedGroupAt,
   renumberOrderedItemsFrom,
-  inferListPrefix,
 } from '../prd-list-utils.js';
 import { getUsageRegions } from '../prd-annotations.js';
 
@@ -33,7 +33,7 @@ const getCellElementMd = (item) => item?.markdown || '';
 const setCellElementMd = (item, markdown) => ({ ...item, markdown });
 const getCellElementListType = (item) => (item?.type === 'text' ? item.type : null);
 
-export function renumberCellElements(elements, changedIdx) {
+function renumberCellElements(elements, changedIdx) {
   const el = elements[changedIdx];
   if (!el || el.type !== 'text') return elements;
   return renumberOrderedGroupAt(elements, changedIdx, createTypedMarkdownListOptions({
@@ -44,7 +44,7 @@ export function renumberCellElements(elements, changedIdx) {
   }));
 }
 
-export function renumberCellElementsFrom(elements, changedIdx, startNum) {
+function renumberCellElementsFrom(elements, changedIdx, startNum) {
   const el = elements[changedIdx];
   if (!el || el.type !== 'text') return elements;
   const md = getCellElementMd(el);
@@ -60,20 +60,16 @@ export function renumberCellElementsFrom(elements, changedIdx, startNum) {
   return result ?? elements;
 }
 
-export function isOrderedCellTextElementAt(elements, idx) {
+function isOrderedCellTextElementAt(elements, idx) {
   const el = elements[idx];
   if (!el || el.type !== 'text') return false;
   const parsed = parseListPrefix(getCellElementMd(el));
   return !!parsed && /^(\d+\.|[a-z]+\.)$/.test(parsed.marker);
 }
 
-export function maybeRenumberCellElementsAt(elements, idx) {
+function maybeRenumberCellElementsAt(elements, idx) {
   if (!isOrderedCellTextElementAt(elements, idx)) return elements;
   return renumberCellElements(elements, idx);
-}
-
-export function getCellElementMdHelper(item) {
-  return getCellElementMd(item);
 }
 
 export function CellRenderer({
@@ -135,6 +131,7 @@ export function CellRenderer({
       el.click?.();
       el.focus?.();
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the one-shot focus request after the DOM target is focused
     setFocusIdx(null);
   }, [focusIdx, elements.length]);
 
@@ -256,8 +253,10 @@ export function CellRenderer({
       onActionBubbleHoverChange?.(false);
       clearPendingElementActionOpen();
       clearPendingElementActionClose();
+      /* eslint-disable react-hooks/set-state-in-effect -- external hover suppression should synchronously collapse cell action UI */
       setActiveElementActionIdx(null);
       setShowMoreMenuIdx(null);
+      /* eslint-enable react-hooks/set-state-in-effect */
       return;
     }
     if (globalSelection == null) return;
@@ -402,6 +401,8 @@ export function CellRenderer({
     setFocusIdx(targetIdx);
     if (elements[idx]?.type === 'image') {
       setGlobalSelection?.({ type: 'image', blockId, cellPath: { ri, ci, idx: targetIdx } });
+    } else if (elements[idx]?.type === 'mermaid' || elements[idx]?.type === 'mindmap') {
+      setGlobalSelection?.({ type: 'diagram', blockId, cellPath: { ri, ci, idx: targetIdx } });
     }
   }, [elements, onUpdate, setGlobalSelection, blockId, ri, ci]);
 
@@ -437,6 +438,11 @@ export function CellRenderer({
           && globalSelection.cellPath?.ri === ri
           && globalSelection.cellPath?.ci === ci
           && globalSelection.cellPath?.idx === idx;
+        const isDiagramSelected = globalSelection?.type === 'diagram'
+          && globalSelection.blockId === blockId
+          && globalSelection.cellPath?.ri === ri
+          && globalSelection.cellPath?.ci === ci
+          && globalSelection.cellPath?.idx === idx;
         return (
         <div
           className={[
@@ -451,7 +457,7 @@ export function CellRenderer({
           onMouseEnter={() => {
             if (element.type === 'text' || !element.type) return;
             /* 圖片僅在點擊選中後顯示格內操作條，hover 不觸發（與 ImageRenderer 選中態一致） */
-            if (element.type === 'image') return;
+            if (element.type === 'image' || element.type === 'mermaid' || element.type === 'mindmap') return;
             hoveredElementActionIdxRef.current = idx;
             requestElementActionOpen(idx);
           }}
@@ -589,6 +595,7 @@ export function CellRenderer({
             cellPath={{ ri, ci, idx }}
             isPreviewSelected={isTextPreviewSelected}
             isImageSelected={isImageSelected}
+            isDiagramSelected={isDiagramSelected}
             setGlobalSelection={setGlobalSelection}
             onEnter={(currentMd) => addElementAfter(idx, currentMd)}
             onBackspaceEmpty={() => {
@@ -628,6 +635,12 @@ export function CellRenderer({
               : undefined}
             onMindmapViewModeChange={element.type === 'mindmap' ? (mode) => {
               onMindmapMetaChange?.('mindmapViewModes', mindmapTableMetaKey(blockId, ri, ci, idx), mode);
+            } : undefined}
+            onDiagramSelect={element.type === 'mermaid' || element.type === 'mindmap' ? () => {
+              setGlobalSelection?.({ type: 'diagram', blockId, cellPath: { ri, ci, idx } });
+              clearPendingElementActionOpen();
+              clearPendingElementActionClose();
+              setActiveElementActionIdx(idx);
             } : undefined}
             prdAssetCacheBust={prdAssetCacheBust}
           />

@@ -89,6 +89,7 @@ export function FloatingActionBubble({
 
   useLayoutEffect(() => {
     if (!visible || !anchorRef) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- bubble geometry must be measured and applied immediately after layout
     reposition();
     const raf = requestAnimationFrame(reposition);
     window.addEventListener('resize', reposition);

@@ -197,7 +197,6 @@ export function EditableField({
     }
   }, [
     applyBlockLevel,
-    blockLevel,
     onBlockLevelChange,
     commit,
     value,
