@@ -39,7 +39,7 @@ export async function renderMindmapSvgForExport(code) {
     const { root } = transformer.transform(currentCode);
 
     host = document.createElement('div');
-    host.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:1200px;visibility:hidden;pointer-events:none;overflow:hidden;';
+    host.style.cssText = 'position:fixed;left:-10000px;top:-10000px;width:1200px;min-height:480px;visibility:hidden;pointer-events:none;overflow:hidden;';
     const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     host.appendChild(svgEl);
     document.body.appendChild(host);
@@ -52,7 +52,18 @@ export async function renderMindmapSvgForExport(code) {
     const g = svgEl.querySelector('g');
     const clone = svgEl.cloneNode(true);
     if (g) {
-      const bbox = g.getBBox();
+      let bbox;
+      try {
+        bbox = g.getBBox();
+      } catch {
+        bbox = { x: 0, y: 0, width: 0, height: 0 };
+      }
+      if (bbox.width <= 0 || bbox.height <= 0) {
+        const r = svgEl.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          bbox = { x: 0, y: 0, width: r.width, height: r.height };
+        }
+      }
       if (bbox.width > 0 && bbox.height > 0) {
         const pad = 30;
         clone.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);

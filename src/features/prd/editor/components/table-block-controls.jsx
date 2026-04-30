@@ -1,51 +1,36 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useViewportFit } from '../useViewportFit.js';
 
-export function TableColSelectorActions({ canDelete, onDelete }) {
-  const { ref, vertical } = useViewportFit('below', 'left', { horizontal: false });
+/** 供 Portal 浮层内使用（无 useViewportFit 包裹） */
+export function TableColDeleteButton({ onDelete }) {
   return (
-    <div
-      ref={ref}
-      className={[
-        'prd-table-selector-actions',
-        'prd-table-selector-actions--col',
-        vertical === 'above' && 'prd-table-selector-actions--col--flip-v',
-      ].filter(Boolean).join(' ')}
+    <button
+      type="button"
+      className="prd-action-btn prd-action-btn--danger"
+      onMouseDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onDelete();
+      }}
     >
-      {canDelete && (
-        <button
-          type="button"
-          className="prd-action-btn prd-action-btn--danger"
-          onMouseDown={(e) => { e.stopPropagation(); onDelete(); }}
-        >
-          删除列
-        </button>
-      )}
-    </div>
+      删除列
+    </button>
   );
 }
 
-export function TableRowSelectorActions({ canDelete, onDelete }) {
-  const { ref, horizontal } = useViewportFit('below', 'right', { vertical: false });
+export function TableRowDeleteButton({ onDelete }) {
   return (
-    <div
-      ref={ref}
-      className={[
-        'prd-table-selector-actions',
-        'prd-table-selector-actions--row',
-        horizontal === 'left' && 'prd-table-selector-actions--row--flip-h',
-      ].filter(Boolean).join(' ')}
+    <button
+      type="button"
+      className="prd-action-btn prd-action-btn--danger"
+      onMouseDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onDelete();
+      }}
     >
-      {canDelete && (
-        <button
-          type="button"
-          className="prd-action-btn prd-action-btn--danger"
-          onMouseDown={(e) => { e.stopPropagation(); onDelete(); }}
-        >
-          删除行
-        </button>
-      )}
-    </div>
+      删除行
+    </button>
   );
 }
 

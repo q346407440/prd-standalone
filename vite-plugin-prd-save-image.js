@@ -65,6 +65,8 @@ function attachMiddleware(server, liveSync, docHandlers, fileHandlers) {
       return;
     }
     if (pathOnly === API_ACTIVE_DOC && req.method === 'GET') {
+      // 与磁盘上的 .active-doc.json 对齐监视目标（长驻 dev 时避免仍监听已切换的 slug）
+      liveSync.rewatchActiveDoc();
       docHandlers.activeDoc(req, res);
       return;
     }

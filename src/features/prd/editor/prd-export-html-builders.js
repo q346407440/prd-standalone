@@ -1,5 +1,6 @@
 import markdownit from 'markdown-it';
 import { parseListPrefix } from './prd-list-utils.js';
+import { stripInlineMarkdownForTocDisplay } from './prd-utils.js';
 import {
   resolveMermaidViewMode,
   resolveMermaidWidth,
@@ -318,11 +319,15 @@ export async function buildContentHtml(blocks, context) {
 export function buildTocItems(blocks) {
   return (blocks || [])
     .filter((block) => /^h[1-7]$/.test(block?.type || ''))
-    .map((block) => ({
-      id: block.id,
-      level: Number(block.type.slice(1)),
-      title: (block.content?.markdown || block.content?.text || '').trim() || '未命名标题',
-    }));
+    .map((block) => {
+      const raw = (block.content?.markdown || block.content?.text || '').trim();
+      const plain = stripInlineMarkdownForTocDisplay(raw);
+      return {
+        id: block.id,
+        level: Number(block.type.slice(1)),
+        title: plain || raw || '未命名标题',
+      };
+    });
 }
 
 export function buildTocTree(items) {

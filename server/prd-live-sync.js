@@ -11,6 +11,8 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
   let publicPrdDebounce = null;
   let docAssetsWatcher = null;
   let docAssetsDebounce = null;
+  /** 持久监听 .active-doc.json，避免长驻 dev 进程在指针文件被外部改动后仍监视旧 .md。 */
+  let activePointerListener = null;
 
   function broadcast(event) {
     const payload = `event: ${event.type}\ndata: ${JSON.stringify({
@@ -103,6 +105,20 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
     }
   }
 
+  function ensureActivePointerWatch() {
+    if (!activeFile) return;
+    if (activePointerListener) return;
+    if (!fs.existsSync(activeFile)) return;
+    const listener = (curr, prev) => {
+      const sameMtime = (curr?.mtimeMs || 0) === (prev?.mtimeMs || 0);
+      const sameSize = (curr?.size || 0) === (prev?.size || 0);
+      if (sameMtime && sameSize) return;
+      rewatchActiveDoc();
+    };
+    activePointerListener = listener;
+    fs.watchFile(activeFile, { interval: 500 }, listener);
+  }
+
   function rewatchActiveDoc() {
     for (const [fp, listener] of watchedFiles) {
       fs.unwatchFile(fp, listener);
@@ -118,6 +134,7 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
       }
     }
     setupDocAssetsWatch(slug);
+    ensureActivePointerWatch();
   }
 
   return {
@@ -128,6 +145,14 @@ export function createPrdLiveSync({ pagesDir, activeFile, publicPrdDir }) {
       rewatchActiveDoc();
     },
     stop() {
+      if (activeFile && activePointerListener) {
+        try {
+          fs.unwatchFile(activeFile, activePointerListener);
+        } catch {
+          /* noop */
+        }
+        activePointerListener = null;
+      }
       for (const [fp, listener] of watchedFiles) {
         fs.unwatchFile(fp, listener);
       }

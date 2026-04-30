@@ -201,3 +201,36 @@ export function findTableBlockToolbarAnchor(blockId, globalSelection) {
 
   return null;
 }
+
+/**
+ * 去掉标题里常见的 Markdown 行内标记，供目录树 / 导出 TOC 纯文本展示（不解析为 HTML）。
+ * 处理：行内代码、图片与链接、删除线、双星号/双下划线加粗、单星号或下划线斜体（下划线规则避免误伤 snake_case）。
+ */
+export function stripInlineMarkdownForTocDisplay(raw) {
+  if (typeof raw !== 'string') return '';
+  let t = raw.trim();
+  if (!t) return '';
+
+  t = t.replace(/`([^`]+)`/g, '$1');
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  t = t.replace(/<https?:\/\/[^>\s]+>/gi, (m) => m.slice(1, -1));
+  t = t.replace(/<[^>\s]+@[^>\s]+>/g, (m) => m.slice(1, -1));
+  t = t.replace(/~~(.+?)~~/g, '$1');
+
+  for (let i = 0; i < 32; i += 1) {
+    const next = t.replace(/\*\*(.+?)\*\*/gs, '$1');
+    if (next === t) break;
+    t = next;
+  }
+  for (let i = 0; i < 32; i += 1) {
+    const next = t.replace(/__(.+?)__/gs, '$1');
+    if (next === t) break;
+    t = next;
+  }
+
+  t = t.replace(/(?<!\*)\*(?!\*)([^*\n]+?)(?<!\*)\*(?!\*)/g, '$1');
+  t = t.replace(/(?<![A-Za-z0-9])_([^_\n]+?)_(?![A-Za-z0-9])/g, '$1');
+
+  return t.trim();
+}

@@ -14,6 +14,13 @@ export async function getMermaidLib() {
     theme: 'default',
     securityLevel: 'strict',
     fontFamily: 'inherit',
+    /** 流程图节点用 HTML 标签 + wrappingWidth，才能按「宽度」自动折行，避免长文案被方框裁切。 */
+    htmlLabels: true,
+    flowchart: {
+      useMaxWidth: true,
+      /** 节点内折行时的参考行宽（px），与 Mermaid 默认走同一套排字逻辑。 */
+      wrappingWidth: 200,
+    },
   });
   return mermaidLib;
 }

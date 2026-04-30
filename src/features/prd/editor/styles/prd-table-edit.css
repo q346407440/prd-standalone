@@ -261,7 +261,9 @@
   border: none;
   border-radius: 0;
   box-shadow: none;
-  z-index: 80;
+  /* 高于格内操作条与表头编辑区，且勿继承父 bar 的 pointer-events:none */
+  z-index: 130;
+  pointer-events: auto;
   white-space: nowrap;
 }
 
@@ -288,6 +290,11 @@
 }
 
 .prd-table-selector-actions .prd-action-btn {
+  user-select: none;
+}
+
+/* 删列/删行：Portal 到 body，与 .prd-table-selector-actions 解耦 */
+.prd-floating-action-bubble.prd-table-rowcol-delete-bubble .prd-action-btn {
   user-select: none;
 }
 

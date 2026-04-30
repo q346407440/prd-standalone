@@ -5,6 +5,7 @@ import { getCellColumnKey, getCellState } from '../prd-annotations.js';
 import { measurePrdTask } from '../prd-performance.js';
 import {
   ENABLE_TABLE_CELL_ANNOTATION_UI,
+  PRD_TABLE_ROWCOL_SELECTOR_PORTAL_Z,
   TABLE_EDGE_HOTZONE_PX,
   TABLE_HOVER_CLOSE_DELAY_MS,
 } from '../prd-constants.js';
@@ -14,9 +15,10 @@ import {
 } from '../prd-utils.js';
 import { makeEmptyCell } from '../prd-block-operations.js';
 import { cellFromMarkdownString } from '../prd-inline-image-split.js';
+import { FloatingActionBubble } from './FloatingActionBubble.jsx';
 import {
-  TableColSelectorActions,
-  TableRowSelectorActions,
+  TableColDeleteButton,
+  TableRowDeleteButton,
   CellChangeIntentButton,
   CellPendingConfirmControl,
 } from './table-block-controls.jsx';
@@ -81,6 +83,8 @@ export function TableBlock({
   const [tableGeom, setTableGeom] = useState(null);
   const tableRef = useRef(null);
   const wrapRef = useRef(null);
+  const tableColBarAnchorRef = useRef(null);
+  const tableRowBarAnchorRef = useRef(null);
   const mouseInsideWrapRef = useRef(false);
   const bubbleHoveringRef = useRef(false);
   const hoverHideTimerRef = useRef(null);
@@ -539,46 +543,76 @@ export function TableBlock({
         {headers.map((_, ci) => (
           <div
             key={`col-bar-${ci}`}
+            ref={selectedCol === ci ? tableColBarAnchorRef : undefined}
             className={`prd-table-col-bar${selectedCol === ci ? ' prd-table-col-bar--selected' : ''}`}
             style={{ left: gColLeft(ci), width: gColWidth(ci) }}
             onMouseEnter={openHoverBars}
             onMouseLeave={closeHoverBarsWithDelay}
             onMouseDown={(e) => {
+              if (e.target.closest?.('.prd-floating-action-bubble')) return;
               e.preventDefault();
               if (selectedCol === ci) clearThisTableSelection();
               else selectCol(ci);
             }}
-          >
-            {selectedCol === ci && (
-              <TableColSelectorActions
-                canDelete={headers.length > 1}
-                onDelete={() => deleteCol(ci)}
-              />
-            )}
-          </div>
+          />
         ))}
+
+        {typeof selectedCol === 'number' && headers.length > 1 && (
+          <FloatingActionBubble
+            key={`${block.id}-table-col-del-${selectedCol}`}
+            visible
+            anchorRef={tableColBarAnchorRef}
+            preferredVertical="below"
+            preferredHorizontal="center"
+            portalZIndex={PRD_TABLE_ROWCOL_SELECTOR_PORTAL_Z}
+            className="prd-table-rowcol-delete-bubble"
+            onMouseEnter={() => handleActionBubbleHoverChange(true)}
+            onMouseLeave={() => handleActionBubbleHoverChange(false)}
+            innerMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <TableColDeleteButton onDelete={() => deleteCol(selectedCol)} />
+          </FloatingActionBubble>
+        )}
 
         {displayRows.map((_, ri) => (
           <div
             key={`row-bar-${ri}`}
+            ref={selectedRow === ri ? tableRowBarAnchorRef : undefined}
             className={`prd-table-row-bar${selectedRow === ri ? ' prd-table-row-bar--selected' : ''}`}
             style={{ top: gRowTop(ri), height: gRowHeight(ri) }}
             onMouseEnter={openHoverBars}
             onMouseLeave={closeHoverBarsWithDelay}
             onMouseDown={(e) => {
+              if (e.target.closest?.('.prd-floating-action-bubble')) return;
               e.preventDefault();
               if (selectedRow === ri) clearThisTableSelection();
               else selectRow(ri);
             }}
-          >
-            {selectedRow === ri && (
-              <TableRowSelectorActions
-                canDelete={rows.length > 1}
-                onDelete={() => deleteRow(ri)}
-              />
-            )}
-          </div>
+          />
         ))}
+
+        {typeof selectedRow === 'number' && normRows.length > 1 && (
+          <FloatingActionBubble
+            key={`${block.id}-table-row-del-${selectedRow}`}
+            visible
+            anchorRef={tableRowBarAnchorRef}
+            preferredVertical="middle"
+            preferredHorizontal="after"
+            portalZIndex={PRD_TABLE_ROWCOL_SELECTOR_PORTAL_Z}
+            className="prd-table-rowcol-delete-bubble"
+            onMouseEnter={() => handleActionBubbleHoverChange(true)}
+            onMouseLeave={() => handleActionBubbleHoverChange(false)}
+            innerMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+          >
+            <TableRowDeleteButton onDelete={() => deleteRow(selectedRow)} />
+          </FloatingActionBubble>
+        )}
 
 
         {colEdge !== null && !suppressHandles && (

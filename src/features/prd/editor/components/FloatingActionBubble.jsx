@@ -35,6 +35,8 @@ export function FloatingActionBubble({
   preferredHorizontal = 'left',
   /** 錨點 ref（input / textarea / span），用於 fixed 定位計算 */
   anchorRef,
+  /** Portal 時 z-index，默認與選區工具列一致；表格删列/删行须更高 */
+  portalZIndex,
   onMouseEnter,
   onMouseLeave,
   /** 內層攔截 mousedown：鏈接氣泡傳 stopPropagation；選取工具列預設 preventDefault */
@@ -58,34 +60,47 @@ export function FloatingActionBubble({
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    const spaceAbove = ar.top - BUBBLE_MARGIN;
-    const spaceBelow = vh - ar.bottom - BUBBLE_MARGIN;
     let top;
-    if (preferredVertical === 'above') {
-      if (spaceAbove >= sh + BUBBLE_GAP || spaceAbove >= spaceBelow) {
-        top = ar.top - BUBBLE_GAP - sh;
-      } else {
-        top = ar.bottom + BUBBLE_GAP;
-      }
+    if (preferredVertical === 'middle') {
+      top = ar.top + (ar.height - sh) / 2;
+      top = Math.max(BUBBLE_MARGIN, Math.min(top, vh - sh - BUBBLE_MARGIN));
     } else {
-      if (spaceBelow >= sh + BUBBLE_GAP || spaceBelow >= spaceAbove) {
-        top = ar.bottom + BUBBLE_GAP;
+      const spaceAbove = ar.top - BUBBLE_MARGIN;
+      const spaceBelow = vh - ar.bottom - BUBBLE_MARGIN;
+      if (preferredVertical === 'above') {
+        if (spaceAbove >= sh + BUBBLE_GAP || spaceAbove >= spaceBelow) {
+          top = ar.top - BUBBLE_GAP - sh;
+        } else {
+          top = ar.bottom + BUBBLE_GAP;
+        }
       } else {
-        top = ar.top - BUBBLE_GAP - sh;
+        if (spaceBelow >= sh + BUBBLE_GAP || spaceBelow >= spaceAbove) {
+          top = ar.bottom + BUBBLE_GAP;
+        } else {
+          top = ar.top - BUBBLE_GAP - sh;
+        }
       }
+      top = Math.max(BUBBLE_MARGIN, Math.min(top, vh - sh - BUBBLE_MARGIN));
     }
-    top = Math.max(BUBBLE_MARGIN, Math.min(top, vh - sh - BUBBLE_MARGIN));
 
     let left;
-    if (preferredHorizontal === 'right') {
+    if (preferredHorizontal === 'center') {
+      left = ar.left + (ar.width - sw) / 2;
+    } else if (preferredHorizontal === 'right') {
       left = ar.right - sw;
+    } else if (preferredHorizontal === 'after') {
+      left = ar.right + BUBBLE_GAP;
+      if (left + sw > vw - BUBBLE_MARGIN) {
+        left = ar.left - sw - BUBBLE_GAP;
+      }
     } else {
       left = ar.left;
     }
     left = Math.max(BUBBLE_MARGIN, Math.min(left, vw - sw - BUBBLE_MARGIN));
 
-    setStyle({ position: 'fixed', top: Math.round(top), left: Math.round(left), zIndex: 9999 });
-  }, [anchorRef, preferredVertical, preferredHorizontal]);
+    const zi = portalZIndex ?? 9999;
+    setStyle({ position: 'fixed', top: Math.round(top), left: Math.round(left), zIndex: zi });
+  }, [anchorRef, preferredVertical, preferredHorizontal, portalZIndex]);
 
   useLayoutEffect(() => {
     if (!visible || !anchorRef) return;

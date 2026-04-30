@@ -44,6 +44,9 @@ export const TABLE_HOVER_CLOSE_DELAY_MS = 40;
 export const TABLE_EDGE_HOTZONE_PX = 24;
 export const BUBBLE_GAP = 6;
 export const BUBBLE_MARGIN = 8;
+
+/** 表格「删列 / 删行」Portal 层级：须高于 Tiptap 选区条等（9999），否则鼠标点不到按钮 */
+export const PRD_TABLE_ROWCOL_SELECTOR_PORTAL_Z = 10020;
 export const MERMAID_BLOCK_DEFAULT_WIDTH = 628;
 export const MINDMAP_BLOCK_DEFAULT_WIDTH = 628;
 

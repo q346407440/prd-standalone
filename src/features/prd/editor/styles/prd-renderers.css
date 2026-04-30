@@ -165,6 +165,10 @@
   border-radius: 8px;
   padding: 24px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  /* flex 子项默认 min-width:auto 会按「超宽 SVG 内容」撑满视口，内层 width:100% 过宽 → foreignObject 仍单行；限制白底框并允许收缩 */
+  min-width: 0;
+  max-width: min(90vw, 100%);
+  box-sizing: border-box;
 }
 
 .prd-lightbox-content__img {
@@ -175,13 +179,16 @@
 }
 
 .prd-lightbox-content__html {
-  width: fit-content;
-  max-width: 90vw;
+  /* 用满白底内容区，避免 width:fit-content 跟「整图固有几千 px 宽」走，换行与文档区宽度不一致 */
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .prd-lightbox-content__html svg {
   display: block;
-  max-width: 90vw;
+  width: 100%;
+  max-width: 100%;
   height: auto;
 }
 
@@ -332,7 +339,7 @@
 }
 
 /* 表格 cell 内的 mermaid：铺满 cell 宽度 */
-/* z-index：须高于同格 .prd-cell-element__actions（6）与表 .prd-table-selector-actions（80），
+/* z-index：须高于同格 .prd-cell-element__actions（6）；表格删列/删行为 body Portal（见 prd-constants PRD_TABLE_ROWCOL_SELECTOR_PORTAL_Z），
    否则「视图」下拉被格操作条 / 行列插入条挡住 */
 .prd-cell-mermaid-wrap {
   position: relative;
@@ -505,6 +512,31 @@
 .prd-mermaid-renderer__svg-canvas * {
   pointer-events: none;
   user-select: none;
+}
+
+/*
+ * Mermaid 流程图（htmlLabels: true）节点文字多在 foreignObject 内；库按 wrappingWidth 折行，
+ * 浏览器侧需 white-space/overflow-wrap，避免被方框裁切。
+ * 规则须同时作用在：文档内、Lightbox 放大、导出页放大——此前仅 .prd-mermaid-renderer__svg-canvas
+ * 命中，.prd-lightbox-content__html 下无样式，故放大时像「不换行/裁字」。
+ */
+:is(.prd-mermaid-renderer__svg-canvas, .prd-lightbox-content__html, .prd-export-lightbox__stage) foreignObject {
+  overflow: visible;
+}
+
+:is(.prd-mermaid-renderer__svg-canvas, .prd-lightbox-content__html, .prd-export-lightbox__stage) foreignObject div,
+:is(.prd-mermaid-renderer__svg-canvas, .prd-lightbox-content__html, .prd-export-lightbox__stage) foreignObject p,
+:is(.prd-mermaid-renderer__svg-canvas, .prd-lightbox-content__html, .prd-export-lightbox__stage) .markdown-node-label,
+:is(.prd-mermaid-renderer__svg-canvas, .prd-lightbox-content__html, .prd-export-lightbox__stage) .nodeLabel {
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* Lightbox 内会去掉 SVG 的 width/height 并 width:100%，根 svg 若 overflow:hidden 子层 foreignObject 易被裁；放宽一层 */
+.prd-lightbox-content__html svg,
+.prd-export-lightbox__stage svg {
+  overflow: visible;
 }
 
 .prd-mermaid-renderer__error {
@@ -712,8 +744,11 @@
 
 .prd-mindmap-renderer__chart-area {
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  width: 100%;
+  box-sizing: border-box;
   padding: 16px;
   min-height: 60px;
   overflow: auto;
@@ -723,8 +758,11 @@
 
 .prd-mindmap-renderer__svg-wrap {
   position: relative;
-  display: inline-flex;
-  justify-content: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
   min-height: 60px;
   max-width: 100%;
   margin: 0 auto;

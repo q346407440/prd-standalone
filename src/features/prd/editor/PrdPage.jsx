@@ -60,6 +60,7 @@ import {
   slugToMdPath,
   genId,
   diffRemovedPrdPaths,
+  stripInlineMarkdownForTocDisplay,
 } from './prd-utils.js';
 import { ActiveSlugProvider } from './active-slug-context.jsx';
 import {
@@ -1140,11 +1141,15 @@ export function PrdPage() {
   const tocItems = useMemo(() => (
     (blocks || [])
       .filter((block) => /^h[1-7]$/.test(block.type))
-      .map((block) => ({
-        id: block.id,
-        level: Number(block.type.slice(1)),
-        title: (block.content?.markdown || block.content?.text || '').trim() || '未命名标题',
-      }))
+      .map((block) => {
+        const raw = (block.content?.markdown || block.content?.text || '').trim();
+        const plain = stripInlineMarkdownForTocDisplay(raw);
+        return {
+          id: block.id,
+          level: Number(block.type.slice(1)),
+          title: plain || raw || '未命名标题',
+        };
+      })
   ), [blocks]);
 
   const registerBlockRef = useCallback((blockId, node) => {

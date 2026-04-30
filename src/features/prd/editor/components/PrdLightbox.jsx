@@ -5,6 +5,7 @@ import {
   LIGHTBOX_ZOOM_MAX,
   LIGHTBOX_ZOOM_PRESETS,
 } from '../prd-constants.js';
+import { adjustMermaidFlowchartNodeSizesForView } from './renderers/mermaid-lightbox-layout-fix.js';
 
 /** 超过该位移视为拖拽平移，松手时不关闭（仅松手关闭「纯点击」） */
 const LIGHTBOX_DRAG_THRESHOLD_PX = 5;
@@ -35,23 +36,37 @@ export function PrdLightbox({ imageSrc, htmlContent, onClose }) {
         svg.style.height = 'auto';
       }
     });
-    const raf = requestAnimationFrame(() => {
-      const rect = el.getBoundingClientRect();
-      const padX = 80;
-      const padY = 120;
-      const viewW = window.innerWidth - padX * 2;
-      const viewH = window.innerHeight - padY * 2;
-      const fit = Math.min(
-        viewW / rect.width,
-        viewH / rect.height,
-        allowFitUpscale ? LIGHTBOX_ZOOM_MAX : 1,
-      );
-      const rounded = Math.round(fit * 100) / 100;
-      fitScaleRef.current = rounded;
-      setScale(rounded);
+    let raf2Id = 0;
+    const raf1 = requestAnimationFrame(() => {
+      if (htmlContent) {
+        svgs.forEach((node) => {
+          if (node instanceof SVGSVGElement) {
+            adjustMermaidFlowchartNodeSizesForView(node);
+          }
+        });
+      }
+      // 节点拉高后再量白底尺寸，initial fit 与文档区更一致
+      raf2Id = requestAnimationFrame(() => {
+        const rect = el.getBoundingClientRect();
+        const padX = 80;
+        const padY = 120;
+        const viewW = window.innerWidth - padX * 2;
+        const viewH = window.innerHeight - padY * 2;
+        const fit = Math.min(
+          viewW / Math.max(1, rect.width),
+          viewH / Math.max(1, rect.height),
+          allowFitUpscale ? LIGHTBOX_ZOOM_MAX : 1,
+        );
+        const rounded = Math.round(fit * 100) / 100;
+        fitScaleRef.current = rounded;
+        setScale(rounded);
+      });
     });
-    return () => cancelAnimationFrame(raf);
-  }, [allowFitUpscale]);
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2Id) cancelAnimationFrame(raf2Id);
+    };
+  }, [allowFitUpscale, htmlContent]);
 
   const handleWheel = useCallback((e) => {
     e.preventDefault();

@@ -9,7 +9,7 @@ import {
   convertMermaidMindmapToMarkdown,
   estimateMermaidTextareaRows,
 } from './mermaid-renderer-utils.js';
-import { getMarkmapDeps } from './mindmap-renderer-utils.js';
+import { renderMindmapSvgForExport } from './mindmap-renderer-utils.js';
 
 export function MindmapRenderer({
   code,
@@ -29,25 +29,20 @@ export function MindmapRenderer({
   const [lightbox, setLightbox] = useState(false);
   const rootRef = useRef(null);
   const chartRef = useRef(null);
-  const svgRef = useRef(null);
-  const markmapRef = useRef(null);
   const textareaRef = useRef(null);
   const lineNumbersRef = useRef(null);
   const viewMenuRef = useRef(null);
   const renderTaskRef = useRef(0);
-
-  const destroyMarkmap = useCallback(() => {
-    if (!markmapRef.current) return;
-    try { markmapRef.current.destroy?.(); } catch { /* noop */ }
-    markmapRef.current = null;
-  }, []);
+  const onCodeChangeRef = useRef(onCodeChange);
+  useEffect(() => {
+    onCodeChangeRef.current = onCodeChange;
+  }, [onCodeChange]);
 
   useEffect(() => { setLocalViewMode(viewMode); }, [viewMode]);
 
   useEffect(() => {
     if (localViewMode !== 'chart') {
       setRendering(false);
-      destroyMarkmap();
       return;
     }
     let currentCode = (code || '').trim();
@@ -56,7 +51,7 @@ export function MindmapRenderer({
     const converted = convertMermaidMindmapToMarkdown(currentCode);
     if (converted !== null) {
       setRendering(false);
-      onCodeChange?.(converted);
+      onCodeChangeRef.current?.(converted);
       return;
     }
 
@@ -64,66 +59,26 @@ export function MindmapRenderer({
       setSvgHtml('');
       setRenderError('思维导图代码为空');
       setRendering(false);
-      destroyMarkmap();
       return;
     }
     let cancelled = false;
     setRendering(true);
     setRenderError('');
-    getMarkmapDeps().then(({ transformer, Markmap }) => {
+
+    renderMindmapSvgForExport(currentCode).then((result) => {
       if (cancelled || renderTaskRef.current !== renderTaskId) return;
-      try {
-        const { root } = transformer.transform(currentCode);
-        const svgEl = svgRef.current;
-        if (!svgEl) throw new Error('思维导图挂载节点未就绪');
-        const mmOptions = { autoFit: true, pan: false, zoom: false, duration: 0 };
-        if (markmapRef.current) {
-          markmapRef.current.setOptions(mmOptions);
-          markmapRef.current.setData(root);
-          markmapRef.current.fit();
-        } else {
-          markmapRef.current = Markmap.create(svgEl, mmOptions, root);
-        }
-        requestAnimationFrame(() => {
-          if (cancelled || renderTaskRef.current !== renderTaskId || !svgEl) return;
-          const g = svgEl.querySelector('g');
-          const clone = svgEl.cloneNode(true);
-          if (g) {
-            const bbox = g.getBBox();
-            const pad = 30;
-            clone.setAttribute('viewBox', `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`);
-            const cloneG = clone.querySelector('g');
-            if (cloneG) cloneG.setAttribute('transform', '');
-          }
-          clone.removeAttribute('width');
-          clone.removeAttribute('height');
-          clone.style.cssText = 'width:100%;height:auto;min-height:0';
-          setSvgHtml(clone.outerHTML);
-          setRenderError('');
-          setRendering(false);
-        });
-      } catch (err) {
-        if (!cancelled && renderTaskRef.current === renderTaskId) {
-          setSvgHtml('');
-          setRenderError(String(err?.message || err));
-          setRendering(false);
-        }
-      }
-    }).catch((err) => {
-      if (!cancelled && renderTaskRef.current === renderTaskId) {
+      if (result.error) {
         setSvgHtml('');
-        setRenderError(String(err?.message || err));
+        setRenderError(result.error);
         setRendering(false);
+        return;
       }
+      setSvgHtml(result.svgHtml || '');
+      setRenderError('');
+      setRendering(false);
     });
     return () => { cancelled = true; };
-  }, [code, localViewMode, onCodeChange, destroyMarkmap]);
-
-  useEffect(() => {
-    return () => {
-      destroyMarkmap();
-    };
-  }, [destroyMarkmap]);
+  }, [code, localViewMode]);
 
   useEffect(() => {
     if (!showViewMenu) return;
@@ -304,17 +259,6 @@ export function MindmapRenderer({
               emptyText="暂无思维导图内容"
               interactive={Boolean(svgHtml)}
             >
-              <div className="prd-mindmap-renderer__svg-hidden" aria-hidden="true">
-                <svg
-                  ref={svgRef}
-                  style={{
-                    width: '100%',
-                    minHeight: 200,
-                    pointerEvents: 'none',
-                    visibility: 'hidden',
-                  }}
-                />
-              </div>
               <div
                 className="prd-mindmap-renderer__svg-canvas"
                 aria-hidden={!svgHtml}
