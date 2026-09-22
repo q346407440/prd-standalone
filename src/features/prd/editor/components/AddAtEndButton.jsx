@@ -5,7 +5,7 @@ export function AddAtEndButton({ onAdd, activeInsertMenuOwnerId, openInsertMenu,
   const showMenu = activeInsertMenuOwnerId === ownerId;
 
   return (
-    <div className="prd-add-end">
+    <div className="prd-add-end" data-prd-no-block-select>
       <button
         className="prd-add-section-btn"
         onClick={() => {

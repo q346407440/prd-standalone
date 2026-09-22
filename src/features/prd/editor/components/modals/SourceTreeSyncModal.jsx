@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { pickLocalDirectoryPath } from '../../prd-api.js';
+import { MergeRequestUrlCopyField } from './MergeRequestUrlCopyField.jsx';
 import {
   buildDefaultCommitMessage,
   DEFAULT_SOURCE_TREE_SYNC_MODE,
@@ -190,7 +191,8 @@ export function SourceTreeSyncModal({
             ))}
           </div>
           <div className="prd-modal__hint">
-            同步时会直接覆盖目标目录下的 <code>{SOURCE_TREE_SYNC_MD_FILE_NAME}</code> 和 <code>{SOURCE_TREE_SYNC_ASSET_DIR_NAME}/</code>；push 失败不会回滚 commit，会把 git 原始报错返回给你。
+            同步时会直接覆盖目标目录下的 <code>{SOURCE_TREE_SYNC_MD_FILE_NAME}</code> 和 <code>{SOURCE_TREE_SYNC_ASSET_DIR_NAME}/</code>。
+            选择「同步 + commit + 开 MR」时，推送前会先 <code>git pull --rebase</code>，再 push 并创建/对齐 MR（目标 <code>develop</code>，不删源分支）；失败不会回滚 commit，会把 git 原始报错返回给你。
           </div>
         </div>
         {wantCommit ? (
@@ -242,6 +244,7 @@ export function SourceTreeSyncModal({
             </div>
           </div>
         ) : null}
+        <MergeRequestUrlCopyField url={sourceTreeProgress?.mergeRequestUrl || ''} />
         </div>
         <div className="prd-modal__actions">
           <button

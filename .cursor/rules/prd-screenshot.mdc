@@ -1,5 +1,5 @@
 ---
-description: PRD 设计列截图：优先 Chrome DevTools MCP、启用检测、67% 成图法与禁止项
+description: PRD 设计列截图：只用 Chrome DevTools MCP（user-chrome-devtools）、启用检测、67% 成图法与禁止项；禁止 user-playwright / Playwright MCP 入库截图
 globs: pages/**/*.md
 alwaysApply: false
 ---
@@ -17,8 +17,8 @@ alwaysApply: false
 ## 工具优先级（强制）
 
 1. **先执行启用检测**：在打开本机 Demo、查看页面、产出**设计列入库 PNG** 之前，检查 Cursor 是否已配置并启用 **Chrome DevTools MCP**（MCP server 名常见为 **`user-chrome-devtools`**，或以 Settings → Tools & MCP 列表为准；亦可查看 `mcps/user-chrome-devtools/tools/` 等目录下是否存在 `navigate_page`、`take_screenshot`、`evaluate_script` 等工具描述）。
-2. **若已配置且可用**：**固定使用 Chrome DevTools MCP** 完成导航、快照、**视口截图**、`evaluate_script` 等；**不得**将 **`cursor-ide-browser`** 或其它浏览器 MCP 作为首选。
-3. **仅当**未配置、未启用、连接失败，或用户当轮**明确要求**仅用某一浏览器工具时，再使用备选路径（如 Cursor 内置 Browser），且仍须遵守下文 **67%** 与 **视口 PNG + 按比例裁切** 规则。
+2. **若已配置且可用**：**固定使用 Chrome DevTools MCP** 完成导航、快照、**视口截图**、`evaluate_script` 等；**不得**将 **`cursor-ide-browser`**、**`user-playwright`** 或其它浏览器 MCP 作为截图首选。
+3. **仅当**未配置、未启用、连接失败（且 **profile 占用重试**仍失败）时：设计列标 **截图待补**；**禁止**改用 **`user-playwright`** / Playwright MCP 入库截图。核实 UI 结构可用 **cursor-ide-browser**，但**入库 PNG 仍须 DevTools**，拿不到就待补。
 
 ## Chrome DevTools MCP「连不上」：profile 占用
 
@@ -31,13 +31,14 @@ alwaysApply: false
    - macOS 示例：`pkill -f "user-data-dir=.*/chrome-devtools-mcp/chrome-profile"`
    - 或：`ps aux | grep chrome-devtools-mcp/chrome-profile`，对**主进程** `kill <PID>`（子进程通常会随主进程退出）。
 3. **重试** MCP：`list_pages`、`navigate_page` 等应恢复正常。
-4. **仍失败**：再考虑备选 **cursor-ide-browser**（若当前环境已启用），或 PRD 设计列 **截图待补**（可在对话或 README 中说明）；**仍禁止**为截图安装 Playwright（见下节）。
+4. **仍失败**：PRD 设计列 **截图待补**（可在对话中说明）；**禁止**改用 **`user-playwright`** 截图；**仍禁止**为截图安装 Playwright（见下节）。
 
 ## 禁止为截图安装额外自动化栈
 
 - **不要**为产出 PRD 设计列截图而 **`npm install` / 引入 Playwright、Puppeteer、Selenium** 等无头浏览器依赖；**不要**在业务仓或 `prd-standalone` 内新增上述依赖「只为截一张图」。
-- 成图路径**仅限**：**Chrome DevTools MCP**（及 SKILL 允许的备选 **cursor-ide-browser**）+ 本机 **`sips` / Pillow 等裁切**（无头浏览器栈以外的像素处理可接受）。
-- 若 MCP 暂时不可用：**宁可**在设计列注明 **截图待补**（对话或 README 说明如何补），也**不要**用 Playwright 等绕过。
+- **禁止**用已配置的 **`user-playwright`**（或其它 **Playwright** MCP）产出 **colocated** 入库 PNG——即使用户当轮提到 Playwright，入库截图仍只走 **`user-chrome-devtools`**。
+- 成图路径**仅限**：**Chrome DevTools MCP** + 本机 **`sips` / Pillow 等裁切**（无头浏览器栈以外的像素处理可接受）。
+- 若 MCP 暂时不可用：**宁可**在设计列注明 **截图待补**，也**不要**为绕过不可用而 **`npm install`** 无头栈、自建临时爬虫，或改用 Playwright MCP。
 
 ## 页缩放（强制 67%）
 

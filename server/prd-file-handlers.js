@@ -19,6 +19,38 @@ function runGit(args, cwd) {
   });
 }
 
+/** 同步 push 时默认创建/对齐 MR：目标 develop，不删源分支。 */
+const DEFAULT_MR_PUSH_OPTIONS = [
+  'merge_request.create',
+  'merge_request.target=develop',
+  'merge_request.remove_source_branch=false',
+];
+
+function appendMergeRequestPushOptions(pushArgs) {
+  const args = [...pushArgs];
+  for (const option of DEFAULT_MR_PUSH_OPTIONS) {
+    args.push('-o', option);
+  }
+  return args;
+}
+
+function extractMergeRequestUrl(text) {
+  const combined = String(text || '');
+  const match = combined.match(/https?:\/\/[^\s]+\/(?:-\/)?merge_requests\/\d+/i);
+  if (!match) return '';
+  return match[0].replace(/[)\].,;:'">]+$/g, '');
+}
+
+function looksLikeUnsupportedPushOption(stderr, stdout) {
+  const text = `${stderr || ''}\n${stdout || ''}`.toLowerCase();
+  return (
+    text.includes('push option')
+    || text.includes('unknown option')
+    || text.includes('invalid push option')
+    || text.includes('push options are not accepted')
+  );
+}
+
 function runCommand(command, args, cwd = undefined) {
   return new Promise((resolve) => {
     const child = spawn(command, args, { cwd, env: globalThis.process?.env || {} });
@@ -170,6 +202,58 @@ async function inspectRemoteSyncState(repoRoot) {
     aheadCount,
     behindCount,
   };
+}
+
+/**
+ * 推送前先与远端对齐（fetch + rebase），减少 non-fast-forward。
+ * 使用 --autostash：仓库内若有与本同步无关的未提交改动，也能尽量完成拉取。
+ * - 已设置 upstream：`git pull --rebase --autostash`
+ * - 未设置 upstream：`git fetch origin` 后若存在 origin/<branch> 则 `git rebase --autostash origin/<branch>`
+ */
+async function gitPullRebaseBeforePush(repoRoot, branch, hasUpstream) {
+  const fail = (result, suffix) => ({
+    ok: false,
+    detail: trimGitMessage(result.stderr || result.stdout, 'git 报错'),
+    suffix,
+  });
+
+  if (hasUpstream) {
+    const pullRes = await runGit(['pull', '--rebase', '--autostash'], repoRoot);
+    if (pullRes.code !== 0) {
+      await runGit(['rebase', '--abort'], repoRoot);
+      return fail(
+        pullRes,
+        '推送前的 git pull --rebase 失败；若有冲突或未提交的改动阻碍合并，请在 SourceTree 中处理后再同步。',
+      );
+    }
+    return { ok: true };
+  }
+
+  const fetchRes = await runGit(['fetch', 'origin'], repoRoot);
+  if (fetchRes.code !== 0) {
+    return fail(
+      fetchRes,
+      'git fetch 失败，无法与远端对齐后再推送。',
+    );
+  }
+
+  const remoteRefRes = await runGit(
+    ['rev-parse', '--verify', `refs/remotes/origin/${branch}`],
+    repoRoot,
+  );
+  if (remoteRefRes.code !== 0) {
+    return { ok: true, skipped: 'no-remote-branch' };
+  }
+
+  const rebaseRes = await runGit(['rebase', '--autostash', `origin/${branch}`], repoRoot);
+  if (rebaseRes.code !== 0) {
+    await runGit(['rebase', '--abort'], repoRoot);
+    return fail(
+      rebaseRes,
+      `推送前 rebase 到 origin/${branch} 失败；若有冲突请在 SourceTree 中处理后再同步。`,
+    );
+  }
+  return { ok: true };
 }
 
 function buildNoChangeMessage(syncRoot, remoteState) {
@@ -1194,7 +1278,7 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
             const hashRes = await runGit(['rev-parse', '--short', 'HEAD'], repoRoot);
             if (hashRes.code === 0) gitResult.commitHash = hashRes.stdout.trim();
 
-            // 6) push（可选）
+            // 6) 推送前先 pull --rebase 对齐远端，再 push
             if (wantPush) {
               gitResult.attempted = 'commit-and-push';
               const branchRes = await runGit(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot);
@@ -1204,8 +1288,32 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
                 repoRoot,
               );
               const hasUpstream = upstreamRes.code === 0;
-              const pushArgs = hasUpstream ? ['push'] : ['push', '-u', 'origin', branch];
-              const pushRes = await runGit(pushArgs, repoRoot);
+
+              const pullRb = await gitPullRebaseBeforePush(repoRoot, branch, hasUpstream);
+              if (!pullRb.ok) {
+                res.statusCode = 200;
+                res.setHeader('Content-Type', 'application/json; charset=utf-8');
+                return res.end(JSON.stringify({
+                  ok: true, targetDir: resolvedTarget, syncRoot,
+                  writtenCount, deletedCount: deletedPaths.length, deletedPaths,
+                  git: {
+                    ...gitResult,
+                    error: `commit 成功（${gitResult.commitHash || ''}），但在推送前同步远端失败：${pullRb.detail}。${pullRb.suffix}`,
+                  },
+                }));
+              }
+              if (!pullRb.skipped) {
+                gitResult.pullRebased = true;
+              }
+
+              const basePushArgs = hasUpstream ? ['push'] : ['push', '-u', 'origin', branch];
+              const pushArgsWithMr = appendMergeRequestPushOptions(basePushArgs);
+              let pushRes = await runGit(pushArgsWithMr, repoRoot);
+              // 非 GitLab 或不支持 push options 时，回退为普通 push，避免整次同步失败。
+              if (pushRes.code !== 0 && looksLikeUnsupportedPushOption(pushRes.stderr, pushRes.stdout)) {
+                pushRes = await runGit(basePushArgs, repoRoot);
+                gitResult.mergeRequestPushOptionsSkipped = true;
+              }
               if (pushRes.code !== 0) {
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -1214,12 +1322,21 @@ export function createFileHandlers({ rootDir, pagesDir, activeFile, annotationAs
                   writtenCount, deletedCount: deletedPaths.length, deletedPaths,
                   git: {
                     ...gitResult,
-                    error: `commit 成功（${gitResult.commitHash || ''}），但 git push 失败：${pushRes.stderr || pushRes.stdout}。GitLab 上这个分支有新的内容，你本地还不是最新。请先通过 SourceTree 拉取最新内容；如果有冲突，先处理冲突后再重新推送。`,
+                    error: `commit 成功（${gitResult.commitHash || ''}），但 git push 失败：${pushRes.stderr || pushRes.stdout}。请查看报错内容；若仍与远端不同步，可在 SourceTree 中拉取后再推送。`,
                   },
                 }));
               }
               gitResult.pushed = true;
               gitResult.branch = branch;
+              const mergeRequestUrl = extractMergeRequestUrl(`${pushRes.stderr}\n${pushRes.stdout}`);
+              if (mergeRequestUrl) {
+                gitResult.mergeRequestUrl = mergeRequestUrl;
+              }
+              gitResult.mergeRequest = {
+                targetBranch: 'develop',
+                removeSourceBranch: false,
+                url: mergeRequestUrl || undefined,
+              };
             }
           }
 

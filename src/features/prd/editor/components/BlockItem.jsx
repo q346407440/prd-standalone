@@ -32,11 +32,21 @@ export const BlockItem = memo(function BlockItem({
   onResetOrderedStartBlock,
   mermaidMeta, onMermaidMetaChange,
   mindmapMeta, onMindmapMetaChange,
-  onCopyMdCursorRef,
+  onCopyPathSnippet,
   maxFirstLineIndentLevel = 0,
 }) {
   const [insertMenuPosition, setInsertMenuPosition] = useState(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  /** 多行 paragraph 内当前行（0-based），供「复制路径与片段」落到当前行 */
+  const paragraphActiveRowForCopyRef = useRef(0);
+  const onParagraphActiveRowForCopyChange = useCallback((idx) => {
+    paragraphActiveRowForCopyRef.current = idx == null ? 0 : idx;
+  }, []);
+
+  useEffect(() => {
+    paragraphActiveRowForCopyRef.current = 0;
+  }, [block.id]);
+
   const suppressActionbarUntilLeaveRef = useRef(false);
   const rootRef = useRef(null);
   /** 選區在「其他 block」時，不應開啟本 block 的操作欄 */
@@ -220,6 +230,7 @@ export const BlockItem = memo(function BlockItem({
             canMoveDown={canMoveDown}
             onResetOrderedStart={onResetOrderedStartBlock ? (newMd, startNum) => onResetOrderedStartBlock(block.id, newMd, startNum) : undefined}
             maxFirstLineIndentLevel={maxFirstLineIndentLevel}
+            onParagraphActiveRowForCopyChange={onParagraphActiveRowForCopyChange}
           />
         );
       case 'divider':
@@ -267,7 +278,7 @@ export const BlockItem = memo(function BlockItem({
             mindmapMeta={mindmapMeta}
             onMindmapMetaChange={onMindmapMetaChange}
             prdAssetCacheBust={prdAssetCacheBust}
-            onCopyMdCursorRef={onCopyMdCursorRef}
+            onCopyPathSnippet={onCopyPathSnippet}
           />
         );
       default:
@@ -281,6 +292,9 @@ export const BlockItem = memo(function BlockItem({
     && (
       !suppressActionbarUntilLeaveRef.current
       || isTextUiAnchoredOnThisBlock
+      // 插入块流程会清 globalSelection；suppress 仍为 true 时须保持操作栏可点
+      || activeInsertMenuOwnerId === insertMenuOwnerId
+      || insertMenuPosition != null
     );
   /* eslint-enable react-hooks/refs */
 
@@ -328,17 +342,24 @@ export const BlockItem = memo(function BlockItem({
             if (next && rootRef.current?.contains(next)) return;
             if (next && typeof next.closest === 'function' && next.closest('.prd-tiptap-bubble-menu')) return;
           }
+          if (showInsertMenu != null && next instanceof Node && typeof next.closest === 'function' && next.closest('.prd-add-menu')) {
+            return;
+          }
           closeActionbarWithDelay();
         }}
       >
-        {onCopyMdCursorRef ? (
+        {onCopyPathSnippet ? (
           <button
             type="button"
             className="prd-action-btn prd-block-actionbar__btn prd-action-btn--primary"
-            title="复制 @文件:行号，供粘贴到 Cursor"
-            onClick={() => onCopyMdCursorRef({ blockId: block.id, cellPath: null })}
+            title="复制 @路径 与当前正文片段，供粘贴到 Cursor 等工具"
+            onClick={() => onCopyPathSnippet({
+              blockId: block.id,
+              cellPath: null,
+              contentBodyLineOffset: block.type === 'paragraph' ? paragraphActiveRowForCopyRef.current : 0,
+            })}
           >
-            复制 MD 行号
+            复制路径与片段
           </button>
         ) : null}
         <button
@@ -350,6 +371,8 @@ export const BlockItem = memo(function BlockItem({
         <div
           className="prd-block-actionbar__more"
           onMouseEnter={() => {
+            // 更多菜单卸载后指针仍在热区内会再触发 mouseenter，勿清空已打开的「插入块」态。
+            if (insertMenuPosition != null) return;
             setShowMoreMenu(true);
             setInsertMenuPosition(null);
             closeInsertMenu(insertMenuOwnerId);
@@ -368,6 +391,7 @@ export const BlockItem = memo(function BlockItem({
             aria-haspopup="menu"
             aria-expanded={showMoreMenu}
             onFocus={() => {
+              if (insertMenuPosition != null) return;
               setShowMoreMenu(true);
               setInsertMenuPosition(null);
               closeInsertMenu(insertMenuOwnerId);
@@ -477,6 +501,6 @@ export const BlockItem = memo(function BlockItem({
   const prevMenu = prev.activeInsertMenuOwnerId === prev.block.id;
   const nextMenu = next.activeInsertMenuOwnerId === next.block.id;
   if (prevMenu !== nextMenu) return false;
-  if (prev.onCopyMdCursorRef !== next.onCopyMdCursorRef) return false;
+  if (prev.onCopyPathSnippet !== next.onCopyPathSnippet) return false;
   return true;
 });

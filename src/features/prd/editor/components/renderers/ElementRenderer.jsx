@@ -1,9 +1,11 @@
 import { memo } from 'react';
 import { TiptapMarkdownEditor } from '../../TiptapMarkdownEditor.jsx';
+import { ParagraphLinesEditor } from '../blocks/ParagraphLinesEditor.jsx';
 import { MermaidRenderer } from './MermaidRenderer.jsx';
 import { MindmapRenderer } from './MindmapRenderer.jsx';
 import { ImageRenderer } from './ImageRenderer.jsx';
 import { DEFAULT_DIAGRAM_VIEW_MODE } from '../../prd-constants.js';
+import { markdownNeedsLineSplitEditing } from '../../prd-list-utils.js';
 
 export const ElementRenderer = memo(function ElementRenderer({
   element,
@@ -11,6 +13,8 @@ export const ElementRenderer = memo(function ElementRenderer({
   onDelete,
   blockId,
   cellPath = null,
+  /** 表格格内多行拆分编辑器需要；主文档单串路径可不传 */
+  globalSelection,
   isPreviewSelected = false,
   isImageSelected = false,
   isDiagramSelected = false,
@@ -39,6 +43,26 @@ export const ElementRenderer = memo(function ElementRenderer({
 }) {
   if (!element || element.type === 'text') {
     const isInCell = cellPath != null;
+    const mdText = element?.markdown ?? '';
+    if (isInCell && markdownNeedsLineSplitEditing(mdText)) {
+      return (
+        <ParagraphLinesEditor
+          markdown={mdText}
+          onSave={(newMd) => onUpdate({ type: 'text', markdown: newMd })}
+          blockId={blockId}
+          cellPath={cellPath}
+          globalSelection={globalSelection}
+          setGlobalSelection={setGlobalSelection}
+          onBackspaceEmpty={onBackspaceEmpty}
+          onBackspaceMerge={onBackspaceMerge}
+          onPasteImageAsBlock={onPasteImageAsBlock}
+          onEditingFinished={onEditingFinished}
+          placeholder={placeholder || '点击此处填写内容（支持 Markdown）'}
+          onResetOrderedStart={onResetOrderedStart}
+          maxFirstLineIndentLevel={maxIndentLevel}
+        />
+      );
+    }
     return (
       <TiptapMarkdownEditor
         blockId={blockId}

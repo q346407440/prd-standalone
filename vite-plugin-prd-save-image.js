@@ -36,6 +36,11 @@ function attachMiddleware(server, liveSync, docHandlers, fileHandlers) {
   const feishuSyncApi = createFeishuSyncApi({
     rootDir: __dirname,
     publicDir: path.join(__dirname, 'public'),
+    afterPullComplete: () => {
+      try {
+        liveSync.rewatchActiveDoc();
+      } catch { /* ignore */ }
+    },
   });
 
   server.middlewares.use((req, res, next) => {

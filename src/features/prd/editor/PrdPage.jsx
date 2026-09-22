@@ -9,11 +9,13 @@ import './styles/prd-overview.css';
 import './styles/prd-page-edit.css';
 import { parsePrd } from './prd-parser';
 import { serializePrd } from './prd-writer';
+import { normalizePrdMdForLoad } from './prd-md-normalize.js';
 import { buildChapterIndex } from './prd-chapter-anchor.js';
 import {
-  computePrdMdCursorLineOneBased,
-  formatPrdCursorMdRef,
+  extractPrdSnippetForCopy,
+  formatPrdCopyPathAndSnippet,
 } from './prd-md-cursor-ref.js';
+import { PrdCopyPathSnippetContext } from './prd-copy-path-snippet-context.jsx';
 import { emitPrdToast, PRD_TOAST_EVENT } from './prd-toast.js';
 import {
   buildStandalonePrdExport,
@@ -90,9 +92,11 @@ import {
 import {
   makeDefaultBlock,
   cloneBlockWithNewId,
+  globalSelectionForDuplicatedBlock,
   makePrdSectionTemplateBlocks,
   normalizeLegacyBlocks,
   expandParagraphBlocksOnBlankLines,
+  reconcileTightJoinPrevForParagraphRuns,
   getBlockMd,
   setBlockMd,
   isMainDocTextListBlock,
@@ -187,6 +191,7 @@ export function PrdPage() {
   const persistDebounceRef = useRef(null);
   const persistRunningRef = useRef(false);
   const persistQueuedBlocksRef = useRef(null);
+  const runPersistAsyncRef = useRef(null);
   const hasPendingLocalChangesRef = useRef(false);
   const hasExternalMdConflictRef = useRef(false);
   const viewportPersistTimerRef = useRef(null);
@@ -638,6 +643,7 @@ export function PrdPage() {
     } else {
       pendingViewportRestoreRef.current = null;
     }
+    const normalizedMd = normalizePrdMdForLoad(mdText);
     lastSavedMdRef.current = mdText;
     hasPendingLocalChangesRef.current = false;
     hasExternalMdConflictRef.current = false;
@@ -645,7 +651,13 @@ export function PrdPage() {
     const parsedBlocks = expandParagraphBlocksOnBlankLines(
       normalizeLegacyBlocks(parsePrd(mdText)),
     );
-    setBlocks(reconcileLoadedBlockIds(blocksRef.current, parsedBlocks));
+    const reconciled = reconcileLoadedBlockIds(blocksRef.current, parsedBlocks);
+    setBlocks(reconciled);
+    if (normalizedMd !== mdText) {
+      queueMicrotask(() => {
+        runPersistAsyncRef.current?.(reconciled);
+      });
+    }
   }, []);
 
   const refreshPrdMdFromDisk = useCallback(async ({ showSyncedToast = false } = {}) => {
@@ -734,6 +746,7 @@ export function PrdPage() {
       persistRunningRef.current = false;
     }
   }, [showToast]);
+  runPersistAsyncRef.current = runPersistAsync;
 
   const schedulePersist = useCallback(() => {
     hasPendingLocalChangesRef.current = true;
@@ -940,7 +953,7 @@ export function PrdPage() {
         const idx = next.findIndex((b) => b.id === updatedBlock.id);
         if (idx >= 0) next = maybeRenumberMainDocTextListAt(next, idx);
       }
-      return next;
+      return reconcileTightJoinPrevForParagraphRuns(next);
     });
     schedulePersist();
   }, [schedulePersist]);
@@ -960,7 +973,7 @@ export function PrdPage() {
       let next = prev.filter((b) => b.id !== removedId);
       const neighborIdx = Math.min(idx, next.length - 1);
       if (neighborIdx >= 0) next = maybeRenumberMainDocTextListAt(next, neighborIdx);
-      return next;
+      return reconcileTightJoinPrevForParagraphRuns(next);
     });
     setDeleteTarget(null);
     setGlobalSelection((sel) => (sel?.blockId === removedId ? null : sel));
@@ -980,25 +993,35 @@ export function PrdPage() {
     setBlocks((prev) => {
       const idx = prev.findIndex((b) => b.id === afterId);
       const next = [...prev.slice(0, idx + 1), ...newBlocks, ...prev.slice(idx + 1)];
-      return next;
+      return reconcileTightJoinPrevForParagraphRuns(next);
     });
     schedulePersist();
   }, [schedulePersist]);
 
   const handleDuplicateBlock = useCallback((blockId) => {
     let duplicatedBlockId = null;
+    let duplicated = null;
     setBlocks((prev) => {
       const idx = prev.findIndex((b) => b.id === blockId);
       if (idx < 0) return prev;
-      const duplicated = cloneBlockWithNewId(prev[idx]);
-      duplicatedBlockId = duplicated.id;
-      let next = [...prev.slice(0, idx + 1), duplicated, ...prev.slice(idx + 1)];
+      const dup = cloneBlockWithNewId(prev[idx]);
+      duplicatedBlockId = dup.id;
+      duplicated = dup;
+      let next = [...prev.slice(0, idx + 1), dup, ...prev.slice(idx + 1)];
       next = maybeRenumberMainDocTextListAt(next, idx + 1);
-      return next;
+      return reconcileTightJoinPrevForParagraphRuns(next);
     });
-    if (duplicatedBlockId) setFocusBlockId(duplicatedBlockId);
+    if (duplicatedBlockId && duplicated) {
+      const sel = globalSelectionForDuplicatedBlock(duplicated);
+      if (sel) setGlobalSelectionWithActionbar(sel);
+      else {
+        setGlobalSelection(null);
+        setActiveActionBlockId(duplicatedBlockId);
+      }
+      setFocusBlockId(duplicatedBlockId);
+    }
     schedulePersist();
-  }, [schedulePersist]);
+  }, [schedulePersist, setGlobalSelectionWithActionbar, setGlobalSelection, setFocusBlockId, setActiveActionBlockId]);
 
   // 在某 Block 前插入新 Block
   const handleInsertBefore = useCallback((beforeId, type) => {
@@ -1007,7 +1030,7 @@ export function PrdPage() {
       const idx = prev.findIndex((b) => b.id === beforeId);
       const insertAt = Math.max(0, idx);
       const next = [...prev.slice(0, insertAt), ...newBlocks, ...prev.slice(insertAt)];
-      return next;
+      return reconcileTightJoinPrevForParagraphRuns(next);
     });
     schedulePersist();
   }, [schedulePersist]);
@@ -1015,7 +1038,7 @@ export function PrdPage() {
   // 在頁面末尾插入新 Block
   const handleAddAtEnd = useCallback((type) => {
     const newBlocks = type === 'prd-section-template' ? makePrdSectionTemplateBlocks() : [makeDefaultBlock(type)];
-    setBlocks((prev) => [...prev, ...newBlocks]);
+    setBlocks((prev) => reconcileTightJoinPrevForParagraphRuns([...prev, ...newBlocks]));
     schedulePersist();
   }, [schedulePersist]);
 
@@ -1043,11 +1066,13 @@ export function PrdPage() {
       }
       next.splice(idx + 1, 0, newBlock);
       next = renumberMainDocTextListAt(next, idx + 1);
-      return next;
+      return reconcileTightJoinPrevForParagraphRuns(next);
     });
     setFocusBlockId(newBlock.id);
+    const sel = globalSelectionForDuplicatedBlock(newBlock);
+    if (sel) setGlobalSelectionWithActionbar(sel);
     schedulePersist();
-  }, [clearAutoCreatedOrderedSeed, schedulePersist]);
+  }, [clearAutoCreatedOrderedSeed, schedulePersist, setGlobalSelectionWithActionbar]);
 
   // 在 afterId block 後插入 image block（段落貼圖時觸發）
   const handlePasteImageAsBlock = useCallback((afterId, imageSrc) => {
@@ -1055,7 +1080,7 @@ export function PrdPage() {
     setBlocks((prev) => {
       const idx = prev.findIndex((b) => b.id === afterId);
       const next = [...prev.slice(0, idx + 1), newBlock, ...prev.slice(idx + 1)];
-      return next;
+      return reconcileTightJoinPrevForParagraphRuns(next);
     });
     schedulePersist();
   }, [schedulePersist]);
@@ -1069,7 +1094,7 @@ export function PrdPage() {
       let next = prev.filter((b) => b.id !== id);
       const neighborIdx = Math.min(idx, next.length - 1);
       if (neighborIdx >= 0) next = maybeRenumberMainDocTextListAt(next, neighborIdx);
-      return next;
+      return reconcileTightJoinPrevForParagraphRuns(next);
     });
     setGlobalSelection((sel) => (sel?.blockId === id ? null : sel));
     clearActionbarState();
@@ -1091,9 +1116,18 @@ export function PrdPage() {
       const prevMd = getBlockMd(prevBlock);
       const merged = prevMd ? prevMd + currentMd : currentMd;
       targetId = prevBlock.id;
-      return prev
-        .map((b, i) => (i === idx - 1 ? setBlockMd(b, merged) : b))
+      const mergedList = prev
+        .map((b, i) => {
+          if (i !== idx - 1) return b;
+          const mergedBlock = setBlockMd(b, merged);
+          if (mergedBlock.content?.type !== 'text') return mergedBlock;
+          const { tightJoinPrev, ...rest } = mergedBlock.content;
+          return tightJoinPrev !== undefined
+            ? { ...mergedBlock, content: rest }
+            : mergedBlock;
+        })
         .filter((b) => b.id !== id);
+      return reconcileTightJoinPrevForParagraphRuns(mergedList);
     });
     if (targetId) setFocusBlockId(targetId);
     schedulePersist();
@@ -1107,7 +1141,7 @@ export function PrdPage() {
       const updatedBlock = { ...block, content: { ...block.content, markdown: newMd } };
       let next = prev.map((b, i) => i === idx ? updatedBlock : b);
       next = renumberMainDocTextListFrom(next, idx, startNum);
-      return next;
+      return reconcileTightJoinPrevForParagraphRuns(next);
     });
     schedulePersist();
   }, [schedulePersist]);
@@ -1122,7 +1156,9 @@ export function PrdPage() {
       if (idx <= 0) return prev;
       const next = [...prev];
       [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-      return renumberAroundIndex(renumberAroundIndex(next, idx - 1), idx);
+      return reconcileTightJoinPrevForParagraphRuns(
+        renumberAroundIndex(renumberAroundIndex(next, idx - 1), idx),
+      );
     });
     schedulePersist();
   }, [schedulePersist]);
@@ -1133,7 +1169,9 @@ export function PrdPage() {
       if (idx < 0 || idx >= prev.length - 1) return prev;
       const next = [...prev];
       [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-      return renumberAroundIndex(renumberAroundIndex(next, idx), idx + 1);
+      return reconcileTightJoinPrevForParagraphRuns(
+        renumberAroundIndex(renumberAroundIndex(next, idx), idx + 1),
+      );
     });
     schedulePersist();
   }, [schedulePersist]);
@@ -1557,20 +1595,24 @@ export function PrdPage() {
         return { ok: true, message, syncRoot: syncRootLabel, git };
       }
       if (git.pushed) {
-        const message = `已同步并 push 成功（${git.commitHash || ''} → ${git.branch || ''}）`;
+        const mrUrl = git.mergeRequestUrl || git.mergeRequest?.url || '';
+        const message = mrUrl
+          ? `已同步并开 MR（${git.commitHash || ''} → ${git.branch || ''}）`
+          : `已同步并 push 成功（${git.commitHash || ''} → ${git.branch || ''}）`;
         onProgress?.({
           status: 'succeeded',
           phase: 'done',
           percent: 100,
           message,
+          mergeRequestUrl: mrUrl || undefined,
         });
         if (!silent) {
           emitPrdToast(
-            message,
-            { id: 'prd-sync-sourcetree', tone: 'success', duration: 3600 },
+            mrUrl ? `${message}；可在弹窗内复制 MR 链接` : message,
+            { id: 'prd-sync-sourcetree', tone: 'success', duration: mrUrl ? 5000 : 3600 },
           );
         }
-        return { ok: true, message, syncRoot: syncRootLabel, git };
+        return { ok: true, message, syncRoot: syncRootLabel, git, mergeRequestUrl: mrUrl || undefined };
       }
       if (git.committed) {
         const message = `已同步并 commit（${git.commitHash || ''}），请到 SourceTree 中推送`;
@@ -1715,20 +1757,24 @@ export function PrdPage() {
       }
       if (git.pushed) {
         const sourceName = sourceLabel || currentTitle || '原型 HTML';
-        const message = `已同步 ${sourceName} 并 push 成功（${git.commitHash || ''} → ${git.branch || ''}）`;
+        const mrUrl = git.mergeRequestUrl || git.mergeRequest?.url || '';
+        const message = mrUrl
+          ? `已同步 ${sourceName} 并开 MR（${git.commitHash || ''} → ${git.branch || ''}）`
+          : `已同步 ${sourceName} 并 push 成功（${git.commitHash || ''} → ${git.branch || ''}）`;
         onProgress?.({
           status: 'succeeded',
           phase: 'done',
           percent: 100,
           message,
+          mergeRequestUrl: mrUrl || undefined,
         });
         if (!silent) {
           emitPrdToast(
-            message,
-            { id: 'prd-sync-sourcetree', tone: 'success', duration: 3600 },
+            mrUrl ? `${message}；可在弹窗内复制 MR 链接` : message,
+            { id: 'prd-sync-sourcetree', tone: 'success', duration: mrUrl ? 5000 : 3600 },
           );
         }
-        return { ok: true, message, syncRoot: syncRootLabel, git };
+        return { ok: true, message, syncRoot: syncRootLabel, git, mergeRequestUrl: mrUrl || undefined };
       }
       if (git.committed) {
         const message = `已同步原型 HTML 并 commit（${git.commitHash || ''}），请到 SourceTree 中推送`;
@@ -1781,33 +1827,23 @@ export function PrdPage() {
     }
   }, [isSyncingSourceTree]);
 
-  const COPY_MD_CURSOR_TOAST =
-    '已复制当前位置的 MD 行号（@文件:行号）。在 Cursor 输入框粘贴后即可引用该处并提问。';
+  const COPY_PATH_SNIPPET_TOAST =
+    '已复制文档路径与当前片段。粘贴到 Cursor 等工具后，可按路径打开文件、按正文搜索定位。';
+  const COPY_PATH_ONLY_TOAST =
+    '已复制文档路径（该处暂无可复制正文片段）。';
 
-  const handleCopyMdCursorRef = useCallback(({ blockId, cellPath }) => {
-    const list = blocksRef.current;
-    if (!list?.length) {
-      emitPrdToast('文档未就绪', { tone: 'warning' });
-      return;
-    }
-    // 未保存改動時以序列化結果為準；與磁碟一致時用 lastSavedMd，避免表格格間空行等與 serialize 不一致導致 @行號 偏一行
-    const mdForLine =
-      hasPendingLocalChangesRef.current || persistRunningRef.current
-        ? serializePrd(list)
-        : lastSavedMdRef.current;
-    const line = computePrdMdCursorLineOneBased(list, blockId, cellPath ?? null, mdForLine);
-    if (line == null || line < 1) {
-      emitPrdToast('暂时无法计算该内容在 MD 中的行号', { tone: 'warning' });
-      return;
-    }
+  const performCopyPathAndSnippet = useCallback((snippet) => {
     const mdPath = activeMdPathRef.current || '';
     if (!mdPath) {
       emitPrdToast('缺少文档路径', { tone: 'warning' });
       return;
     }
-    const text = formatPrdCursorMdRef(mdPath, line, PRD_CURSOR_REF_REPO_FOLDER);
+    const text = formatPrdCopyPathAndSnippet(mdPath, PRD_CURSOR_REF_REPO_FOLDER, snippet);
     const finishOk = () => {
-      emitPrdToast(COPY_MD_CURSOR_TOAST, { duration: 4200 });
+      emitPrdToast(
+        String(snippet || '').trim() ? COPY_PATH_SNIPPET_TOAST : COPY_PATH_ONLY_TOAST,
+        { duration: 4200 },
+      );
     };
     if (navigator.clipboard?.writeText) {
       void navigator.clipboard.writeText(text).then(finishOk).catch(() => {
@@ -1841,6 +1877,23 @@ export function PrdPage() {
       emitPrdToast('复制失败，请检查浏览器权限', { tone: 'error' });
     }
   }, []);
+
+  const handleCopyPathSnippet = useCallback(({ blockId, cellPath, contentBodyLineOffset = 0 }) => {
+    const list = blocksRef.current;
+    if (!list?.length) {
+      emitPrdToast('文档未就绪', { tone: 'warning' });
+      return;
+    }
+    const snippet = extractPrdSnippetForCopy(list, blockId, cellPath ?? null, {
+      contentBodyLineOffset,
+    });
+    performCopyPathAndSnippet(snippet);
+  }, [performCopyPathAndSnippet]);
+
+  const copyPathSnippetApi = useMemo(
+    () => ({ copyPathAndSnippet: performCopyPathAndSnippet }),
+    [performCopyPathAndSnippet],
+  );
 
   const blockUiState = useMemo(() => ({
     activeActionBlockId,
@@ -1929,7 +1982,7 @@ export function PrdPage() {
     onBackspaceMergeBlock: handleBackspaceMerge,
     onPasteImageAsBlockBlock: handlePasteImageAsBlock,
     onAddAtEnd: handleAddAtEnd,
-    onCopyMdCursorRef: handleCopyMdCursorRef,
+    onCopyPathSnippet: handleCopyPathSnippet,
   }), [
     handleUpdate,
     handleDeleteRequest,
@@ -1943,7 +1996,7 @@ export function PrdPage() {
     handleBackspaceMerge,
     handlePasteImageAsBlock,
     handleAddAtEnd,
-    handleCopyMdCursorRef,
+    handleCopyPathSnippet,
   ]);
 
   // ── 渲染 ────────────────────────────────────────────────────────────────────
@@ -2014,6 +2067,7 @@ export function PrdPage() {
 
   return (
     <ActiveSlugProvider value={activeSlug}>
+    <PrdCopyPathSnippetContext.Provider value={copyPathSnippetApi}>
     <div className="prd-page">
         <ToastViewport toasts={toasts} />
 
@@ -2135,6 +2189,7 @@ export function PrdPage() {
           </Suspense>
         )}
       </div>
+    </PrdCopyPathSnippetContext.Provider>
     </ActiveSlugProvider>
   );
 }

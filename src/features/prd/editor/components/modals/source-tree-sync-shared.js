@@ -9,8 +9,8 @@ export const PROTOTYPE_HTML_SYNC_ASSET_DIR_NAME = 'index-assets';
 export const MODE_OPTIONS = [
   {
     value: 'commit-and-push',
-    label: '同步 + 自动 commit + push',
-    desc: '推荐，直接推到远端',
+    label: '同步 + commit + 开 MR',
+    desc: '推荐：拉齐远端后 push，并创建/对齐到 develop 的 MR',
   },
   {
     value: 'commit',

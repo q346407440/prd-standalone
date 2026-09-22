@@ -1,19 +1,6 @@
 import { ElementRenderer } from '../renderers/ElementRenderer.jsx';
 import { ParagraphLinesEditor } from './ParagraphLinesEditor.jsx';
-
-/**
- * 判断段落 block 的 markdown 是否需要走「多行拆分」编辑路径：
- * - 含 `\n`（同一 block 内多行内容）
- * - 不含代码围栏 ```（围栏跨行时按 \n 硬拆会破坏结构，fallback 单串）
- *
- * 载入阶段 `expandParagraphBlocksOnBlankLines` 已把含空行的段落拆成多个 block，
- * 因此能到这里的多行 md 都是「单换行连续列表」场景（最典型：嵌套 `- / - / ...`）。
- */
-function paragraphMarkdownIsMultiLine(md) {
-  if (!md) return false;
-  if (md.includes('```')) return false;
-  return md.includes('\n');
-}
+import { markdownNeedsLineSplitEditing } from '../../prd-list-utils.js';
 
 export function ParagraphBlock({
   block, onUpdate, globalSelection, setGlobalSelection,
@@ -23,10 +10,11 @@ export function ParagraphBlock({
   onEditingFinished,
   onResetOrderedStart,
   maxFirstLineIndentLevel = 0,
+  onParagraphActiveRowForCopyChange,
 }) {
   const content = block.content ?? { type: 'text', markdown: '' };
   const mdText = content.type === 'text' ? (content.markdown ?? '') : '';
-  const useLinesEditor = content.type === 'text' && paragraphMarkdownIsMultiLine(mdText);
+  const useLinesEditor = content.type === 'text' && markdownNeedsLineSplitEditing(mdText);
 
   const isPreviewSelected = globalSelection?.type === 'text-block'
     && globalSelection.blockId === block.id
@@ -56,6 +44,7 @@ export function ParagraphBlock({
           }}
           onResetOrderedStart={onResetOrderedStart}
           maxFirstLineIndentLevel={maxFirstLineIndentLevel}
+          onParagraphActiveRowForCopyChange={onParagraphActiveRowForCopyChange}
         />
       </div>
     );
@@ -65,6 +54,7 @@ export function ParagraphBlock({
     <div className="prd-block-paragraph" data-prd-no-block-select>
       <ElementRenderer
         element={content}
+        globalSelection={globalSelection}
         maxIndentLevel={maxFirstLineIndentLevel}
         onUpdate={(newEl) => onUpdate({ ...block, content: newEl })}
         onDelete={() => onUpdate({ ...block, content: { type: 'text', markdown: '' } })}

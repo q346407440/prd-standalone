@@ -3,9 +3,16 @@ export const AUTH_START_API = '/__prd__/feishu/auth/start';
 export const AUTH_LOGOUT_API = '/__prd__/feishu/auth/logout';
 export const SYNC_START_API = '/__prd__/feishu/sync/start';
 export const SYNC_JOB_API_PREFIX = '/__prd__/feishu/sync/jobs/';
+export const PULL_START_API = '/__prd__/feishu/pull/start';
+export const PULL_JOB_API_PREFIX = '/__prd__/feishu/pull/jobs/';
 
 export function getDocUrlStorageKey(slug) {
   return `prd:feishu-doc-url:${slug || 'default'}`;
+}
+
+/** 拉取飞书用的目标链接（与「同步到飞书」各文档回显的链接分开存） */
+export function getPullDocUrlStorageKey() {
+  return 'prd:feishu-pull-doc-url';
 }
 
 export async function requestJson(url, options) {
@@ -34,5 +41,11 @@ export function getPhaseLabel(phase) {
   if (phase === 'verifying-snapshot') return '校验快照';
   if (phase === 'incremental-delete') return '删除旧块';
   if (phase === 'incremental-insert') return '写入新块';
+  if (phase === 'auth') return '授权';
+  if (phase === 'resolve') return '解析文档';
+  if (phase === 'fetch') return '拉取正文';
+  if (phase === 'parse') return '解析结构';
+  if (phase === 'images') return '处理图片';
+  if (phase === 'write') return '写入本地';
   return '准备中';
 }

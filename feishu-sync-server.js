@@ -9,6 +9,15 @@ import {
   normalizeLegacyBlocks,
 } from './src/features/prd/editor/prd-block-operations.js';
 import { parsePrd } from './src/features/prd/editor/prd-parser.js';
+import { serializePrd } from './src/features/prd/editor/prd-writer.js';
+import {
+  getNextDocSlug,
+  mdFileToAnnotationsPath,
+  mdFileToMetaPath,
+  writeActiveDocSlug,
+} from './server/prd-doc-handlers.js';
+import { toSafeDocBaseName } from './shared/prd-filename-sanitize.js';
+import { genId } from './src/features/prd/editor/prd-utils.js';
 
 const FEISHU_AUTH_STATUS_API = '/__prd__/feishu/auth/status';
 const FEISHU_AUTH_START_API = '/__prd__/feishu/auth/start';
@@ -16,6 +25,8 @@ const FEISHU_AUTH_CALLBACK_API = '/__prd__/feishu/auth/callback';
 const FEISHU_AUTH_LOGOUT_API = '/__prd__/feishu/auth/logout';
 const FEISHU_SYNC_START_API = '/__prd__/feishu/sync/start';
 const FEISHU_SYNC_JOB_API_PREFIX = '/__prd__/feishu/sync/jobs/';
+const FEISHU_PULL_START_API = '/__prd__/feishu/pull/start';
+const FEISHU_PULL_JOB_API_PREFIX = '/__prd__/feishu/pull/jobs/';
 
 const FEISHU_AUTHORIZE_URL = 'https://accounts.feishu.cn/open-apis/authen/v1/authorize';
 const FEISHU_TOKEN_URL = 'https://open.feishu.cn/open-apis/authen/v2/oauth/token';
@@ -24,6 +35,7 @@ const FEISHU_DOCX_BASE_URL = 'https://open.feishu.cn/open-apis/docx/v1';
 const FEISHU_WIKI_BASE_URL = 'https://open.feishu.cn/open-apis/wiki/v2';
 const FEISHU_BOARD_BASE_URL = 'https://open.feishu.cn/open-apis/board/v1';
 const FEISHU_DRIVE_UPLOAD_URL = 'https://open.feishu.cn/open-apis/drive/v1/medias/upload_all';
+const FEISHU_DRIVE_BATCH_TMP_DOWNLOAD_URL = 'https://open.feishu.cn/open-apis/drive/v1/medias/batch_get_tmp_download_url';
 
 const FEISHU_OAUTH_SCOPES = [
   'offline_access',
@@ -35,11 +47,19 @@ const FEISHU_OAUTH_SCOPES = [
   'docs:document.media:upload',
 ];
 
+const BLOCK_TYPE_PAGE = 1;
 const BLOCK_TYPE_TEXT = 2;
 const BLOCK_TYPE_BULLET = 12;
 const BLOCK_TYPE_ORDERED = 13;
 const BLOCK_TYPE_CODE = 14;
+const BLOCK_TYPE_QUOTE = 15;
+const BLOCK_TYPE_BITABLE = 18;
+const BLOCK_TYPE_CALLOUT = 19;
+const BLOCK_TYPE_DIAGRAM = 21;
 const BLOCK_TYPE_DIVIDER = 22;
+const BLOCK_TYPE_FILE = 23;
+const BLOCK_TYPE_GRID = 24;
+const BLOCK_TYPE_GRID_COLUMN = 25;
 const BLOCK_TYPE_IMAGE = 27;
 const BLOCK_TYPE_TABLE = 31;
 const BLOCK_TYPE_TABLE_CELL = 32;
@@ -51,6 +71,34 @@ const BOARD_WIDTH_DEFAULT = 760;
 const BOARD_HEIGHT_DEFAULT = 420;
 const BOARD_HEIGHT_MINDMAP = 520;
 const EMPTY_TEXT_PLACEHOLDER = ' ';
+
+/**
+ * 飞书 text_run.link.url 会校验 URI；Markdown 里若已是「整段百分号编码」的 href，
+ * 再套一层 encodeURI 会把 `%` 编成 `%25`（双重编码），易触发 1770006 schema mismatch。
+ * 做法：有界地 decodeURIComponent 直到稳定，再 encodeURI。
+ */
+function normalizeMarkdownLinkUrlForFeishu(rawUrl) {
+  let s = String(rawUrl ?? '').trim();
+  if (!s) return '';
+  for (let round = 0; round < 12; round += 1) {
+    try {
+      const next = decodeURIComponent(s);
+      if (next === s) break;
+      s = next;
+    } catch {
+      break;
+    }
+  }
+  try {
+    return encodeURI(s);
+  } catch {
+    try {
+      return encodeURI(String(rawUrl ?? '').trim());
+    } catch {
+      return '';
+    }
+  }
+}
 
 const MAX_LINEAR_BLOCKS_PER_REQUEST = 50;
 // 飞书 docx「创建块」创建 TABLE 时，row_size / column_size 均不得超过 9，否则返回 1770001 invalid param
@@ -86,12 +134,14 @@ function createRateLimiter(ratePerSecond) {
   };
 }
 
-function createServerState({ rootDir, publicDir }) {
+function createServerState({ rootDir, publicDir, afterPullComplete }) {
   const localDir = path.join(rootDir, '.local');
   return {
     rootDir,
     publicDir,
     pagesDir: path.join(rootDir, 'pages'),
+    activeDocFile: path.join(rootDir, 'pages', '.active-doc.json'),
+    afterPullComplete: typeof afterPullComplete === 'function' ? afterPullComplete : null,
     // 当前正在执行的同步任务对应的 doc slug（用于把 ./assets/X 解析到 pages/<slug>/assets/X）。
     // 单用户 dev 工具，不考虑多 job 并发跨 slug 抢占 state 的极端场景。
     currentSyncSlug: '',
@@ -693,7 +743,7 @@ function parseMarkdownToElements(markdown) {
         elements.push({
           text_run: {
             content: linkMatch[1],
-            text_element_style: { link: { url: encodeURI(linkMatch[2]) } },
+            text_element_style: { link: { url: normalizeMarkdownLinkUrlForFeishu(linkMatch[2]) } },
           },
         });
       } else {
@@ -2008,8 +2058,761 @@ function buildCallbackRedirect(baseUrl, params) {
   return url.toString();
 }
 
-export function createFeishuSyncApi({ rootDir, publicDir }) {
-  const state = createServerState({ rootDir, publicDir });
+async function fetchDocxRawContent(state, accessToken, documentId) {
+  const url = new URL(`${FEISHU_DOCX_BASE_URL}/documents/${encodeURIComponent(documentId)}/raw_content`);
+  url.searchParams.set('lang', '0');
+  const payload = await state.docxLimiter(() => requestFeishuJson(url.toString(), {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  }));
+  return String(payload.data?.content ?? '');
+}
+
+/**
+ * 分页拉取文档全部块（与 raw_content 不同，含标题层级、图片 token、表格结构等）。
+ * 权限与读 raw_content 相同（docx:document / docx:document:readonly），不新增 scope。
+ */
+async function docxListAllDocumentBlocks(state, accessToken, documentId) {
+  const all = [];
+  let pageToken = '';
+  do {
+    const url = new URL(`${FEISHU_DOCX_BASE_URL}/documents/${encodeURIComponent(documentId)}/blocks`);
+    url.searchParams.set('page_size', '500');
+    url.searchParams.set('document_revision_id', '-1');
+    if (pageToken) url.searchParams.set('page_token', pageToken);
+    const payload = await state.docxLimiter(() => requestFeishuJson(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }));
+    const data = payload.data || {};
+    const items = Array.isArray(data.items) ? data.items : [];
+    all.push(...items);
+    pageToken = data.has_more ? String(data.page_token || '') : '';
+  } while (pageToken);
+  return all;
+}
+
+async function feishuBatchGetTmpDownloadUrls(state, accessToken, fileTokens) {
+  const unique = [...new Set((fileTokens || []).filter(Boolean))];
+  const map = new Map();
+  for (let i = 0; i < unique.length; i += 5) {
+    const batch = unique.slice(i, i + 5);
+    const url = new URL(FEISHU_DRIVE_BATCH_TMP_DOWNLOAD_URL);
+    for (const t of batch) {
+      url.searchParams.append('file_tokens', t);
+    }
+    const payload = await state.docxLimiter(() => requestFeishuJson(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }));
+    for (const row of payload.data?.tmp_download_urls || []) {
+      if (row?.file_token && row?.tmp_download_url) {
+        map.set(row.file_token, row.tmp_download_url);
+      }
+    }
+  }
+  return map;
+}
+
+function feishuGetStructuredTextPayload(block) {
+  if (!block) return null;
+  const bt = block.block_type;
+  if (bt >= 3 && bt <= 11) {
+    const key = `heading${bt - 2}`;
+    return block[key] || null;
+  }
+  if (bt === BLOCK_TYPE_TEXT) return block.text || null;
+  if (bt === BLOCK_TYPE_BULLET) return block.bullet || null;
+  if (bt === BLOCK_TYPE_ORDERED) return block.ordered || null;
+  if (bt === BLOCK_TYPE_CODE) return block.code || null;
+  if (bt === BLOCK_TYPE_QUOTE) return block.quote || null;
+  if (bt === BLOCK_TYPE_CALLOUT) return block.callout || null;
+  return null;
+}
+
+function feishuSafeImageAlt(raw) {
+  const s = String(raw ?? '').trim().replace(/\]/g, '');
+  return s || '飞书图片';
+}
+
+/** 飞书标题等：只拼纯文案，不根据 bold 生成 **（避免下游 `# **…**` 与 remark 转义成 `\\*`） */
+function feishuElementsToPlainText(elements) {
+  if (!Array.isArray(elements) || !elements.length) return '';
+  const parts = [];
+  for (const el of elements) {
+    if (!el || typeof el !== 'object') continue;
+    if (el.text_run?.content != null) {
+      parts.push(String(el.text_run.content));
+      continue;
+    }
+    if (el.mention_user) {
+      const name = el.mention_user.name
+        || el.mention_user.user?.name
+        || el.mention_user.user_id
+        || '用户';
+      parts.push(`@${name}`);
+      continue;
+    }
+    if (el.mention_doc) {
+      parts.push(`@${el.mention_doc.title || el.mention_doc.obj_id || '文档'}`);
+      continue;
+    }
+    if (el.equation?.content) parts.push(String(el.equation.content));
+  }
+  return parts.join('');
+}
+
+function feishuElementsToMarkdown(elements, urlByToken) {
+  if (!Array.isArray(elements) || !elements.length) return '';
+  const parts = [];
+  for (const el of elements) {
+    if (!el || typeof el !== 'object') continue;
+    if (el.text_run?.content != null) {
+      let chunk = String(el.text_run.content);
+      const st = el.text_run.text_element_style || {};
+      if (st.link?.url) {
+        const u = String(st.link.url);
+        chunk = `[${chunk}](${u})`;
+      } else {
+        if (st.bold) chunk = `**${chunk}**`;
+        if (st.italic) chunk = `*${chunk}*`;
+        if (st.strikethrough) chunk = `~~${chunk}~~`;
+        if (st.inline_code) chunk = `\`${chunk.replace(/`/g, '')}\``;
+      }
+      parts.push(chunk);
+      continue;
+    }
+    if (el.mention_user) {
+      const name = el.mention_user.name
+        || el.mention_user.user?.name
+        || el.mention_user.user_id
+        || '用户';
+      parts.push(`@${name}`);
+      continue;
+    }
+    if (el.mention_doc) {
+      const t = el.mention_doc.title || el.mention_doc.obj_id || '文档';
+      parts.push(`@${t}`);
+      continue;
+    }
+    if (el.equation?.content) {
+      parts.push(`$${el.equation.content}$`);
+      continue;
+    }
+    if (el.file?.file_token) {
+      const tok = el.file.file_token;
+      const u = urlByToken.get(tok);
+      if (u) parts.push(`![${feishuSafeImageAlt('内联文件')}](${u})`);
+      else parts.push(`[内联文件](${tok})`);
+      continue;
+    }
+    if (el.inline_block?.block_id) {
+      parts.push(`[内联块:${el.inline_block.block_id}]`);
+    }
+  }
+  return parts.join('');
+}
+
+function feishuCollectFileTokensFromElements(elements, bucket) {
+  if (!Array.isArray(elements)) return;
+  for (const el of elements) {
+    if (el?.file?.file_token) bucket.push(el.file.file_token);
+  }
+}
+
+function feishuCollectTokensRecursive(block, byId, bucket) {
+  if (!block) return;
+  if (block.block_type === BLOCK_TYPE_IMAGE && block.image?.token) {
+    bucket.push(block.image.token);
+  }
+  if (block.block_type === BLOCK_TYPE_FILE && block.file?.token) {
+    bucket.push(block.file.token);
+  }
+  const payload = feishuGetStructuredTextPayload(block);
+  if (payload?.elements) feishuCollectFileTokensFromElements(payload.elements, bucket);
+  for (const cid of block.children || []) {
+    feishuCollectTokensRecursive(byId.get(cid), byId, bucket);
+  }
+}
+
+function feishuFlattenCellMarkdown(block, byId, urlByToken) {
+  const chunks = [];
+  function walk(b) {
+    if (!b) return;
+    const bt = b.block_type;
+    if (bt === BLOCK_TYPE_IMAGE && b.image?.token) {
+      const u = urlByToken.get(b.image.token);
+      if (u) chunks.push(`![${feishuSafeImageAlt(b.image.caption?.content)}](${u})`);
+      return;
+    }
+    const textPayload = feishuGetStructuredTextPayload(b);
+    if (textPayload?.elements) {
+      const md = feishuElementsToMarkdown(textPayload.elements, urlByToken);
+      if (md.trim()) chunks.push(md);
+    }
+    for (const cid of b.children || []) {
+      walk(byId.get(cid));
+    }
+  }
+  walk(block);
+  return chunks.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+function feishuEscapePipeCell(s) {
+  return String(s ?? '').replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+}
+
+/**
+ * 将文档块树转为 Markdown 字符串，供现有 parseFeishuRawMdToBlocksResilient 消费。
+ */
+async function fetchDocxRichMarkdownFromBlocks(state, accessToken, documentId) {
+  let items;
+  try {
+    items = await docxListAllDocumentBlocks(state, accessToken, documentId);
+  } catch {
+    return '';
+  }
+  if (!items.length) return '';
+  const byId = new Map(items.map((b) => [b.block_id, b]));
+  const root = byId.get(documentId)
+    || items.find((b) => b.block_type === BLOCK_TYPE_PAGE)
+    || null;
+
+  const tokenBucket = [];
+  if (root) feishuCollectTokensRecursive(root, byId, tokenBucket);
+  else {
+    for (const b of items) {
+      if (b.parent_id === documentId) feishuCollectTokensRecursive(b, byId, tokenBucket);
+    }
+  }
+  let urlByToken = new Map();
+  try {
+    urlByToken = await feishuBatchGetTmpDownloadUrls(state, accessToken, tokenBucket);
+  } catch {
+    urlByToken = new Map();
+  }
+
+  const lines = [];
+
+  function emitParagraphFromBlock(block) {
+    const payload = feishuGetStructuredTextPayload(block);
+    if (!payload?.elements) return;
+    const md = feishuElementsToMarkdown(payload.elements, urlByToken).trim();
+    if (md) lines.push(md);
+  }
+
+  function visit(block, listDepth = 0) {
+    if (!block) return;
+    const bt = block.block_type;
+
+    if (bt === BLOCK_TYPE_PAGE) {
+      for (const cid of block.children || []) visit(byId.get(cid), 0);
+      return;
+    }
+
+    if (bt >= 3 && bt <= 11) {
+      const payload = feishuGetStructuredTextPayload(block);
+      const title = feishuElementsToPlainText(payload?.elements || []).trim();
+      if (title) {
+        const level = Math.min(7, Math.max(1, bt - 2));
+        lines.push(`${'#'.repeat(level)} ${title}`);
+      }
+      for (const cid of block.children || []) visit(byId.get(cid), 0);
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_TEXT) {
+      emitParagraphFromBlock(block);
+      for (const cid of block.children || []) visit(byId.get(cid), listDepth);
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_BULLET || bt === BLOCK_TYPE_ORDERED) {
+      const payload = feishuGetStructuredTextPayload(block);
+      const text = feishuElementsToMarkdown(payload?.elements || [], urlByToken).trim();
+      const prefix = bt === BLOCK_TYPE_BULLET ? '- ' : '1. ';
+      const pad = '  '.repeat(listDepth);
+      if (text) lines.push(`${pad}${prefix}${text}`);
+      for (const cid of block.children || []) {
+        const child = byId.get(cid);
+        if (!child) continue;
+        if (child.block_type === BLOCK_TYPE_BULLET || child.block_type === BLOCK_TYPE_ORDERED) {
+          visit(child, listDepth + 1);
+        } else {
+          visit(child, listDepth);
+        }
+      }
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_CODE) {
+      const payload = feishuGetStructuredTextPayload(block);
+      const body = feishuElementsToMarkdown(payload?.elements || [], urlByToken);
+      const fenceBody = body.replace(/\r\n/g, '\n').trimEnd();
+      lines.push(`\`\`\`\n${fenceBody}\n\`\`\``);
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_DIVIDER) {
+      lines.push('---');
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_IMAGE) {
+      const tok = block.image?.token;
+      const u = tok ? urlByToken.get(tok) : '';
+      const alt = feishuSafeImageAlt(block.image?.caption?.content);
+      if (u) lines.push(`![${alt}](${u})`);
+      else if (tok) lines.push(`> [图片未能获取临时下载链接，请在飞书中对照；token=${tok}]`);
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_TABLE) {
+      const childIds = block.children || [];
+      const cells = childIds.map((id) => byId.get(id)).filter((c) => c && c.block_type === BLOCK_TYPE_TABLE_CELL);
+      const rs = Number(block.table?.property?.row_size) || 0;
+      const cs = Number(block.table?.property?.column_size) || 0;
+      if (!cells.length || !rs || !cs || cells.length !== rs * cs) {
+        lines.push('> [表格结构异常或暂不支持解析，请到飞书核对]');
+        for (const cid of childIds) visit(byId.get(cid), 0);
+        return;
+      }
+      const rows = [];
+      for (let r = 0; r < rs; r += 1) {
+        const row = [];
+        for (let c = 0; c < cs; c += 1) {
+          const cell = cells[r * cs + c];
+          row.push(feishuEscapePipeCell(feishuFlattenCellMarkdown(cell, byId, urlByToken)));
+        }
+        rows.push(row);
+      }
+      if (!rows.length) return;
+      const sepRow = new Array(cs).fill('---');
+      const outRows = [];
+      outRows.push(`| ${rows[0].join(' | ')} |`);
+      outRows.push(`| ${sepRow.join(' | ')} |`);
+      for (let i = 1; i < rows.length; i += 1) {
+        outRows.push(`| ${rows[i].join(' | ')} |`);
+      }
+      lines.push(outRows.join('\n'));
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_QUOTE || bt === BLOCK_TYPE_CALLOUT) {
+      emitParagraphFromBlock(block);
+      for (const cid of block.children || []) visit(byId.get(cid), 0);
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_GRID) {
+      lines.push('');
+      for (const cid of block.children || []) visit(byId.get(cid), 0);
+      lines.push('');
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_GRID_COLUMN) {
+      for (const cid of block.children || []) visit(byId.get(cid), 0);
+      lines.push('');
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_BITABLE) {
+      lines.push('> [多维表格块需在飞书中查看]');
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_DIAGRAM || bt === BLOCK_TYPE_BOARD) {
+      lines.push('> [流程图/画板块需在飞书中查看]');
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_FILE) {
+      const tok = block.file?.token;
+      const u = tok ? urlByToken.get(tok) : '';
+      if (u) lines.push(`![${feishuSafeImageAlt(block.file?.name)}](${u})`);
+      else lines.push(`> [文件块${tok ? ` token=${tok}` : ''}]`);
+      return;
+    }
+
+    if (bt === BLOCK_TYPE_TABLE_CELL) {
+      return;
+    }
+
+    for (const cid of block.children || []) visit(byId.get(cid), listDepth);
+  }
+
+  if (root) {
+    visit(root, 0);
+  } else {
+    const tops = items.filter((b) => b.parent_id === documentId);
+    for (const b of tops) visit(b, 0);
+  }
+  return lines.filter((l) => l != null).join('\n\n').trim();
+}
+
+function isRemoteAssetUrl(src) {
+  if (!src || typeof src !== 'string') return false;
+  const s = src.trim();
+  if (!s) return false;
+  if (s.startsWith('./assets/') || s.startsWith('assets/')) return false;
+  if (/^\/pages\/doc-\d+\/assets\//i.test(s)) return false;
+  if (s.startsWith('/prd/')) return false;
+  if (s.startsWith('data:')) return false;
+  return /^https?:\/\//i.test(s);
+}
+
+function guessImageExt(contentType, urlPath) {
+  const u = String(urlPath || '').toLowerCase();
+  const um = u.match(/\.(png|jpe?g|gif|webp|svg)(?:\?|#|$)/);
+  if (um) {
+    return um[1] === 'jpeg' ? '.jpg' : `.${um[1]}`;
+  }
+  const ct = String(contentType || '').toLowerCase();
+  if (ct.includes('png')) return '.png';
+  if (ct.includes('jpeg')) return '.jpg';
+  if (ct.includes('gif')) return '.gif';
+  if (ct.includes('webp')) return '.webp';
+  if (ct.includes('svg')) return '.svg';
+  return '.bin';
+}
+
+async function downloadBufferFromUrl(url, accessToken) {
+  const tryOnce = async (withAuth) => {
+    const headers = withAuth ? { Authorization: `Bearer ${accessToken}` } : {};
+    const res = await fetch(url, { headers, redirect: 'follow' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buf = Buffer.from(await res.arrayBuffer());
+    const ct = res.headers.get('content-type') || '';
+    return { buffer: buf, contentType: ct };
+  };
+  try {
+    return await tryOnce(true);
+  } catch {
+    return await tryOnce(false);
+  }
+}
+
+async function downloadRemoteToAssetsDir(accessToken, src, assetsDir, urlCache, seqRef) {
+  if (urlCache.has(src)) return urlCache.get(src);
+  try {
+    const { buffer, contentType } = await downloadBufferFromUrl(src, accessToken);
+    seqRef.n += 1;
+    const ext = guessImageExt(contentType, src);
+    const base = `feishu-img-${String(seqRef.n).padStart(3, '0')}${ext}`;
+    const dest = path.join(assetsDir, base);
+    ensureDir(assetsDir);
+    fs.writeFileSync(dest, buffer);
+    const rel = `./assets/${base}`;
+    urlCache.set(src, rel);
+    return rel;
+  } catch (error) {
+    try {
+      const logEntry = `${nowIso()} [feishu-pull-img] src=${src} err=${error?.message || error}\n`;
+      fs.appendFileSync(path.join(process.cwd(), '.local', 'feishu-error.log'), logEntry, 'utf8');
+    } catch { /* ignore */ }
+    urlCache.set(src, src);
+    return src;
+  }
+}
+
+async function rewriteMarkdownRemoteImages(markdown, accessToken, assetsDir, urlCache, seqRef) {
+  if (!markdown || typeof markdown !== 'string') return markdown;
+  const re = /!\[([^\]]*)]\(([^)]+)\)/g;
+  let out = '';
+  let last = 0;
+  let m;
+  while ((m = re.exec(markdown)) !== null) {
+    out += markdown.slice(last, m.index);
+    const alt = m[1];
+    const url = m[2].trim();
+    if (isRemoteAssetUrl(url)) {
+      const next = await downloadRemoteToAssetsDir(accessToken, url, assetsDir, urlCache, seqRef);
+      out += `![${alt}](${next})`;
+    } else {
+      out += m[0];
+    }
+    last = m.index + m[0].length;
+  }
+  out += markdown.slice(last);
+  return out;
+}
+
+async function localizeRemoteImagesInBlocks(accessToken, blocks, assetsDir, onTick) {
+  ensureDir(assetsDir);
+  const urlCache = new Map();
+  const seqRef = { n: 0 };
+  let done = 0;
+  const total = Math.max(1, (blocks || []).length);
+
+  for (const block of blocks || []) {
+    if (block.type === 'paragraph' && block.content?.type === 'text' && block.content.markdown) {
+      block.content.markdown = await rewriteMarkdownRemoteImages(
+        block.content.markdown, accessToken, assetsDir, urlCache, seqRef,
+      );
+    }
+    if (block.type === 'paragraph' && block.content?.type === 'image' && isRemoteAssetUrl(block.content.src)) {
+      block.content.src = await downloadRemoteToAssetsDir(
+        accessToken, block.content.src, assetsDir, urlCache, seqRef,
+      );
+    }
+    if (block.type === 'table' && block.content?.rows) {
+      for (const row of block.content.rows) {
+        for (const cell of row || []) {
+          const elements = Array.isArray(cell?.elements) ? cell.elements
+            : cell?.element ? [cell.element] : [];
+          for (const el of elements) {
+            if (el?.type === 'text' && el.markdown) {
+              el.markdown = await rewriteMarkdownRemoteImages(
+                el.markdown, accessToken, assetsDir, urlCache, seqRef,
+              );
+            }
+            if (el?.type === 'image' && isRemoteAssetUrl(el.src)) {
+              el.src = await downloadRemoteToAssetsDir(
+                accessToken, el.src, assetsDir, urlCache, seqRef,
+              );
+            }
+          }
+        }
+      }
+    }
+    if (block.type === 'prd-section' && block.content) {
+      const c = block.content;
+      if (c.designImage && isRemoteAssetUrl(c.designImage)) {
+        c.designImage = await downloadRemoteToAssetsDir(
+          accessToken, c.designImage, assetsDir, urlCache, seqRef,
+        );
+      }
+      if (c.interactionMarkdown) {
+        c.interactionMarkdown = await rewriteMarkdownRemoteImages(
+          c.interactionMarkdown, accessToken, assetsDir, urlCache, seqRef,
+        );
+      }
+      if (c.logicMarkdown) {
+        c.logicMarkdown = await rewriteMarkdownRemoteImages(
+          c.logicMarkdown, accessToken, assetsDir, urlCache, seqRef,
+        );
+      }
+    }
+    done += 1;
+    const pct = 48 + Math.floor((done / total) * 32);
+    onTick?.(pct, `处理图片与资源（${done}/${total}）…`);
+  }
+}
+
+/**
+ * 在 ``` / ~~~ 围栏外，按「行首 ATX 标题」切分为多节，便于逐节 parsePrd：某一节失败则跳过该节。
+ */
+function splitFeishuRawMarkdownIntoSections(md) {
+  const lines = String(md || '').replace(/\r\n/g, '\n').split('\n');
+  const sections = [];
+  let buf = [];
+  let inFence = false;
+  let fenceEndPrefix = '';
+
+  function flush() {
+    const s = buf.join('\n').trimEnd();
+    if (s) sections.push(s);
+    buf = [];
+  }
+
+  for (const line of lines) {
+    const t = line.trimStart();
+    const fenceMatch = t.match(/^(`{3,}|~{3,})/);
+    if (fenceMatch) {
+      const tick = fenceMatch[1];
+      if (!inFence) {
+        inFence = true;
+        fenceEndPrefix = tick.startsWith('`') ? '`' : '~';
+      } else if (t.startsWith(fenceEndPrefix.repeat(3))) {
+        inFence = false;
+        fenceEndPrefix = '';
+      }
+      buf.push(line);
+      continue;
+    }
+    if (!inFence && /^#{1,7}\s+\S/.test(t) && buf.length > 0) {
+      flush();
+    }
+    buf.push(line);
+  }
+  flush();
+  if (sections.length) return sections;
+  const single = String(md || '').trim();
+  return single ? [single] : [];
+}
+
+function makeSkippedSectionPlaceholderBlock(rawChunk, reason) {
+  const max = 12000;
+  let body = String(rawChunk || '').replace(/\r\n/g, '\n').trimEnd();
+  let truncated = false;
+  if (body.length > max) {
+    body = body.slice(0, max);
+    truncated = true;
+  }
+  const safeReason = String(reason || '解析失败').replace(/\r|\n/g, ' ').slice(0, 240);
+  const md = [
+    '> **【飞书拉取：本节已跳过】**',
+    `> 原因：${safeReason}`,
+    truncated ? '> 原文过长，以下为截断备份，可到飞书对照补写。' : '',
+    '',
+    '```',
+    body,
+    '```',
+  ].filter(Boolean).join('\n');
+  return {
+    id: genId(),
+    type: 'paragraph',
+    content: { type: 'text', markdown: md },
+  };
+}
+
+/**
+ * 逐节解析飞书 raw Markdown；单节抛错或结果为空时插入占位段落，其余节照常。
+ */
+function parseFeishuRawMdToBlocksResilient(rawMd) {
+  const sections = splitFeishuRawMarkdownIntoSections(rawMd);
+  let skippedSections = 0;
+  const merged = [];
+  for (const seg of sections) {
+    const t = String(seg || '').trim();
+    if (!t) continue;
+    let part = [];
+    try {
+      part = parsePrd(t);
+    } catch (err) {
+      skippedSections += 1;
+      merged.push(makeSkippedSectionPlaceholderBlock(seg, err?.message || String(err)));
+      continue;
+    }
+    if (!part.length) {
+      skippedSections += 1;
+      merged.push(makeSkippedSectionPlaceholderBlock(seg, '解析结果为空'));
+      continue;
+    }
+    merged.push(...part);
+  }
+  return { blocks: normalizeLegacyBlocks(merged), skippedSections };
+}
+
+function pickUniqueMdPath(docDir, baseTitle) {
+  const safe = toSafeDocBaseName(baseTitle) || '飞书导入';
+  let name = `${safe}.md`;
+  let full = path.join(docDir, name);
+  let n = 2;
+  while (fs.existsSync(full)) {
+    name = `${safe}-${n}.md`;
+    full = path.join(docDir, name);
+    n += 1;
+  }
+  return { mdFileName: name, mdFilePath: full, displayTitle: path.basename(name, '.md') };
+}
+
+async function runPullJob(state, config, job) {
+  const { docUrl } = job.payload;
+  try {
+    updateJob(job, {
+      status: 'running',
+      phase: 'auth',
+      percent: 4,
+      message: '校验飞书授权…',
+    });
+    const auth = await ensureValidAccessToken(state, config);
+    const accessToken = auth.accessToken;
+
+    updateJob(job, {
+      phase: 'resolve',
+      percent: 12,
+      message: '解析目标文档…',
+    });
+    const resolved = await resolveDocumentFromUrl(accessToken, docUrl);
+
+    updateJob(job, {
+      phase: 'fetch',
+      percent: 22,
+      message: '拉取飞书文档块（含图片与标题结构）…',
+    });
+    let rawMd = await fetchDocxRichMarkdownFromBlocks(state, accessToken, resolved.documentId);
+    if (!String(rawMd).trim()) {
+      updateJob(job, {
+        message: '结构化拉取为空，回退至纯文本接口…',
+      });
+      rawMd = await fetchDocxRawContent(state, accessToken, resolved.documentId);
+    }
+    if (!String(rawMd).trim()) {
+      throw new Error('飞书文档正文为空（文档块与 raw_content 均无内容）');
+    }
+
+    updateJob(job, {
+      phase: 'parse',
+      percent: 34,
+      message: '解析为 PRD 块结构（按节容错）…',
+    });
+    const { blocks: parsedBlocks, skippedSections } = parseFeishuRawMdToBlocksResilient(rawMd);
+    let blocks = expandParagraphBlocksOnBlankLines(parsedBlocks);
+    if (!blocks.length) {
+      throw new Error('解析结果为空：请确认文档含标题或段落等可读内容');
+    }
+
+    const slug = getNextDocSlug(state.pagesDir);
+    const docDir = path.join(state.pagesDir, slug);
+    const assetsDir = path.join(docDir, 'assets');
+    ensureDir(assetsDir);
+
+    updateJob(job, {
+      phase: 'images',
+      percent: 48,
+      message: '下载远程图片到 ./assets/…',
+    });
+    await localizeRemoteImagesInBlocks(accessToken, blocks, assetsDir, (pct, msg) => {
+      updateJob(job, { percent: pct, message: msg });
+    });
+
+    const docTitle = resolved.document?.title || '飞书导入';
+    const { mdFileName, mdFilePath, displayTitle } = pickUniqueMdPath(docDir, docTitle);
+
+    updateJob(job, {
+      phase: 'write',
+      percent: 88,
+      message: '写入新文档目录…',
+    });
+    ensureDir(docDir);
+    const mdText = serializePrd(blocks);
+    fs.writeFileSync(mdFilePath, mdText, 'utf8');
+    fs.writeFileSync(mdFileToMetaPath(mdFilePath), '{}\n', 'utf8');
+    fs.writeFileSync(mdFileToAnnotationsPath(mdFilePath), '{}\n', 'utf8');
+    writeActiveDocSlug(state.pagesDir, state.activeDocFile, slug);
+    try {
+      state.afterPullComplete?.();
+    } catch { /* ignore */ }
+
+    updateJob(job, {
+      status: 'succeeded',
+      phase: 'completed',
+      percent: 100,
+      message: skippedSections > 0
+        ? `拉取完成（已跳过 ${skippedSections} 节无法按规则解析的内容）`
+        : '拉取完成',
+      result: {
+        slug,
+        title: displayTitle,
+        mdPath: `/pages/${slug}/${mdFileName}`,
+        documentId: resolved.documentId,
+        sourceUrl: docUrl,
+        skippedSections,
+      },
+    });
+  } catch (error) {
+    const detail = error?.payload ? ` [code=${error.code}]` : '';
+    updateJob(job, {
+      status: 'failed',
+      phase: 'failed',
+      percent: job.percent || 0,
+      message: '拉取失败',
+      error: (error?.message || String(error)) + detail,
+    });
+  }
+}
+
+export function createFeishuSyncApi({ rootDir, publicDir, afterPullComplete } = {}) {
+  const state = createServerState({ rootDir, publicDir, afterPullComplete });
 
   return {
     matches(pathname) {
@@ -2163,6 +2966,60 @@ export function createFeishuSyncApi({ rootDir, publicDir }) {
         const job = state.jobs.get(jobId);
         if (!job) {
           sendJson(res, 404, { ok: false, error: '同步任务不存在或已过期' });
+          return;
+        }
+        sendJson(res, 200, {
+          ok: true,
+          job: {
+            id: job.id,
+            status: job.status,
+            phase: job.phase,
+            percent: job.percent,
+            message: job.message,
+            error: job.error,
+            result: job.result,
+            createdAt: job.createdAt,
+            updatedAt: job.updatedAt,
+          },
+        });
+        return;
+      }
+
+      if (pathname === FEISHU_PULL_START_API && req.method === 'POST') {
+        try {
+          await ensureValidAccessToken(state, config);
+          const body = await readJsonBody(req);
+          const pullDocUrl = String(body?.docUrl || '').trim();
+          if (!pullDocUrl) {
+            sendJson(res, 400, { ok: false, error: '缺少飞书文档链接' });
+            return;
+          }
+          const job = createJob(state, {
+            kind: 'pull',
+            docUrl: pullDocUrl,
+          });
+          void runPullJob(state, config, job).catch((error) => {
+            const detail = error?.payload ? ` [code=${error.code}]` : '';
+            updateJob(job, {
+              status: 'failed',
+              phase: 'failed',
+              percent: job.percent || 0,
+              message: '拉取失败',
+              error: (error?.message || String(error)) + detail,
+            });
+          });
+          sendJson(res, 200, { ok: true, jobId: job.id });
+        } catch (error) {
+          sendJson(res, 401, { ok: false, error: error?.message || '请先完成飞书授权' });
+        }
+        return;
+      }
+
+      if (pathname.startsWith(FEISHU_PULL_JOB_API_PREFIX) && req.method === 'GET') {
+        const jobId = pathname.slice(FEISHU_PULL_JOB_API_PREFIX.length);
+        const job = state.jobs.get(jobId);
+        if (!job) {
+          sendJson(res, 404, { ok: false, error: '拉取任务不存在或已过期' });
           return;
         }
         sendJson(res, 200, {

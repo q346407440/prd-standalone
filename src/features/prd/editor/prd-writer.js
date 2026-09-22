@@ -1,10 +1,11 @@
 /**
  * prd-writer.js
- * 把 Block[] 序列化回 prd.md 新格式（v2）。
- * 每個 Block 前加 <!-- block:type --> 標記。
+ * 把 Block[] 序列化回 prd.md。
+ * 標題（h1–h7）與 paragraph 為**原生 Markdown**，無 `<!-- block:... -->`；
+ * 結構化塊（table / mermaid / mindmap / divider / prd-section 等）仍帶 block 標記（島塊含 end）。
  *
  * Block.content 為 Element：
- *   { type: 'text', markdown }
+ *   { type: 'text', markdown, tightJoinPrev?: boolean } — 后者为真时与上一 **text** paragraph 序列化时用 `\n` 拼接（无空行顶层列表拆块）。
  *   { type: 'image', src, alt? }
  *   { type: 'divider' }
  *   { type: 'table', headers, rows: CellElement[][] }
@@ -15,6 +16,7 @@
  */
 
 import { serializeMarkdownImage } from './prd-image-markdown.js';
+import { isIslandBlockType } from './prd-island-block-markers.js';
 
 // ─── Element → 字串（GFM 舊格式，供離線匯出和飛書使用）──────────────────────
 
@@ -242,19 +244,15 @@ function serializeBlock(block) {
   const headingMatch = type.match(/^h([1-7])$/);
 
   if (headingMatch) {
-    const marker = `<!-- block:${type} -->`;
-    return `${marker}\n${'#'.repeat(Number(headingMatch[1]))} ${content.markdown || content.text || ''}`;
+    return `${'#'.repeat(Number(headingMatch[1]))} ${content.markdown || content.text || ''}`;
   }
 
   switch (type) {
     case 'paragraph': {
-      const parts = [`<!-- block:${type} -->`];
       if (content.type === 'image') {
-        parts.push(serializeMarkdownImage(content.src, content.alt));
-      } else {
-        parts.push(content.markdown || '');
+        return serializeMarkdownImage(content.src, content.alt);
       }
-      return parts.join('\n');
+      return content.markdown || '';
     }
 
     case 'divider':
@@ -265,18 +263,19 @@ function serializeBlock(block) {
       parts.push('```mermaid');
       parts.push(content.code || '');
       parts.push('```');
+      parts.push('<!-- /block:mermaid -->');
       return parts.join('\n');
     }
 
     case 'mindmap':
-      return `<!-- block:${type} -->\n${content.code || ''}`;
+      return `<!-- block:${type} -->\n${content.code || ''}\n<!-- /block:mindmap -->`;
 
     case 'table': {
       const headers = content.headers || [];
       const colsAttr = headers.join(',');
       const marker = `<!-- block:table cols="${colsAttr}" -->`;
       const tableText = serializeCellFormatTable(headers, content.rows || []);
-      return `${marker}\n${tableText}`;
+      return `${marker}\n${tableText}\n<!-- /block:table -->`;
     }
 
     case 'prd-section': {
@@ -305,13 +304,135 @@ function serializeBlock(block) {
 // ─── 主入口 ──────────────────────────────────────────────────────────────────
 
 /**
+ * 相邻块之间的拼接：连续「列表项」paragraph（后者带 `content.tightJoinPrev`）用单换行，其余用空行。
+ * @param {object[]} blocks
+ * @param {number} indexNext 当前块下标（≥1）
+ * @returns {'\n'|'\n\n'}
+ */
+export function glueBetweenPrdBlocks(blocks, indexNext) {
+  const list = blocks || [];
+  if (indexNext <= 0 || indexNext >= list.length) return '\n\n';
+  const b = list[indexNext];
+  const prev = list[indexNext - 1];
+  const useTight = b?.type === 'paragraph'
+    && b?.content?.type === 'text'
+    && b.content.tightJoinPrev
+    && prev?.type === 'paragraph'
+    && prev?.content?.type === 'text';
+  return useTight ? '\n' : '\n\n';
+}
+
+/** 首块不应带 tightJoinPrev；上一块非正文段时无效。 */
+export function stripInvalidTightJoinFlags(blocks) {
+  return (blocks || []).map((b, i) => {
+    if (b.type !== 'paragraph' || b.content?.type !== 'text' || !b.content.tightJoinPrev) return b;
+    if (i === 0) {
+      const { tightJoinPrev, ...rest } = b.content;
+      return { ...b, content: rest };
+    }
+    const prev = blocks[i - 1];
+    const ok = prev?.type === 'paragraph' && prev?.content?.type === 'text';
+    if (!ok) {
+      const { tightJoinPrev, ...rest } = b.content;
+      return { ...b, content: rest };
+    }
+    return b;
+  });
+}
+
+/**
+ * 与 serializePrd 一致：全文一次 `\\n{3,}`→`\\n\\n` 再 trimEnd + `\\n`。
+ */
+function finalizePrdSerializedBody(raw) {
+  return raw.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+}
+
+/**
+ * raw 前缀 [0, rawIndexExclusive) 经与全文同规则折叠后，在折叠串中的长度（0..collapsed.length）。
+ * 前缀若截断在某段连续 \\n 中间：未凑满三连的部分按字面计入；凑满三连则按折叠为 2 个 \\n。
+ * 这样与先拼全文再 replace(/\\n{3,}/g,'\\n\\n') 在任意截断点一致。
+ */
+export function collapsedPrefixLengthAtRawIndex(fullRaw, rawIndexExclusive) {
+  if (rawIndexExclusive <= 0) return 0;
+  const cap = Math.min(rawIndexExclusive, fullRaw.length);
+  let r = 0;
+  let outLen = 0;
+  while (r < cap) {
+    const ch = fullRaw[r];
+    if (ch !== '\n') {
+      r += 1;
+      outLen += 1;
+      continue;
+    }
+    const runStart = r;
+    let j = r;
+    while (j < fullRaw.length && fullRaw[j] === '\n') j += 1;
+    const runLen = j - runStart;
+    const prefixEnd = Math.min(j, cap);
+    const inPrefix = prefixEnd - runStart;
+    if (inPrefix < runLen) {
+      outLen += inPrefix >= 3 ? 2 : inPrefix;
+      r = prefixEnd;
+      continue;
+    }
+    outLen += runLen >= 3 ? 2 : runLen;
+    r = j;
+  }
+  return outLen;
+}
+
+/**
+ * 与 serializePrd 输出一致，返回每个 block 对应内容在全文中的 1-based 行区间（与磁盘 .md 对齐；亦可供调试与旧版行号逻辑）。
+ */
+export function getBlockContentLineRanges1Based(blocks) {
+  const list = stripInvalidTightJoinFlags(blocks || []);
+  if (!list.length) return [];
+  const parts = list.map(serializeBlock);
+  let raw = '';
+  const rawStarts = [];
+  for (let i = 0; i < list.length; i += 1) {
+    if (i > 0) raw += glueBetweenPrdBlocks(list, i);
+    rawStarts.push(raw.length);
+    raw += parts[i];
+  }
+  const collapsed = raw.replace(/\n{3,}/g, '\n\n');
+  const fullMd = finalizePrdSerializedBody(raw);
+
+  /** 折叠串中的 exclusive 字符偏移 → 与磁盘 fullMd 一致的 1-based 行号 */
+  const lineAtSerializedOffset = (collapsedOff) => {
+    const o = Math.max(0, Math.min(collapsedOff, collapsed.length));
+    const trimmedLen = collapsed.trimEnd().length;
+    const clamped = Math.min(o, trimmedLen);
+    return fullMd.slice(0, clamped).split('\n').length;
+  };
+
+  const ranges = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const startOff = collapsedPrefixLengthAtRawIndex(raw, rawStarts[i]);
+    const endRawEx = rawStarts[i] + (parts[i]?.length ?? 0);
+    const endOff = collapsedPrefixLengthAtRawIndex(raw, endRawEx);
+    ranges.push({
+      contentStartLine: lineAtSerializedOffset(startOff),
+      contentEndLine: lineAtSerializedOffset(endOff),
+    });
+  }
+  return ranges;
+}
+
+/**
  * 把 Block[] 序列化成 prd.md 文字（新格式 v2，cell 標記）。
  * @param {Block[]} blocks
  * @returns {string}
  */
 export function serializePrd(blocks) {
-  const sections = blocks.map(serializeBlock);
-  return sections.join('\n\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+  const list = stripInvalidTightJoinFlags(blocks || []);
+  if (!list.length) return '\n';
+  const parts = list.map(serializeBlock);
+  let out = parts[0];
+  for (let i = 1; i < list.length; i += 1) {
+    out += glueBetweenPrdBlocks(list, i) + parts[i];
+  }
+  return finalizePrdSerializedBody(out);
 }
 
 /**
@@ -320,46 +441,58 @@ export function serializePrd(blocks) {
  * @returns {string}
  */
 export function serializePrdAsGfm(blocks) {
-  const sections = blocks.map(serializeBlockAsGfm);
-  return sections.join('\n\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+  const list = stripInvalidTightJoinFlags(blocks || []);
+  if (!list.length) return '\n';
+  const parts = list.map(serializeBlockAsGfm);
+  let out = parts[0];
+  for (let i = 1; i < list.length; i += 1) {
+    out += glueBetweenPrdBlocks(list, i) + parts[i];
+  }
+  return finalizePrdSerializedBody(out);
 }
 
 function serializeBlockAsGfm(block) {
   const { type, content } = block;
-  const parts = [`<!-- block:${type} -->`];
   const headingMatch = type.match(/^h([1-7])$/);
 
   if (headingMatch) {
-    parts.push(`${'#'.repeat(Number(headingMatch[1]))} ${content.markdown || content.text || ''}`);
-    return parts.join('\n');
+    return `${'#'.repeat(Number(headingMatch[1]))} ${content.markdown || content.text || ''}`;
   }
 
   switch (type) {
     case 'paragraph': {
       if (content.type === 'image') {
-        parts.push(serializeMarkdownImage(content.src, content.alt));
-      } else {
-        parts.push(content.markdown || '');
+        return serializeMarkdownImage(content.src, content.alt);
       }
-      break;
+      return content.markdown || '';
     }
-    case 'divider':
+    case 'divider': {
+      const parts = [`<!-- block:${type} -->`];
       parts.push('---');
-      break;
-    case 'mermaid':
+      const body = parts.join('\n');
+      return body;
+    }
+    case 'mermaid': {
+      const parts = [`<!-- block:${type} -->`];
       parts.push('```mermaid');
       parts.push(content.code || '');
       parts.push('```');
-      break;
-    case 'mindmap':
-      parts.push(content.code || '');
-      break;
+      const body = parts.join('\n');
+      return `${body}\n<!-- /block:mermaid -->`;
+    }
+    case 'mindmap': {
+      const body = [`<!-- block:${type} -->`, content.code || '', '<!-- /block:mindmap -->'].join('\n');
+      return body;
+    }
     case 'table': {
+      const parts = [`<!-- block:${type} -->`];
       const tableText = serializeGfmTable(content.headers || [], content.rows || []);
       parts.push(tableText);
-      break;
+      const body = parts.join('\n');
+      return `${body}\n<!-- /block:table -->`;
     }
     case 'prd-section': {
+      const parts = [`<!-- block:${type} -->`];
       const { title, designImage, interactionMarkdown, logicMarkdown } = content;
       parts.push(`## ${title}`);
       parts.push('');
@@ -373,13 +506,11 @@ function serializeBlockAsGfm(block) {
       if (logicMarkdown) parts.push(logicMarkdown);
       parts.push('');
       parts.push('<!-- section:end -->');
-      break;
+      return parts.join('\n');
     }
     default:
-      break;
+      return '';
   }
-
-  return parts.join('\n');
 }
 
 /**

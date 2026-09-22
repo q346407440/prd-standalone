@@ -392,6 +392,14 @@ function TiptapEditingSurface({
         if (activeEl instanceof Node && toolbarPanelRef.current?.contains(activeEl)) return;
         if (activeEl instanceof Node && prefixMenuRef.current?.contains(activeEl)) return;
         if (activeEl instanceof Node && prefixButtonRef.current?.contains(activeEl)) return;
+        // 块操作栏 / 更多与插入菜单 / Portal 选区条与列表前缀菜单：mousedown 会先失焦再触发 click，
+        // 若此处 commit 会与「上方/下方插入」等逻辑竞态（表现为点了没反应）。
+        if (activeEl instanceof Element) {
+          if (activeEl.closest('.prd-action-panel')) return;
+          if (activeEl.closest('.prd-tiptap-bubble-menu')) return;
+          if (activeEl.closest('.prd-list-prefix-menu')) return;
+          if (activeEl.closest('.prd-floating-action-bubble')) return;
+        }
         commitAndExitRef.current?.();
       });
     },
@@ -673,6 +681,24 @@ export const TiptapMarkdownEditor = memo(function TiptapMarkdownEditor({
   const pendingPreviewCaretOffsetRef = useRef(null);
 
   useEffect(() => { valueRef.current = value; }, [value]);
+
+  /**
+   * 预览「选中」仅加蓝框，默认仍要再点一次才进编辑态。
+   * 当选区由外部落到本处（如表格拆行、聚焦空块）且内容为空时，直接进入可输入态，避免「看得见选中却没有光标」。
+   */
+  const prevPreviewSelectedRef = useRef(false);
+  useEffect(() => {
+    if (editing) {
+      prevPreviewSelectedRef.current = isPreviewSelected;
+      return;
+    }
+    const becamePreviewSelected = isPreviewSelected && !prevPreviewSelectedRef.current;
+    prevPreviewSelectedRef.current = isPreviewSelected;
+    if (!becamePreviewSelected) return;
+    if (String(value ?? '').trim()) return;
+    setEditingInitialCaretOffset(0);
+    setEditing(true);
+  }, [editing, isPreviewSelected, value]);
 
   const selectCurrentTextTarget = useCallback((e) => {
     if (!setGlobalSelection || !blockId || !selectionRole) return;

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { pickLocalDirectoryPath, readPrototypeHtmlDirectory } from '../../prd-api.js';
+import { MergeRequestUrlCopyField } from './MergeRequestUrlCopyField.jsx';
 import {
   buildDefaultCommitMessage,
   DEFAULT_SOURCE_TREE_SYNC_MODE,
@@ -270,7 +271,8 @@ export function PrototypeHtmlSyncModal({
               ))}
             </div>
             <div className="prd-modal__hint">
-              同步时会直接覆盖目标目录下的 <code>{PROTOTYPE_HTML_SYNC_FILE_NAME}</code> 和 <code>{PROTOTYPE_HTML_SYNC_ASSET_DIR_NAME}/</code>；push 失败不会回滚 commit，会把 git 原始报错返回给你。
+              同步时会直接覆盖目标目录下的 <code>{PROTOTYPE_HTML_SYNC_FILE_NAME}</code> 和 <code>{PROTOTYPE_HTML_SYNC_ASSET_DIR_NAME}/</code>。
+              选择「同步 + 自动 commit + push」时，推送前会先 pull --rebase（含 autostash）对齐远端再 push；push 失败不会回滚 commit，会把 git 原始报错返回给你。
             </div>
           </div>
 
@@ -324,6 +326,7 @@ export function PrototypeHtmlSyncModal({
               </div>
             </div>
           ) : null}
+          <MergeRequestUrlCopyField url={sourceTreeProgress?.mergeRequestUrl || ''} />
         </div>
 
         <div className="prd-modal__actions">

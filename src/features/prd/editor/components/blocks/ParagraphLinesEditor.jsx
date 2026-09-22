@@ -26,13 +26,26 @@ function splitMdIntoLines(md) {
   return md.split('\n');
 }
 
+/** 主文档段落 cellPath 为 null；表格格内文本与 globalSelection.cellPath 对齐 */
+function matchesParagraphSelectionCellPath(selPath, editorCellPath) {
+  const want = editorCellPath ?? null;
+  const got = selPath ?? null;
+  if (want === null) return got === null;
+  if (!got) return false;
+  return got.ri === want.ri && got.ci === want.ci && got.idx === want.idx;
+}
+
 export function ParagraphLinesEditor({
   markdown,
   onSave,
   blockId,
+  /** 表格单元格 `{ ri, ci, idx }`；主文档段落不传 */
+  cellPath,
   globalSelection,
   setGlobalSelection,
   onBackspaceEmpty,
+  /** 仅第一行：与上一段落块 / 上一格内元素合并（见 CellRenderer） */
+  onBackspaceMerge,
   onPasteImageAsBlock,
   onEditingFinished,
   placeholder,
@@ -40,6 +53,8 @@ export function ParagraphLinesEditor({
   onBlockLevelChange,
   onResetOrderedStart,
   maxFirstLineIndentLevel = 0,
+  /** 多行段落内当前高亮行（0-based），供「复制路径与片段」落到当前行 */
+  onParagraphActiveRowForCopyChange,
 }) {
   const lines = useMemo(() => splitMdIntoLines(markdown), [markdown]);
 
@@ -75,13 +90,15 @@ export function ParagraphLinesEditor({
     setFocusIdx(null);
   }, [focusIdx, lines.length]);
 
-  /** 当 block 选中态切出、markdown 外部覆写时，重置行级高亮 */
+  /** 当 block/格内元素选中态切出、markdown 外部覆写时，重置行级高亮 */
   useEffect(() => {
-    if (globalSelection?.blockId !== blockId) {
+    const pathOk = matchesParagraphSelectionCellPath(globalSelection?.cellPath, cellPath);
+    if (globalSelection?.blockId !== blockId || !pathOk) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- globalSelection 来自外部 context；block 失焦后需清掉行级高亮，属单向同步
       setActiveLineIdx(null);
+      onParagraphActiveRowForCopyChange?.(null);
     }
-  }, [blockId, globalSelection]);
+  }, [blockId, cellPath, globalSelection, onParagraphActiveRowForCopyChange]);
 
   const updateLine = useCallback((idx, newLineMd) => {
     const next = lines.map((l, i) => (i === idx ? newLineMd : l));
@@ -105,7 +122,14 @@ export function ParagraphLinesEditor({
     onSave(nextLines.join('\n'));
     setActiveLineIdx(idx + 1);
     setFocusIdx(idx + 1);
-  }, [lines, onSave]);
+    onParagraphActiveRowForCopyChange?.(idx + 1);
+    setGlobalSelection?.({
+      type: 'text-block',
+      blockId,
+      role: 'paragraph',
+      cellPath: cellPath ?? null,
+    });
+  }, [blockId, cellPath, lines, onParagraphActiveRowForCopyChange, onSave, setGlobalSelection]);
 
   const removeLine = useCallback((idx) => {
     if (lines.length <= 1) {
@@ -118,16 +142,18 @@ export function ParagraphLinesEditor({
     const focusTarget = Math.max(0, idx - 1);
     setActiveLineIdx(focusTarget);
     setFocusIdx(focusTarget);
-  }, [lines, onBackspaceEmpty, onSave]);
+    onParagraphActiveRowForCopyChange?.(focusTarget);
+  }, [lines, onBackspaceEmpty, onSave, onParagraphActiveRowForCopyChange]);
 
   const isBlockSelected = globalSelection?.type === 'text-block'
     && globalSelection.blockId === blockId
     && globalSelection.role === 'paragraph'
-    && globalSelection.cellPath == null;
+    && matchesParagraphSelectionCellPath(globalSelection.cellPath, cellPath);
 
   const handleLineMouseDown = useCallback((idx) => {
     setActiveLineIdx(idx);
-  }, []);
+    onParagraphActiveRowForCopyChange?.(idx);
+  }, [onParagraphActiveRowForCopyChange]);
 
   return (
     <div className="prd-paragraph-lines">
@@ -149,10 +175,12 @@ export function ParagraphLinesEditor({
           >
             <TiptapMarkdownEditor
               blockId={blockId}
+              cellPath={cellPath}
               value={lineMd}
               onSave={(v) => updateLine(idx, v)}
               onEnter={(payload) => addLineAfter(idx, payload)}
               onBackspaceEmpty={() => removeLine(idx)}
+              onBackspaceMerge={isFirstLine ? onBackspaceMerge : undefined}
               onPasteImageAsBlock={onPasteImageAsBlock}
               placeholder={isFirstLine ? placeholder : ''}
               isPreviewSelected={isPreviewSelected}

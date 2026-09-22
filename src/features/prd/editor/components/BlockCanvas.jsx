@@ -82,7 +82,7 @@ export const BlockCanvas = memo(function BlockCanvas({
             mindmapMeta={sidecarState.mindmapMeta}
             onMindmapMetaChange={sidecarState.onMindmapMetaChange}
             prdAssetCacheBust={sidecarState.prdAssetCacheBust}
-            onCopyMdCursorRef={callbacks.onCopyMdCursorRef}
+            onCopyPathSnippet={callbacks.onCopyPathSnippet}
           />
         );
       })}

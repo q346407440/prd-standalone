@@ -1,5 +1,15 @@
 export const LIST_PREFIX_RE = /^(\s*)([-*+]|\d+\.|[a-z]+\.)(?:\s([\s\S]*))?$/;
 
+/**
+ * 是否应按「每行一个 Tiptap」拆分编辑（主文档段落块 / 表格单元格内文本共用）。
+ * 含换行且无 ``` 围栏时，与预览按行解析列表一致；围栏内换行不拆，避免破坏代码块。
+ */
+export function markdownNeedsLineSplitEditing(md) {
+  if (!md) return false;
+  if (md.includes('```')) return false;
+  return md.includes('\n');
+}
+
 export function parseListPrefix(md) {
   if (!md) return null;
   const match = md.match(LIST_PREFIX_RE);

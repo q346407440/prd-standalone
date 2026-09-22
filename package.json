@@ -1,7 +1,7 @@
 {
   "name": "prd-standalone",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 6001",
@@ -21,13 +21,17 @@
     "jszip": "^3.10.1",
     "markmap-lib": "^0.18.12",
     "markmap-view": "^0.18.12",
+    "mdast-util-to-string": "^4.0.0",
     "mermaid": "^11.13.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-icons": "^5.6.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "tiptap-markdown": "^0.9.0"
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "tiptap-markdown": "^0.9.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

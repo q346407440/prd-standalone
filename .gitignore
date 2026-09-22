@@ -17,6 +17,9 @@ dist-ssr/
 # Local runtime data (auth tokens, sync snapshots, image cache)
 .local/
 
+# Playwright MCP 本地状态（不入库）
+.playwright-mcp/
+
 # PRD 业务内容（每个人的文档和截图不同，不提交）
 # pages/doc-*/ 同时覆盖了文档三件套（.md / .meta.json / .annotations.json）
 # 与 doc colocated 截图（pages/<slug>/assets/*.png）。
@@ -49,6 +52,7 @@ Thumbs.db
 tmp-chrome-*.png
 
 # Editor
+*.code-workspace
 .vscode/*
 !.vscode/extensions.json
 .idea/

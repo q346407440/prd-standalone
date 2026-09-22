@@ -24,8 +24,8 @@ export function writeActiveDocSlug(pagesDir, activeFile, slug) {
   fs.writeFileSync(activeFile, JSON.stringify({ slug }, null, 2), 'utf8');
 }
 
-/** 扫描 pages/ 目录，返回下一个可用的 doc-NNN slug */
-function nextSlug(pagesDir) {
+/** 扫描 pages/ 目录，返回下一个可用的 doc-NNN slug（新建文档、飞书拉取等共用） */
+export function getNextDocSlug(pagesDir) {
   let max = 0;
   if (fs.existsSync(pagesDir)) {
     for (const d of fs.readdirSync(pagesDir, { withFileTypes: true })) {
@@ -69,7 +69,18 @@ export function mdFileToAnnotationsPath(mdFilePath) {
   return path.join(dir, `${base}.annotations.json`);
 }
 
-/** 列出所有 PRD 文档 */
+/** 取文档目录创建时间（毫秒），用于列表倒序；birthtime 不可用时回退 ctime */
+function getDocCreatedAtMs(docDir) {
+  try {
+    const stat = fs.statSync(docDir);
+    if (stat.birthtimeMs > 0) return stat.birthtimeMs;
+    return stat.ctimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/** 列出所有 PRD 文档（按创建时间倒序，最新在前） */
 function listDocs(pagesDir, activeFile) {
   const activeSlug = readActiveDocSlug(pagesDir, activeFile);
   if (!fs.existsSync(pagesDir)) return [];
@@ -81,9 +92,17 @@ function listDocs(pagesDir, activeFile) {
     .map(slug => {
       const mdFile = findDocMdFile(pagesDir, slug);
       if (!mdFile) return null;
-      return { slug, title: mdFileToTitle(mdFile), active: slug === activeSlug };
+      const docDir = path.join(pagesDir, slug);
+      return {
+        slug,
+        title: mdFileToTitle(mdFile),
+        active: slug === activeSlug,
+        createdAtMs: getDocCreatedAtMs(docDir),
+      };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    .sort((a, b) => b.createdAtMs - a.createdAtMs)
+    .map(({ createdAtMs: _createdAtMs, ...doc }) => doc);
 }
 
 // ─── Handler 工厂 ────────────────────────────────────────────────────────────
@@ -115,7 +134,7 @@ export function createDocHandlers({ pagesDir, activeFile }) {
             res.statusCode = 400;
             return res.end(JSON.stringify({ ok: false, error: 'name required' }));
           }
-          const slug = nextSlug(pagesDir);
+          const slug = getNextDocSlug(pagesDir);
           const docDir = path.join(pagesDir, slug);
           fs.mkdirSync(docDir, { recursive: true });
           const safeName = toSafeDocBaseName(name);
@@ -126,7 +145,7 @@ export function createDocHandlers({ pagesDir, activeFile }) {
           const mdFileName = `${safeName}.md`;
           const mdFilePath = path.join(docDir, mdFileName);
           const h1Line = safeName.replace(/\r?\n/g, ' ').replace(/^#+\s*/, '');
-          const initMd = `<!-- block:h1 -->\n\n# ${h1Line}\n`;
+          const initMd = `# ${h1Line}\n`;
           fs.writeFileSync(mdFilePath, initMd, 'utf8');
           fs.writeFileSync(mdFileToMetaPath(mdFilePath), '{}', 'utf8');
           fs.writeFileSync(mdFileToAnnotationsPath(mdFilePath), '{}', 'utf8');

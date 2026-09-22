@@ -359,6 +359,22 @@
   color: #b91c1c;
 }
 
+.prd-modal__mr-url-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.prd-modal__mr-url-row .prd-modal__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.prd-modal__mr-url-row .prd-modal__btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .prd-modal__text {
   all: unset;
   display: block;

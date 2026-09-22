@@ -20,6 +20,7 @@ import {
   cloneSerializable,
   isGlobalSelectionOnTableCellElement,
   isForeignSelectionForTableCell,
+  isTableKindSelection,
 } from '../prd-utils.js';
 import {
   parseListPrefix,
@@ -89,7 +90,7 @@ export function CellRenderer({
   mindmapMeta,
   onMindmapMetaChange,
   prdAssetCacheBust = 0,
-  onCopyMdCursorRef,
+  onCopyPathSnippet,
   onActionBubbleHoverChange,
 }) {
   const elements = useMemo(
@@ -306,7 +307,44 @@ export function CellRenderer({
     next = maybeRenumberCellElementsAt(next, idx + 1);
     onUpdate({ elements: next });
     setFocusIdx(idx + 1);
-  }, [elements, onUpdate]);
+    setActiveElementActionIdx(idx + 1);
+    if (setGlobalSelection && globalSelection?.blockId === blockId
+      && globalSelection.cellPath?.ri === ri
+      && globalSelection.cellPath?.ci === ci
+      && globalSelection.cellPath?.idx === idx
+      && (globalSelection.type === 'text-block'
+        || globalSelection.type === 'image'
+        || globalSelection.type === 'diagram')) {
+      setGlobalSelection({
+        ...globalSelection,
+        cellPath: { ri, ci, idx: idx + 1 },
+      });
+    }
+  }, [blockId, ci, elements, globalSelection, onUpdate, ri, setGlobalSelection]);
+
+  /** Enter 在儲存格內拆出新元素後：選區應跟到新 idx+1，並清掉列/欄選取，避免舊行與新行同時出現藍框 */
+  const syncSelectionAfterSplitElement = useCallback((splitAtIdx) => {
+    if (!setGlobalSelection) return;
+    const sel = globalSelection;
+    if (!sel || sel.blockId !== blockId) return;
+    const newIdx = splitAtIdx + 1;
+    if (isTableKindSelection(sel)) {
+      setGlobalSelection({
+        type: 'text-block',
+        blockId,
+        cellPath: { ri, ci, idx: newIdx },
+        role: 'paragraph',
+      });
+      return;
+    }
+    if (sel.type === 'text-block' && sel.cellPath != null
+      && sel.cellPath.ri === ri && sel.cellPath.ci === ci && sel.cellPath.idx === splitAtIdx) {
+      setGlobalSelection({
+        ...sel,
+        cellPath: { ri, ci, idx: newIdx },
+      });
+    }
+  }, [blockId, ci, globalSelection, ri, setGlobalSelection]);
 
   const addElementAfter = useCallback((idx, enterPayload) => {
     const currentMarkdown = getEnterCurrentMarkdown(enterPayload);
@@ -323,7 +361,10 @@ export function CellRenderer({
     next = renumberCellElements(next, idx + 1);
     onUpdate({ elements: next });
     setFocusIdx(idx + 1);
-  }, [elements, onUpdate]);
+    syncSelectionAfterSplitElement(idx);
+    // 與 setFocusIdx 對齊：拆行後編輯焦點在新元素，操作條/高亮也應落在新 idx
+    setActiveElementActionIdx(idx + 1);
+  }, [elements, onUpdate, syncSelectionAfterSplitElement]);
 
   const removeElement = useCallback((idx) => {
     if (elements.length <= 1) {
@@ -492,14 +533,14 @@ export function CellRenderer({
               requestElementActionClose(idx);
             }}
           >
-            {onCopyMdCursorRef ? (
+            {onCopyPathSnippet ? (
               <button
                 type="button"
                 className="prd-action-btn prd-cell-element__action-btn prd-action-btn--primary"
-                title="复制 @文件:行号，供粘贴到 Cursor"
-                onClick={() => onCopyMdCursorRef({ blockId, cellPath: { ri, ci, idx } })}
+                title="复制 @路径 与当前格内片段，供粘贴到 Cursor 等工具"
+                onClick={() => onCopyPathSnippet({ blockId, cellPath: { ri, ci, idx } })}
               >
-                复制 MD 行号
+                复制路径与片段
               </button>
             ) : null}
             <button
@@ -589,6 +630,7 @@ export function CellRenderer({
           </ActionPanel>
           <ElementRenderer
             element={element}
+            globalSelection={globalSelection}
             onUpdate={(newEl) => updateElement(idx, newEl)}
             onDelete={() => removeElement(idx)}
             blockId={blockId}

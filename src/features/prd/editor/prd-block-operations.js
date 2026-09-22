@@ -29,13 +29,78 @@ export function getMainDocTextListType(block) {
 }
 
 export function setBlockMd(block, markdown) {
-  return {
+  const next = {
     ...block,
     content: {
       ...block.content,
       markdown,
     },
   };
+  if (next.content?.type === 'text' && typeof markdown === 'string' && markdown.includes('\n')) {
+    const { tightJoinPrev, ...rest } = next.content;
+    if (tightJoinPrev !== undefined) {
+      return { ...next, content: rest };
+    }
+  }
+  return next;
+}
+
+/** 与 prd-prose-mdast 顶层列表拆行一致：单行 + 无序/有序列表前缀 */
+const TIGHT_LIST_ITEM_BODY_RE = /^( {0,3})([*+-]|\d+\.)\s+\S/;
+
+function isSingleLineTightListItemMarkdown(md) {
+  const m = String(md ?? '').replace(/\s+$/, '');
+  if (!m || m.includes('\n') || m.includes('```')) return false;
+  return TIGHT_LIST_ITEM_BODY_RE.test(m);
+}
+
+/** 单行 `**标题**` 式小标题，常与下接 `* ` 列表无空行连用 */
+function isSingleLineBoldTitleLine(md) {
+  const t = String(md ?? '').trim();
+  if (!t || t.includes('\n')) return false;
+  return /^\*\*[^*\n]+\*\*$/.test(t);
+}
+
+/**
+ * 按当前 block 顺序重算 `content.tightJoinPrev`：列表项与上一列表项、或与上一「单行 **标题** / 列表」前言段之间用单换行拼接。
+ * 在移动、插入、删除等改变顺序后调用，避免序列化误插入空行。
+ */
+export function reconcileTightJoinPrevForParagraphRuns(blocks) {
+  const list = blocks || [];
+  const out = [];
+  for (const b of list) {
+    if (b.type !== 'paragraph' || b.content?.type !== 'text') {
+      out.push(b);
+      continue;
+    }
+    const prev = out[out.length - 1];
+    const md = getBlockMd(b);
+    const prevMd = prev?.type === 'paragraph' && prev.content?.type === 'text'
+      ? getBlockMd(prev)
+      : '';
+    const shouldTight = prev
+      && prev.type === 'paragraph'
+      && prev.content?.type === 'text'
+      && isSingleLineTightListItemMarkdown(md)
+      && !String(md).includes('\n')
+      && !String(prevMd).includes('\n')
+      && (
+        isSingleLineTightListItemMarkdown(prevMd)
+        || isSingleLineBoldTitleLine(prevMd)
+      );
+    if (shouldTight) {
+      out.push({
+        ...b,
+        content: { ...b.content, tightJoinPrev: true },
+      });
+    } else if (b.content?.tightJoinPrev !== undefined) {
+      const { tightJoinPrev, ...rest } = b.content;
+      out.push({ ...b, content: rest });
+    } else {
+      out.push(b);
+    }
+  }
+  return out;
 }
 
 export function shouldSkipMainDocListBlock(block) {
@@ -114,6 +179,40 @@ export function cloneBlockWithNewId(block) {
   };
 }
 
+/**
+ * 复制块插入后应落在的选区形态（与标题/段落 Tiptap、段落图、图表块各处一致）。
+ * divider、table 等无对应全局选区时返回 null，由调用方清选区并另设操作栏锚点。
+ * @param {object} block
+ * @returns {object | null}
+ */
+export function globalSelectionForDuplicatedBlock(block) {
+  if (!block?.id) return null;
+  const t = block.type;
+  if (/^h[1-7]$/.test(t)) {
+    return {
+      type: 'text-block',
+      blockId: block.id,
+      role: 'heading',
+      cellPath: null,
+    };
+  }
+  if (t === 'paragraph') {
+    if (block.content?.type === 'image') {
+      return { type: 'image', blockId: block.id, cellPath: null };
+    }
+    return {
+      type: 'text-block',
+      blockId: block.id,
+      role: 'paragraph',
+      cellPath: null,
+    };
+  }
+  if (t === 'mermaid' || t === 'mindmap') {
+    return { type: 'diagram', blockId: block.id };
+  }
+  return null;
+}
+
 export function makePrdSectionTemplateBlocks() {
   const heading = { id: genId(), type: 'h2', content: { type: 'text', markdown: '新章节' } };
   const table = {
@@ -162,7 +261,7 @@ export function expandParagraphBlocksOnBlankLines(blocks) {
       });
     });
   }
-  return out;
+  return reconcileTightJoinPrevForParagraphRuns(out);
 }
 
 export function normalizeLegacyBlocks(blocks) {

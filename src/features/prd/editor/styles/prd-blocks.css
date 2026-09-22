@@ -85,7 +85,7 @@
   font-weight: 700;
 }
 
-/* 主操作按钮：高频动作（复制 MD 行号）强调色 */
+/* 主操作按钮：高频动作（复制路径与片段）强调色 */
 .prd-action-btn--primary {
   color: #1677ff;
   background: #f0f7ff;

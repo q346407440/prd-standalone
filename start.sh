@@ -138,11 +138,35 @@ fi
 
 echo "[check] Node.js $(node --version) ✓"
 
-# ── 0b. GitHub 更新检查（可跳过）──────────────────────────────────────────────
-refresh_update_info
-UPDATE_STATUS="$(json_get status)"
+# ── 0b. GitHub 更新检查（终端内可选；非交互仍默认检查）────────────────────────
+SHOULD_CHECK_UPDATES=1
+if [ -t 0 ]; then
+  while true; do
+    echo ""
+    echo "  输入 1 查询远端是否有新版本（会访问 Git / 网络）"
+    echo "  输入 0 跳过查询，直接进入启动流程"
+    read -r -p "  请选择 [1/0]: " CHECK_CHOICE
+    case "$CHECK_CHOICE" in
+      1)
+        SHOULD_CHECK_UPDATES=1
+        break
+        ;;
+      0)
+        SHOULD_CHECK_UPDATES=0
+        break
+        ;;
+      *)
+        echo "  [!] 请输入 1 或 0"
+        ;;
+    esac
+  done
+fi
 
-case "$UPDATE_STATUS" in
+if [ "$SHOULD_CHECK_UPDATES" = "1" ]; then
+  refresh_update_info
+  UPDATE_STATUS="$(json_get status)"
+
+  case "$UPDATE_STATUS" in
   up-to-date)
     echo "[check] GitHub 版本已是最新 ✓"
     ;;
@@ -219,7 +243,10 @@ case "$UPDATE_STATUS" in
       echo ""
     fi
     ;;
-esac
+  esac
+else
+  echo "[update] 已跳过版本查询，直接进入启动流程"
+fi
 
 # ── 0c. Cursor MCP：按 args 检测 chrome-devtools-mcp@latest，缺失则写入 ~/.cursor/mcp.json ──
 node "$PROJECT_DIR/scripts/ensure-chrome-devtools-mcp.js" || true

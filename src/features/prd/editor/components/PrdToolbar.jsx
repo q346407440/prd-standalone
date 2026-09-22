@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   FiLayers,
   FiPlus,
   FiCheck,
   FiEdit2,
   FiChevronDown,
+  FiCloud,
   FiDownload,
   FiFileText,
   FiRefreshCw,
@@ -24,7 +25,9 @@ import {
   backupPrdDoc,
 } from '../prd-api.js';
 import { FeishuSyncModal } from '../../../feishu-sync/index.jsx';
+import { FeishuPullModal } from '../../../feishu-sync/FeishuPullModal.jsx';
 import { useFeishuSyncController } from '../../../feishu-sync/use-feishu-sync-controller.js';
+import { useFeishuPullController } from '../../../feishu-sync/use-feishu-pull-controller.js';
 import { ExportPackageModal } from './modals/ExportPackageModal.jsx';
 import { BackupFolderPathModal } from './modals/BackupFolderPathModal.jsx';
 import { SourceTreeSyncModal } from './modals/SourceTreeSyncModal.jsx';
@@ -71,6 +74,7 @@ export function PrdToolbar({
   const [prototypeSyncDialogOpen, setPrototypeSyncDialogOpen] = useState(false);
   const [combinedSyncDialogOpen, setCombinedSyncDialogOpen] = useState(false);
   const [feishuDialogOpen, setFeishuDialogOpen] = useState(false);
+  const [feishuPullOpen, setFeishuPullOpen] = useState(false);
 
   const [switchingSlug, setSwitchingSlug] = useState(null);
 
@@ -91,6 +95,10 @@ export function PrdToolbar({
   const exportMdInputRef = useRef(null);
   const [panelStyle, setPanelStyle] = useState({});
   const feishuSyncController = useFeishuSyncController({ blocks, activeSlug, activeTitle });
+  const handleFeishuPullSucceeded = useCallback((result) => {
+    if (result?.slug) onSwitch?.(result.slug);
+  }, [onSwitch]);
+  const feishuPullController = useFeishuPullController({ onSucceeded: handleFeishuPullSucceeded });
 
   function closePanel() {
     setSwitchPanelOpen(false);
@@ -162,6 +170,21 @@ export function PrdToolbar({
   function closeFeishuDialog() {
     if (feishuSyncController.isSyncing) return;
     setFeishuDialogOpen(false);
+  }
+
+  function openFeishuPullDialog() {
+    if (feishuPullController.isPulling || feishuPullController.pullSubmitting) return;
+    setSwitchPanelOpen(false);
+    setCreating(false);
+    setNewDocName('');
+    setCreateError('');
+    setRenaming(null);
+    setFeishuPullOpen(true);
+  }
+
+  function closeFeishuPullDialog() {
+    if (feishuPullController.isPulling) return;
+    setFeishuPullOpen(false);
   }
 
   async function handleSyncConfirm({
@@ -589,12 +612,27 @@ export function PrdToolbar({
                 ))}
               </div>
 
-              <div className="prd-toolbar__switch-panel-footer">
+              <div className={`prd-toolbar__switch-panel-footer${!creating ? ' prd-toolbar__switch-panel-footer--row' : ''}`}>
                 {!creating ? (
-                  <button className="prd-toolbar__switch-new-btn" onClick={() => { setCreating(true); setRenaming(null); }}>
-                    <FiPlus />
-                    <span>新建 PRD</span>
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="prd-toolbar__switch-new-btn prd-toolbar__switch-new-btn--half"
+                      onClick={() => { setCreating(true); setRenaming(null); }}
+                    >
+                      <FiPlus />
+                      <span>新建 PRD</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="prd-toolbar__switch-new-btn prd-toolbar__switch-new-btn--half prd-toolbar__switch-pull-btn"
+                      onClick={openFeishuPullDialog}
+                      disabled={feishuPullController.isPulling || feishuPullController.pullSubmitting}
+                    >
+                      <FiCloud />
+                      <span>拉取飞书文档</span>
+                    </button>
+                  </>
                 ) : (
                   <div className="prd-toolbar__switch-create">
                     <input
@@ -663,17 +701,20 @@ export function PrdToolbar({
         </button>
         <button
           className={`prd-toolbar__btn${
-            (syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting)
+            (syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting
+              || feishuPullController.isPulling || feishuPullController.pullSubmitting)
               ? ' prd-toolbar__btn--active'
               : ''
           }`}
           title="同步 PRD 到飞书和 SourceTree"
           onClick={openCombinedSyncDialog}
-          disabled={syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting}
+          disabled={syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting
+            || feishuPullController.isPulling || feishuPullController.pullSubmitting}
         >
           <FiRefreshCw className="prd-toolbar__btn-icon" />
           <span>
             {syncingSourceTree || feishuSyncController.isSyncing || feishuSyncController.syncSubmitting
+              || feishuPullController.isPulling || feishuPullController.pullSubmitting
               ? '同步中…'
               : '同步 PRD'}
           </span>
@@ -741,6 +782,13 @@ export function PrdToolbar({
           open={feishuDialogOpen}
           onClose={closeFeishuDialog}
           controller={feishuSyncController}
+        />
+      ) : null}
+      {feishuPullOpen ? (
+        <FeishuPullModal
+          open={feishuPullOpen}
+          onClose={closeFeishuPullDialog}
+          controller={feishuPullController}
         />
       ) : null}
       {syncDialogOpen ? (

@@ -3,7 +3,7 @@ import { useViewportFit } from '../useViewportFit.js';
 
 /**
  * 块 / 格内操作栏的「更多」下拉。
- * 只承载低频动作，高频动作（复制 MD 行号、删除）由 actionbar 常驻按钮负责。
+ * 只承载低频动作，高频动作（复制路径与片段、删除）由 actionbar 常驻按钮负责。
  *
  * items 支持两种形态：
  *   - 普通项：{ id, label, onClick, disabled?, danger? }

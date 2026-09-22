@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { BsLink45Deg, BsTypeBold, BsTypeItalic } from 'react-icons/bs';
+import { BsLink45Deg, BsTypeBold, BsTypeItalic, BsClipboard } from 'react-icons/bs';
+import { usePrdCopyPathSnippet } from './prd-copy-path-snippet-context.jsx';
 import { MdFormatListNumbered, MdFormatListNumberedRtl, MdNumbers } from 'react-icons/md';
 import {
   alphaToNum,
@@ -24,6 +25,7 @@ export function SelectionToolbar({ editor }) {
   const [style, setStyle] = useState(null);
   const [hasTextSel, setHasTextSel] = useState(false);
   const frameRef = useRef(null);
+  const copyPathSnippet = usePrdCopyPathSnippet();
 
   const reposition = useCallback(() => {
     if (!editor) return;
@@ -140,6 +142,25 @@ export function SelectionToolbar({ editor }) {
             <BsTypeItalic aria-hidden="true" />
           </button>
           <LinkButton editor={editor} />
+          {copyPathSnippet ? (
+            <button
+              type="button"
+              className="prd-action-btn prd-action-btn--icon"
+              title="复制文档路径与当前选中文字（与块操作栏「复制路径与片段」一致）"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={() => {
+                if (!editor) return;
+                const { from, to } = editor.state.selection;
+                const t = editor.state.doc.textBetween(from, to, '\n');
+                copyPathSnippet.copyPathAndSnippet(t);
+              }}
+            >
+              <BsClipboard aria-hidden="true" />
+            </button>
+          ) : null}
         </div>,
         document.body,
       )}

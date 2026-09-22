@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fi';
 import { emitPrdToast } from '../../prd-toast.js';
 import { pickLocalDirectoryPath } from '../../prd-api.js';
+import { MergeRequestUrlCopyField } from './MergeRequestUrlCopyField.jsx';
 import {
   buildDefaultCommitMessage,
   DEFAULT_SOURCE_TREE_SYNC_MODE,
@@ -219,6 +220,15 @@ export function CombinedSyncModal({
             silent: true,
             onProgress: setSourceTreeProgress,
           });
+          if (sourceTreeResult?.mergeRequestUrl) {
+            setSourceTreeProgress((prev) => ({
+              ...prev,
+              status: 'succeeded',
+              percent: 100,
+              message: prev?.message || sourceTreeResult.message || 'SourceTree 同步完成',
+              mergeRequestUrl: sourceTreeResult.mergeRequestUrl,
+            }));
+          }
           results.push({
             key: 'sourcetree',
             label: 'SourceTree',
@@ -479,7 +489,7 @@ export function CombinedSyncModal({
                   ))}
                 </div>
                 <div className="prd-modal__hint">
-                  push 失败不会回滚 commit；会直接把 git 报错返回给你。
+                  「同步 + 自动 commit + push」会在推送前自动 pull --rebase（含 autostash）；push 失败不会回滚 commit，会直接把 git 报错返回给你。
                 </div>
               </div>
 
@@ -528,6 +538,7 @@ export function CombinedSyncModal({
                   </div>
                 </div>
               ) : null}
+              <MergeRequestUrlCopyField url={sourceTreeProgress?.mergeRequestUrl || ''} />
             </div>
           ) : null}
         </div>

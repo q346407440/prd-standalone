@@ -2,7 +2,8 @@
  * prd-parser.js
  * 把 prd.md 解析成扁平的 Block[] 陣列。
  *
- * 新格式（v2）：每個 Block 前有 <!-- block:type --> 標記。
+ * 新格式：結構化塊（table / mermaid / mindmap / divider / prd-section / link-list）保留 `<!-- block:type -->`；
+ * 標題與段落為**原生 Markdown**（無 `<!-- block:h* -->` / `<!-- block:paragraph -->`），解析為 h1–h7 / paragraph Block。
  * 舊格式（v1）：無 block 標記，自動遷移為 Block[]。
  *
  * Block 結構：
@@ -28,11 +29,20 @@ import {
 } from './prd-table-parser.js';
 import { migrateFromLegacy } from './prd-legacy-migration.js';
 import { createImageElement, parseMarkdownImage } from './prd-image-markdown.js';
+import {
+  BLOCK_OPENING_LINE_RE,
+  BLOCK_END_LINE_RE,
+  isIslandBlockType,
+} from './prd-island-block-markers.js';
+import { normalizePrdMdForLoad } from './prd-md-normalize.js';
+import { parseProseRegionToBlocks } from './prd-prose-mdast.js';
 
 // ─── 常量 ────────────────────────────────────────────────────────────────────
 
-const BLOCK_MARKER_RE = /^<!--\s*block:([\w-]+)\s*-->$/;
-const BLOCK_MARKER_WITH_ATTRS_RE = /^<!--\s*block:([\w-]+)(?:\s+(.*?))?\s*-->$/;
+/** 仍以 block 起始行 + 正文區掃描的類型（不含 h1–h7、paragraph） */
+const STRUCTURED_BLOCK_TYPES = new Set([
+  'table', 'mermaid', 'mindmap', 'divider', 'prd-section', 'link-list',
+]);
 const HEADING_BLOCK_RE = /^h([1-7])$/;
 
 const SECTION_MARKERS = {
@@ -94,19 +104,51 @@ function extractBetween(text, startMarker, endMarkers) {
 
 // ─── 新格式解析（v2）────────────────────────────────────────────────────────
 
-function isNewFormat(mdText) {
-  return BLOCK_MARKER_RE.test(mdText.split('\n').find((l) => BLOCK_MARKER_RE.test(l.trim())) || '');
+function isStructuredBlockType(t) {
+  return STRUCTURED_BLOCK_TYPES.has(t);
 }
 
-function parseNewFormat(mdText) {
+/** v1 舊稿哨兵（與 prd-legacy-migration 一致） */
+const LEGACY_PRD_SECTIONS_MARKER = '<!-- prd:sections -->';
+
+/**
+ * 是否走混合解析（結構化 block + 原生 prose），而非 migrateFromLegacy。
+ */
+function isNewFormat(mdText) {
+  if (!mdText || typeof mdText !== 'string') return false;
+  if (mdText.includes(LEGACY_PRD_SECTIONS_MARKER)) return false;
+  for (const line of mdText.split('\n')) {
+    if (BLOCK_OPENING_LINE_RE.test(line.trim())) return true;
+  }
+  if (/<!--\s*\/block:(table|mermaid|mindmap)\s*-->/.test(mdText)) return true;
+  if (/<!--\s*cell:r\d+:/i.test(mdText)) return true;
+  if (/^#{1,6}\s+/m.test(mdText)) return true;
+  // 无 v1 分区哨兵时，非空正文一律走 hybrid + remark，避免仅含段落的 v2 稿误进 migrateFromLegacy
+  if (mdText.trim().length > 0) return true;
+  return false;
+}
+
+/**
+ * 島塊 + 中間 prose：prose 用 remark 轉成 h* / paragraph / divider。
+ */
+function parseHybridFormat(mdText) {
   const lines = mdText.split('\n');
   const blocks = [];
 
+  let proseLines = [];
   let currentType = null;
   let currentMeta = null;
   let currentLines = [];
 
-  const flush = () => {
+  const flushProse = () => {
+    const raw = proseLines.join('\n');
+    proseLines = [];
+    const t = trimLines(raw);
+    if (!t) return;
+    blocks.push(...parseProseRegionToBlocks(t));
+  };
+
+  const flushStructured = () => {
     if (!currentType) return;
     const raw = currentLines.join('\n');
     const block = parseBlockContent(currentType, raw, currentMeta);
@@ -117,17 +159,55 @@ function parseNewFormat(mdText) {
   };
 
   for (const line of lines) {
-    const markerMatch = line.trim().match(BLOCK_MARKER_WITH_ATTRS_RE);
+    const trimmed = line.trim();
+    const endMatch = trimmed.match(BLOCK_END_LINE_RE);
+    if (
+      currentType !== null
+      && endMatch
+      && isIslandBlockType(currentType)
+      && endMatch[1] === currentType
+    ) {
+      flushStructured();
+      continue;
+    }
+
+    const markerMatch = trimmed.match(BLOCK_OPENING_LINE_RE);
     if (markerMatch) {
-      flush();
-      currentType = markerMatch[1];
-      currentMeta = markerMatch[2] ? parseBlockMarkerAttrs(markerMatch[2]) : null;
-      currentLines = [];
-    } else if (currentType !== null) {
+      const t = markerMatch[1];
+      if (isStructuredBlockType(t)) {
+        flushProse();
+        flushStructured();
+        currentType = t;
+        currentMeta = markerMatch[2] ? parseBlockMarkerAttrs(markerMatch[2]) : null;
+        currentLines = [];
+        continue;
+      }
+      if (currentType !== null) {
+        currentLines.push(line);
+      } else {
+        proseLines.push(line);
+      }
+      continue;
+    }
+
+    if (currentType === 'divider') {
+      // divider 块只吞 `---` 与紧随的空行；其后 prose 须回到 remark 解析（避免吞掉 ### / ####）
+      if (trimmed === '---' || trimmed === '') {
+        currentLines.push(line);
+        continue;
+      }
+      flushStructured();
+    }
+
+    if (currentType !== null) {
       currentLines.push(line);
+    } else {
+      proseLines.push(line);
     }
   }
-  flush();
+
+  flushStructured();
+  flushProse();
 
   return blocks;
 }
@@ -241,11 +321,13 @@ function parseBlockContent(type, raw, meta) {
 
 /**
  * 解析 prd.md 文字，回傳 Block[]。
- * 自動識別新格式（v2）或舊格式（v1），舊格式自動遷移。
+ * 入參先經 normalizePrdMdForLoad（island end + 剥除舊 prose block 行）；再識別新格式或 v1 legacy。
  */
 export function parsePrd(mdText) {
-  if (isNewFormat(mdText)) {
-    return parseNewFormat(mdText);
+  if (mdText == null || mdText === '') return [];
+  const input = normalizePrdMdForLoad(String(mdText));
+  if (isNewFormat(input)) {
+    return parseHybridFormat(input);
   }
-  return migrateFromLegacy(mdText);
+  return migrateFromLegacy(input);
 }

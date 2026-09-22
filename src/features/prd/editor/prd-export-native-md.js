@@ -12,6 +12,7 @@
  */
 
 import { serializeMarkdownImage } from './prd-image-markdown.js';
+import { glueBetweenPrdBlocks, stripInvalidTightJoinFlags } from './prd-writer.js';
 
 const LIST_LINE_RE = /^(\s*)([-*+]|\d+\.|[a-z]+\.)\s/;
 const FLOWCHART_WITH_BR_RE = /^\s*(?:flowchart|graph)\b/m;
@@ -277,9 +278,20 @@ function serializeBlockToNativeMd(block) {
  * 同时把 `/prd/...` 的图片路径改写成 `./assets/...` 或自定义素材目录，与导出结构对齐。
  */
 export function serializePrdAsNativeMd(blocks, { assetDirName = 'assets' } = {}) {
-  const sections = (blocks || [])
-    .map(serializeBlockToNativeMd)
-    .filter((s) => s !== '');
-  const md = sections.join('\n\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
+  const list = stripInvalidTightJoinFlags(blocks || []);
+  const sections = list.map(serializeBlockToNativeMd);
+  let out = '';
+  let first = true;
+  for (let i = 0; i < list.length; i += 1) {
+    const sec = sections[i];
+    if (!sec) continue;
+    if (first) {
+      out = sec;
+      first = false;
+    } else {
+      out += glueBetweenPrdBlocks(list, i) + sec;
+    }
+  }
+  const md = out.replace(/\n{3,}/g, '\n\n').trimEnd() + '\n';
   return rewritePrdAssetPathsForNativeMd(md, assetDirName);
 }
